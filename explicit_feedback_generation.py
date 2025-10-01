@@ -5,7 +5,7 @@ import random
 import subprocess
 from datetime import datetime
 from typing import List, Tuple, Dict, Any, Optional
-
+import time
 from google import genai
 
 def get_end_score(scores: Dict[str, Any]) -> Optional[float]:
