@@ -72,8 +72,13 @@ def parse_log_file(path: str, k: int = 1) -> List[Tuple[float, str]]:
 
 def eval(res):
             # with tempfile.TemporaryDirectory() as temp_dir:
+     # Create unique filename using process ID and timestamp
     temp_dir = os.getcwd()
-    script_path = os.path.join(temp_dir, 'generated_code.py')
+    unique_id = f"{os.getpid()}_{int(time.time() * 1000000)}"
+    script_path = f'explicit_generated_code_{unique_id}.py'
+    script_path = os.path.join(temp_dir, script_path)
+
+    # script_path = os.path.join(temp_dir, 'generated_code.py')
     full_program_collect=f'''
 import numpy as np
 import time
@@ -462,6 +467,10 @@ print(evaluate())
         print(f"Output: {e.stdout}")
         print(f"Error: {e.stderr}")
         return -1, False
+    finally:
+        # Clean up the temporary file
+        if os.path.exists(script_path):
+            os.remove(script_path)
 
 def response_gen(funcs, k):
     with open("prompt_specifications/specification_with_updated_nld.txt", "r") as f:
