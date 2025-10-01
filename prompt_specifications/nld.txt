@@ -1,0 +1,58 @@
+##Natural Language Description of Craft
+The environment is a grid world of size n*n . Each cell contains an inventory vector of length i, where each position corresponds to a possible item type. If a cell contains an item, its corresponding entry is marked as 1; otherwise, it is 0. A cell is considered blocked if it contains any item, meaning the agent cannot move into it. The agent can only move around freely through empty cells.
+
+At the beginning of each episode, the agent is placed at a starting position and a distribution of items across the grid is initialized. The agent’s tasks involve either collecting primitives (raw resources) or crafting items.
+
+The environment contains both natural terrain and functional structures, such as boundaries, water, stone deposits, and different workshops (workshop0, workshop1, workshop2).
+An item can only be crafted at the workshop mentioned in its recipe.
+Primitives are basic resources like iron, grass, gold, and gem.
+
+Crafted items are produced from primitives (or other crafted items) by following recipes. Each recipe specifies which inputs are required and at which workshop the crafting must occur. For example:
+A plank requires 1 wood at workshop0.
+A rope requires 1 grass at workshop0.
+A bridge requires 1 wood and 1 iron at workshop1.
+A knife requires 1 iron and 1 rock at workshop2.
+
+More complex items, such as axe, or flag, require intermediate items along with primitives, and must be crafted at the appropriate workshop. This all is specificed in the recipe file of the environment.
+
+Thus, the agent must navigate the grid, collect primitives, and visit the correct workshops to craft higher-level items according to the recipes
+
+eg of recipe in the actual file:
+  cloth:
+    grass: 1
+    _at: workshop2
+
+In order to use the workshops or use USE action to collect stuff the must be facing the block and not just be adjacent to it.
+
+
+This is the schema of the yaml recipes file:
+# Root level structure
+type: object
+properties:
+  environment:
+    type: array
+    items:
+      type: string
+    description: "List of environment/location identifiers"
+
+  primitives:
+    type: array
+    items:
+      type: string
+    description: "List of base/primitive materials that can be used in crafting"
+
+  recipes:
+    type: object
+    description: "Dictionary of craftable items and their recipes"
+    patternProperties:
+      "^[a-zA-Z][a-zA-Z0-9]*$":  # Recipe name (alphanumeric, starts with letter)
+        type: object
+        properties:
+          _at:
+            type: string
+            description: "Required workshop/location where this item can be crafted"
+        additionalProperties:
+          type: integer
+          minimum: 1
+          description: "Quantity of material required (key is material name)"
+        required: ["_at"]

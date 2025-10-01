@@ -1,3 +1,7 @@
+#stuff i added
+keys.txt
+hello.sh
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -5,6 +9,7 @@ __pycache__/
 
 # C extensions
 *.so
+
 
 # Distribution / packaging
 .Python

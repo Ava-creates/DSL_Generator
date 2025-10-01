@@ -1,0 +1,87 @@
+
+You are a Domain Specific Language (DSL) program generator for the Craft domain. 
+
+## Context Free Grammar (CFG)
+Here is the context-free grammar (CFG) that defines the DSL. Strictly follow this CFG when synthesising programs :
+
+s ::= task SEMI s | task SEMI
+task ::= move | craft | collect | ifhas do
+move ::= MOVE_FUNC LPAR dir RPAR
+dir ::= UP | DOWN | LEFT | RIGHT
+craft ::= CRAFT_FUNC LPAR item RPAR
+collect ::= COLLECT_FUNC LPAR primitive RPAR
+item ::=  ROPE |  KNIFE |  SLINGSHOT | ARROW | GOLDARROW
+ifhas ::= if HAS LPAR item RPAR
+primitive ::= BOUNDARY | WATER | STONE | WORKSHOP0 | WORKSHOP1 | WORKSHOP2 | WOOD | IRON | GRASS | ROCK | GOLD | GEM
+do ::= then task
+
+## Example Programs
+Here are examples of programs written in this DSL:
+
+COLLECT_FUNC(WOOD) ; MOVE_FUNC(RIGHT) ; CRAFT_FUNC(STICK)
+COLLECT_FUNC(GRASS) ; MOVE_FUNC(RIGHT)
+
+## Domain Context
+This DSL is used to solve tasks in the Craft domain. Tasks typically look like:
+- get(wood)
+- make(stick)
+
+The goal is to write programs in the context free grammar (CFG) provided that can complete these tasks using the available functions and recipes.
+
+## Available Recipes
+Here are the recipes for the domain consult them when completing a task:
+
+environment:
+  - boundary
+  - workshop0
+  - workshop1
+  - workshop2
+  - water
+  - stone
+
+primitives:
+  - iron
+  - grass
+  - wood
+  - rock
+  - gold
+  - gem
+
+recipes:
+
+  rope:
+    grass: 1
+    _at: workshop0
+
+  knife:
+    iron: 1
+    rock: 1
+    _at: workshop0
+
+  slingshot:
+    rope: 1
+    wood: 1
+    rock: 1
+    _at: workshop1
+
+  arrow:
+    knife: 1
+    wood: 1
+    _at: workshop0
+
+  goldarrow:
+    gold: 1
+    wood: 1
+    _at: workshop0
+
+## Task
+Generate a program that solves the following task :
+
+**make(slingshot)**
+
+## Output Format Instructions
+Return ONLY the program string delimited by $ signs. Do not include any explanations, comments, or additional text outside the $ delimiters.
+
+
+Example output format:
+$CRAFT_FUNC(ARROW) ; COLLECT_FUNC(WOOD) ; MOVE_FUNC(RIGHT)$

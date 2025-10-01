@@ -1,0 +1,101 @@
+Finished enumerating depth 0 in 0.0000s
+Finished enumerating depth 1 in 0.0000s
+Finished enumerating depth 2 in 0.0000s
+Finished enumerating depth 3 in 0.0001s
+Finished enumerating depth 4 in 0.6147s
+Finished enumerating depth 5 in 0.0005s
+Finished enumerating depth 6 in 0.0011s
+Finished enumerating depth 7 in 0.0028s
+Finished enumerating depth 8 in 42.4408s
+Finished enumerating depth 9 in 0.0327s
+Finished enumerating depth 10 in 0.0428s
+Finished enumerating depth 11 in 0.0649s
+Finished enumerating depth 12 in 1815.4194s
+Finished enumerating depth 13 in 0.6767s
+Finished enumerating depth 14 in 0.9318s
+Finished enumerating depth 15 in 3.5284s
+Finished enumerating depth 0 in 0.0000s
+Finished enumerating depth 1 in 0.0000s
+Finished enumerating depth 2 in 0.0000s
+Finished enumerating depth 3 in 0.0001s
+Finished enumerating depth 4 in 0.6069s
+Finished enumerating depth 5 in 0.0003s
+Finished enumerating depth 6 in 0.0008s
+Finished enumerating depth 7 in 0.0019s
+Finished enumerating depth 8 in 38.3689s
+Finished enumerating depth 9 in 0.0326s
+Finished enumerating depth 10 in 0.0421s
+Finished enumerating depth 11 in 0.0651s
+Finished enumerating depth 12 in 1834.7342s
+Finished enumerating depth 13 in 0.6755s
+Finished enumerating depth 14 in 0.9215s
+Finished enumerating depth 15 in 3.5822s
+Finished enumerating depth 0 in 0.0000s
+Finished enumerating depth 1 in 0.0000s
+Finished enumerating depth 2 in 0.0000s
+Finished enumerating depth 3 in 0.0001s
+Finished enumerating depth 4 in 0.6598s
+Finished enumerating depth 5 in 0.0003s
+Finished enumerating depth 6 in 0.0008s
+Finished enumerating depth 7 in 0.0019s
+Finished enumerating depth 8 in 41.5718s
+Finished enumerating depth 9 in 0.0285s
+Finished enumerating depth 10 in 0.0406s
+Finished enumerating depth 11 in 0.0647s
+Finished enumerating depth 0 in 0.0000s
+Finished enumerating depth 1 in 0.0000s
+Finished enumerating depth 2 in 0.0000s
+Finished enumerating depth 3 in 0.0001s
+Finished enumerating depth 4 in 0.0016s
+Finished enumerating depth 5 in 0.0004s
+Finished enumerating depth 6 in 0.0010s
+Finished enumerating depth 7 in 0.0024s
+Finished enumerating depth 8 in 0.0305s
+Finished enumerating depth 9 in 0.0136s
+Finished enumerating depth 10 in 0.0374s
+Finished enumerating depth 11 in 0.1176s
+Finished enumerating depth 12 in 0.8255s
+Finished enumerating depth 13 in 0.5539s
+Finished enumerating depth 14 in 1.1807s
+Finished enumerating depth 15 in 3.5806s
+Finished enumerating depth 0 in 0.0000s (total programs: 0)
+Finished enumerating depth 1 in 0.0000s (total programs: 0)
+Finished enumerating depth 2 in 0.0000s (total programs: 0)
+Finished enumerating depth 3 in 0.0001s (total programs: 0)
+Finished enumerating depth 4 in 0.0030s (total programs: 21)
+Finished enumerating depth 5 in 0.0004s (total programs: 0)
+Finished enumerating depth 6 in 0.0010s (total programs: 0)
+Finished enumerating depth 7 in 0.0032s (total programs: 0)
+Finished enumerating depth 8 in 0.0507s (total programs: 546)
+Finished enumerating depth 9 in 0.0138s (total programs: 0)
+Finished enumerating depth 10 in 0.0348s (total programs: 0)
+Finished enumerating depth 11 in 0.1178s (total programs: 0)
+Finished enumerating depth 12 in 1.5924s (total programs: 14196)
+Finished enumerating depth 13 in 0.5820s (total programs: 0)
+Finished enumerating depth 14 in 1.1990s (total programs: 0)
+Finished enumerating depth 15 in 3.7729s (total programs: 0)
+Finished enumerating depth 16 in 38.2743s (total programs: 369096)
+Finished enumerating depth 17 in 25.7635s (total programs: 0)
+Finished enumerating depth 18 in 46.1290s (total programs: 0)
+Finished enumerating depth 19 in 351.4500s (total programs: 0)
+Finished enumerating depth 0 in 0.0000s (total programs: 0)
+Finished enumerating depth 1 in 0.0000s (total programs: 0)
+Finished enumerating depth 2 in 0.0000s (total programs: 0)
+Finished enumerating depth 3 in 0.0001s (total programs: 0)
+Finished enumerating depth 4 in 0.0025s (total programs: 21)
+Finished enumerating depth 5 in 0.0004s (total programs: 0)
+Finished enumerating depth 6 in 0.0009s (total programs: 0)
+Finished enumerating depth 7 in 0.0024s (total programs: 0)
+Finished enumerating depth 8 in 0.0574s (total programs: 546)
+Finished enumerating depth 9 in 0.0134s (total programs: 0)
+Finished enumerating depth 10 in 0.0366s (total programs: 0)
+Finished enumerating depth 11 in 0.1195s (total programs: 0)
+Finished enumerating depth 12 in 1.2679s (total programs: 14196)
+Finished enumerating depth 13 in 0.5566s (total programs: 0)
+Finished enumerating depth 14 in 1.1800s (total programs: 0)
+Finished enumerating depth 15 in 3.6171s (total programs: 0)
+Finished enumerating depth 16 in 35.3632s (total programs: 369096)
+Finished enumerating depth 17 in 20.6098s (total programs: 0)
+Finished enumerating depth 18 in 43.9136s (total programs: 0)
+Finished enumerating depth 19 in 415.7644s (total programs: 0)
+Finished enumerating depth 20 in 2085.6344s (total programs: 9596496)

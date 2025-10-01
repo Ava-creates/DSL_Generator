@@ -1,0 +1,68 @@
+def solve(env, item, visualise=False) -> float:
+  """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
+  actions_to_take = craft(env, item)
+  total_reward = 0.0
+
+  for t in range(len(actions_to_take)):
+    action = actions_to_take[t]
+    reward, done, observations = env.step(action)
+    total_reward += reward
+    if done:
+      break
+
+  return total_reward
+
+@funsearch.run
+def evaluate() -> float:
+  """Evaluates a crafting policy on a sample task."""
+  visualise = False
+  recipes_path = "resources/recipes_for_synth.yaml"
+  hints_path = "resources/hints.yaml"     
+  reward = 0
+  env_sampler = env_factory.EnvironmentFactory(
+            recipes_path, hints_path, 6, max_steps=100, 
+            reuse_environments=False, visualise=False)
+  item = "arrow"
+  
+  # Environment setup:
+  env=env_sampler.sample_environment(task_name='make[arrow]')
+  
+  # Actions to execute:
+  env.step(0)
+  env.step(2)
+  env.step(2)
+  env.step(4)
+  env.step(0)
+  env.step(0)
+  env.step(0)
+  env.step(0)
+  env.step(0)
+  env.step(0)
+  env.step(2)
+  env.step(4)
+  env.step(2)
+  env.step(2)
+  env.step(2)
+  env.step(2)
+  env.step(2)
+  env.step(2)
+  env.step(2)
+  env.step(4)
+  env.step(1)
+  env.step(1)
+  env.step(4)
+  # ===== IDENTIFIABLE_BLOCK_END =====
+  reward = solve(env, item, visualise=visualise)  # +1
+  return reward
+
+@funsearch.evolve
+def craft(env, item) -> list[int]:
+  """Returns a list of actions to craft the item which is the index of the item in the env.world.cookbook.index. This function assumes we have all the items/ primitves required for crafting the passed item in the inventory. This function ONLY needs to craft the item by going to the needed workshop and performign the USE action. 
+  
+  Args:
+      env (env.CraftLab): The CraftLab environment instance.
+      item (str): The name of the item to craft.
+
+  Returns:
+      List[int]: A list of action indices the agent can execute to craft the item.
+  """

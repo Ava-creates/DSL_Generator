@@ -1,0 +1,48 @@
+<s> ::= <task> ";" <s> | <task> ";"
+
+<task> ::= <move>
+         | <craft>
+         | <collect>
+         | <if_has> <do>
+         | <sequence>
+
+<sequence> ::= <task> ";" <task>
+
+<move> ::= "move" "(" <dir> ")"
+
+<dir> ::= "UP" | "DOWN" | "LEFT" | "RIGHT"
+
+<craft> ::= "make" "(" <item>  ")"
+
+<collect> ::= "get" "(" <resource> ")"
+
+<if_has> ::= "if" "has" "(" <item> ")"
+
+<do> ::= "then" <task>
+
+<item> ::= "plank"
+         | "stick"
+         | "cloth"
+         | "rope"
+         | "bridge"
+         | "bundle"
+         | "hammer"
+         | "knife"
+         | "bed"
+         | "axe"
+         | "shears"
+         | "ladder"
+         | "slingshot"
+         | "arrow"
+         | "bow"
+         | "bench"
+         | "flag"
+         | "goldarrow"
+
+<resource> ::= "wood"
+             | "iron"
+             | "grass"
+             | "rock"
+             | "gold"
+             | "gem"
+

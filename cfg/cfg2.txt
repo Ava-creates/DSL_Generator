@@ -1,0 +1,53 @@
+<program> ::= <statement> SEMI <program> | <statement> SEMI
+
+<statement> ::= <move> 
+             | <use> 
+             | <craft> 
+             | <ifhas> <do_block> 
+             | <ifnextto> <do_block>
+
+<move> ::= MOVE_FUNC LPAR <direction> RPAR
+
+<direction> ::= UP | DOWN | LEFT | RIGHT
+
+<use> ::= USE_FUNC
+
+<craft> ::= CRAFT_FUNC LPAR <item> RPAR
+
+<item> ::= PLANK 
+        | STICK 
+        | CLOTH 
+        | ROPE 
+        | BRIDGE 
+        | BUNDLE 
+        | HAMMER 
+        | KNIFE 
+        | BED 
+        | AXE 
+        | SHEARS 
+        | LADDER 
+        | SLINGSHOT 
+        | ARROW 
+        | BOW 
+        | BENCH 
+        | FLAG 
+        | GOLDARROW
+
+<ifhas> ::= IF HAS LPAR <item> RPAR
+
+<ifnextto> ::= IF NEXTTO LPAR <kind> RPAR
+
+<kind> ::= BOUNDARY 
+        | WATER 
+        | STONE 
+        | WORKSHOP0 
+        | WORKSHOP1 
+        | WORKSHOP2 
+        | WOOD 
+        | IRON 
+        | GRASS 
+        | ROCK 
+        | GOLD 
+        | GEM
+
+<do_block> ::= DO LBRACE <program> RBRACE
