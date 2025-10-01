@@ -1,0 +1,39 @@
+def woah():
+  return "need a fucntion to get it recognized?"
+
+@funsearch.run
+def evaluate(dir) -> float:
+  """Evaluates a movement policy on a sample task."""
+  visualise = False
+  recipes_path = "resources/recipes.yaml"
+  hints_path = "resources/hints.yaml"
+
+  env_sampler = env_factory.EnvironmentFactory(
+      recipes_path, hints_path, max_steps=100, reuse_environments=False,
+      visualise=visualise)
+
+  env = env_sampler.sample_environment(task_name='make[stick]')
+  
+  l = move(env, dir)
+  if dir == "DOWN":
+    if l == 0:
+      return 1
+    return 0
+  elif dir == "UP":
+    if l == 1:
+      return 1
+    return 0
+  elif dir == "LEFT":
+    if l == 2:
+      return 1
+    return 0
+  elif dir == "RIGHT":
+    if l == 3:
+      return 1
+    return 0
+  return 0
+
+@funsearch.evolve
+def move(env, dir) -> int:
+  """Returns the move action number corresponding to direction mentioned."""
+  return -1

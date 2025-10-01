@@ -1,0 +1,4 @@
+{
+  "tasks": [ "get[wood]", "get[grass]", "get[iron]", "make[stick]", "make[cloth]", "make[plank]", "make[rope]", "make[bridge]", "make[bundle]", "get[gold]", "make[flag]", "make[bed]", "make[axe]", "make[shears]" , "make[ladder]", "get[gem]", "make[knife]",  "make[slingshot]", "make[goldarrow]", "get[gem]"],
+  "time": [3,3,3,3]
+} 

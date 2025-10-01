@@ -1,0 +1,44 @@
+def solve(env, visualise=False) -> float:
+  """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
+  actions_to_take = make_arrow(env)
+  total_reward = 0.0
+
+  for t in range(len(actions_to_take)):
+    action = actions_to_take[t]
+    reward, done, observations = env.step(action)
+    total_reward += reward
+    if done:
+      break
+
+
+  return total_reward
+
+@funsearch.run
+def evaluate() -> float:
+  """Evaluates a collecting policy on a set of sample tasks."""
+  #max reward is 4
+  visualise = False
+  recipes_path = "resources/recipes.yaml"
+  hints_path = "resources/hints.yaml"
+  reward = 0 
+
+  env_sampler = env_factory.EnvironmentFactory(
+  recipes_path, hints_path, 0, max_steps=100, reuse_environments=False,
+            visualise=visualise)
+
+  env = env_sampler.sample_environment(task_name= 'make[arrow]')
+  reward = solve(env,  visualise=visualise)
+  return reward
+
+@funsearch.evolve
+def make_arrow(env: env.CraftLab) -> list[int]:
+  """Returns a sequence of actions to complete the task of make[arrow] 
+    in the given environment. The function gathers the required primitives 
+    from the recipe for 'arrow' and then crafts the arrow.
+  Args:
+      env: The environment instance.
+
+  Returns:
+      List[int]: A list of action indices the agent can execute to complete the task of making arrows.
+  """ 
+  

@@ -1,0 +1,33 @@
+s ::= task SEMI s | task SEMI
+task ::= move | craft | collect | ifhas do
+move ::= MOVE_FUNC LPAR dir RPAR
+dir ::= UP | DOWN | LEFT | RIGHT
+craft ::= CRAFT_FUNC LPAR item RPAR
+collect ::= COLLECT_FUNC LPAR primitive RPAR
+item ::=  ROPE |  KNIFE |  SLINGSHOT | ARROW | GOLDARROW
+ifhas ::= if HAS LPAR item RPAR
+primitive ::= BOUNDARY | WATER | STONE | WORKSHOP0 | WORKSHOP1 | WORKSHOP2 | WOOD | IRON | GRASS | ROCK | GOLD | GEM
+do ::= then task
+
+
+Finished enumerating depth 0 in 0.0000s (total programs: 0)
+Finished enumerating depth 1 in 0.0000s (total programs: 0)
+Finished enumerating depth 2 in 0.0000s (total programs: 0)
+Finished enumerating depth 3 in 0.0001s (total programs: 0)
+Finished enumerating depth 4 in 0.0025s (total programs: 21)
+Finished enumerating depth 5 in 0.0004s (total programs: 0)
+Finished enumerating depth 6 in 0.0009s (total programs: 0)
+Finished enumerating depth 7 in 0.0024s (total programs: 0)
+Finished enumerating depth 8 in 0.0574s (total programs: 546)
+Finished enumerating depth 9 in 0.0134s (total programs: 0)
+Finished enumerating depth 10 in 0.0366s (total programs: 0)
+Finished enumerating depth 11 in 0.1195s (total programs: 0)
+Finished enumerating depth 12 in 1.2679s (total programs: 14196)
+Finished enumerating depth 13 in 0.5566s (total programs: 0)
+Finished enumerating depth 14 in 1.1800s (total programs: 0)
+Finished enumerating depth 15 in 3.6171s (total programs: 0)
+Finished enumerating depth 16 in 35.3632s (total programs: 369096)   --- this should take 3 days as each prog takes .8s ish to evaluate on lula 
+Finished enumerating depth 17 in 20.6098s (total programs: 0)
+Finished enumerating depth 18 in 43.9136s (total programs: 0)
+Finished enumerating depth 19 in 415.7644s (total programs: 0)
+Finished enumerating depth 20 in 2085.6344s (total programs: 9596496)
