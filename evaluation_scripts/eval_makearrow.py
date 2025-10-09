@@ -1,6 +1,11 @@
+import numpy as np
+import time
+import collections
+from craft import craft, env, env_factory
+
 def solve(env, visualise=False) -> float:
   """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
-  actions_to_take = make_stick(env)
+  actions_to_take = make_arrow(env)
   total_reward = 0.0
 
   for t in range(len(actions_to_take)):
@@ -9,7 +14,7 @@ def solve(env, visualise=False) -> float:
     total_reward += reward
     if done:
       break
-  return [total_reward, len(actions_to_take)]
+  return total_reward
 
 def evaluate() -> float:
   """Evaluates a collecting policy on a set of sample tasks."""
@@ -23,18 +28,8 @@ def evaluate() -> float:
   recipes_path, hints_path, 0, max_steps=100, reuse_environments=False,
             visualise=visualise)
 
-  env = env_sampler.sample_environment(task_name= 'make[stick]')
+  env = env_sampler.sample_environment(task_name= 'make[arrow]')
   reward = solve(env,  visualise=visualise)
   return reward
 
-def make_stick(env: env.CraftLab) -> list[int]:
-  """Returns a sequence of actions to complete the task of make[stick] 
-    in the given environment. The function gathers the required primitives 
-    from the recipe for 'stick' and then crafts the stick.
-  Args:
-      env: The environment instance.
 
-  Returns:
-      List[int]: A list of action indices the agent can execute to complete the task of making sticks.
-  """ 
-  

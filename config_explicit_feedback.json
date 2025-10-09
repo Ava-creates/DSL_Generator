@@ -1,0 +1,5 @@
+{
+    "logfile": "results/funsearch/ollama_q2.5_make_arrow_base_baseline.py_prompt_specificationsspecification_with_updated_nld_baseline.txt_2025-09-29_22-58-21.log",
+    "k": 2,
+    "file": "evaluation_scripts/eval_makearrow.py"
+}

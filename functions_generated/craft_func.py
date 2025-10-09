@@ -1,5 +1,7 @@
 import numpy as np
 import collections
+from craft import craft, env, env_factory
+
 # def craft(env, item):
 #     cookbook = env.world.cookbook
 #     goal_index = cookbook.index[item]

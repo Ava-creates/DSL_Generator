@@ -1,9 +1,8 @@
 import numpy as np
 import time
 import collections
-import env_factory
-import craft
-import env
+from craft import craft, env, env_factory
+
 def collect(env, primitive):    # Step 1: Extract the current state from the environment
   import numpy as np
   from collections import deque

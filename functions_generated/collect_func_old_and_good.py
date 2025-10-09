@@ -1,9 +1,8 @@
 import numpy as np
 import time
 import collections
-import env_factory
-import craft
-import env
+from craft import craft, env, env_factory
+
 def collect(env, primitive):
     """
     Computes a shortest path to collect a specified primitive using a stateful Breadth-First Search.

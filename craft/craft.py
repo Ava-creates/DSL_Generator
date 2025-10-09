@@ -106,7 +106,7 @@ class CraftWorld(object):
       s = self.sample_scenario_hard(make_island=make_island, make_cave=make_cave)
     return s
 
-    def sample_scenario_random(self, make_island, make_cave):
+  def sample_scenario_random(self, make_island, make_cave):
       # generate grid
       # print(self.cookbook.n_kinds)
 
