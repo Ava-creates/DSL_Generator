@@ -434,6 +434,8 @@ def synthesis_llm():
     ##Return a program that is able to solve the task
     
     """
+        print(prompt)
+        break
         for i in range(10):
             # response = client.models.generate_content(
             #                 model="gemini-2.5-pro", contents = prompt

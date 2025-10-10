@@ -334,5 +334,5 @@ Data Attributes
 import numpy as np
 import time
 import collections
-formcraft import env_factory, craft, env
+from craft import env_factory, craft, env
 
