@@ -277,7 +277,24 @@ def synthesis_baseline():
             first_file_content = f1.read()
             second_file_content = f2.read()
         
-        prompt = f"{first_file_content}\n{second_file_content}\n"
+        prompt = (
+                f"{first_file_content}\n"
+                f"{second_file_content}\n"
+                + "\n\n"
+                "Your task:\n"
+                "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
+                "Formatting Requirements (do NOT ignore):\n"
+                "1. Your response MUST begin exactly like this:\n"
+                "   ```python\n"
+                "   def make_stick(env):\n"
+                "2. Only output the complete function implementation inside the code block.\n\n"
+                "Example of correct response format:\n"
+                "```python\n"
+                "def make_stick(env):\n"
+                "    # your implementation here\n"
+                "```\n"
+                "Now return only the correct implementation of `make_stick` following these rules."
+            )
         data = []
         data.append((0, 0))
         failed_programs = []
@@ -514,6 +531,6 @@ if __name__ == "__main__":
     print(f"Start symbol: {start_symbol}")
     print(f"Using JSON config file: {json_file}")
     print("\nGenerating programs (worklist)...")
-    synthesis_llm()
+    # synthesis_llm()
 
-    # synthesis_baseline()
+    synthesis_baseline()
