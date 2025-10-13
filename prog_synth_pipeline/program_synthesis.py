@@ -88,7 +88,7 @@ print(evaluate())
                 )
                 # Try to parse numerical output
         output = result.stdout.strip()
-        # print(output)
+        print(output)
         result = ast.literal_eval(output)
 
         # Access the values
@@ -302,7 +302,7 @@ def synthesis_baseline():
         data = []
         data.append((0, 0))
         failed_programs = []
-        for i in range(50):
+        for i in range(500):
             # response = client.models.generate_content(
             #                 model="gemini-2.5-pro", contents = prompt
             #             )
@@ -342,45 +342,32 @@ def synthesis_baseline():
             else:
                 data.append((c, a))
             selected_failed_programs = random.sample(failed_programs, min(4, len(failed_programs)))
-            prompt = (
-                f"{first_file_content}\n"
-                f"{second_file_content}\n"
-                "Previous Failed Programs:\n"
-                + "\n".join(selected_failed_programs)
-                + "\n\n"
-                "Your task:\n"
-                "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
-                "Formatting Requirements (do NOT ignore):\n"
-                "1. Your response MUST begin exactly like this:\n"
-                "   ```python\n"
-                "   def make_stick(env):\n"
-                "2. Only output the complete function implementation inside the code block.\n\n"
-                "Example of correct response format:\n"
-                "```python\n"
-                "def make_stick(env):\n"
-                "    # your implementation here\n"
-                "```\n"
-                "Now return only the correct implementation of `make_stick` following these rules."
-            )
+            # prompt = (
+            #     f"{first_file_content}\n"
+            #     f"{second_file_content}\n"
+            #     "Previous Failed Programs:\n"
+            #     + "\n".join(selected_failed_programs)
+            #     + "\n\n"
+            #     "Your task:\n"
+            #     "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
+            #     "Formatting Requirements (do NOT ignore):\n"
+            #     "1. Your response MUST begin exactly like this:\n"
+            #     "   ```python\n"
+            #     "   def make_stick(env):\n"
+            #     "2. Only output the complete function implementation inside the code block.\n\n"
+            #     "Example of correct response format:\n"
+            #     "```python\n"
+            #     "def make_stick(env):\n"
+            #     "    # your implementation here\n"
+            #     "```\n"
+            #     "Now return only the correct implementation of `make_stick` following these rules."
+            # )
+        # Log data to a file
+        with open("results/plot/data_make_stick_baseline.txt", "a") as log_file:
+            for interactions, reward in data:
+                log_file.write(f"{interactions},{reward}\n")
         plot_watermark(data, "make[stick]")
         return 0
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
