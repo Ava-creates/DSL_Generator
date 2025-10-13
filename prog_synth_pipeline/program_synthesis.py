@@ -1,6 +1,7 @@
 from typing import List
 from collections import deque
 from cfg_parser import CFGParser
+import numpy as np
 import itertools
 import matplotlib.pyplot as plt
 from program_evaluator import ProgramEvaluator 
@@ -85,15 +86,15 @@ print(evaluate())
                 )
                 # Try to parse numerical output
         output = result.stdout.strip()
-        print(output)
+        # print(output)
         result = ast.literal_eval(output)
 
         # Access the values
-        output, actions_count = result
+        output, actions_count = result[0], result[1]
         # print("output ", output)
         try:
             print(output)
-            return float(output), True, actions_count, None
+            float(np.float64(output)), True, actions_count, None
         except ValueError:
             return -1, True, 0 , None
     except subprocess.TimeoutExpired:
@@ -104,7 +105,8 @@ print(evaluate())
         print(f"Output: {e.stdout}")
         print(f"Error: {e.stderr}")
         return -1, False, 0 , e.stderr
-    except:
+    except Exception as e:
+        print(f"Some other error occurred: {e}")
         return -1, False, 0 , "Some error"
     finally:
         # Clean up the temporary file
@@ -317,19 +319,21 @@ def synthesis_baseline():
 
             #vllm gpt 120b
 
-            output = llm.generate(prompt, params)
+            output = llm.generate([prompt], params)
+            # print(output[0].outputs[0].text)
             try:
                 # response = requests.post(api_url, headers=headers, json=payload, timeout=300)
 
                 # response = response.json()["response"]
-                response = output.text
-                print(response)
+                response = output[0].outputs[0].text
+                # print(response)
                 response = response[response.index("```python")+len("```python"):]
                 response = response[:response.index("```")]
-                print(response)
+                # print(response)
             except:
                 continue 
             a, b, c, d= eval(response)
+            print(a, b, c, d)
             if a== -1 :
                 failed_programs.append(response + "\nError:\n"+ d)
                 continue
