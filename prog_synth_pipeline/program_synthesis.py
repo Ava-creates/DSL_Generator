@@ -21,6 +21,7 @@ import pandas as pd
 import os
 import random
 import subprocess
+from vllm import LLM, SamplingParams
 
 def eval(res):
     # with tempfile.TemporaryDirectory() as temp_dir:
@@ -257,6 +258,8 @@ def find_bad_func(funcs, task):
     # Run FunSearch for each failing function
 
 def synthesis_baseline():
+    llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
+    params = SamplingParams(temperature=0.7, max_tokens=5000)
     with open("cfg/cfg.txt") as f:
         cfg = f.read()
     with open("craft/resources/recipes.yaml") as f:
@@ -282,23 +285,28 @@ def synthesis_baseline():
             # response = client.models.generate_content(
             #                 model="gemini-2.5-pro", contents = prompt
             #             )
-            payload = {
-              "model": "gpt-oss:latest", 
-              "prompt": prompt, 
-              "template": "{{.Prompt}}",
-              "stream": False, 
-              "options": {
-                "num_ctx": 4096, 
-                # "stop": self.stop_tokens
-              }
-            }
-            api_url = "http://129.128.243.184:11434/api/generate"
-            headers = {"Content-Type": "application/json"}
+            # payload = {
+            #   "model": "gpt-oss:latest", 
+            #   "prompt": prompt, 
+            #   "template": "{{.Prompt}}",
+            #   "stream": False, 
+            #   "options": {
+            #     "num_ctx": 4096, 
+            #     # "stop": self.stop_tokens
+            #   }
+            # }
+            # api_url = "http://129.128.243.184:11434/api/generate"
+            # headers = {"Content-Type": "application/json"}
+
+            #vllm gpt 120b
+
+            output = llm.generate(prompt, params)
             try:
-                response = requests.post(api_url, headers=headers, json=payload, timeout=300)
-                response = response.json()["response"]
-                # response = response.text
-            
+                # response = requests.post(api_url, headers=headers, json=payload, timeout=300)
+
+                # response = response.json()["response"]
+                response = output.text
+                print(response)
                 response = response[response.index("```python")+len("```python"):]
                 response = response[:response.index("```")]
                 print(response)
