@@ -60,8 +60,10 @@ def evaluate() -> float:
   hints_path = "craft/resources/hints.yaml"
   reward = 0 
 
+  ##easy make stick env 
+
   env_sampler = env_factory.EnvironmentFactory(
-  recipes_path, hints_path, 7, max_steps=100, reuse_environments=False,
+  recipes_path, hints_path, 0, max_steps=100, reuse_environments=False,
             visualise=visualise)
 
   env = env_sampler.sample_environment(task_name= 'make[stick]')
@@ -94,7 +96,7 @@ print(evaluate())
         # print("output ", output)
         try:
             print(output)
-            float(np.float64(output)), True, actions_count, None
+            return float(output), True, actions_count, None
         except ValueError:
             return -1, True, 0 , None
     except subprocess.TimeoutExpired:
