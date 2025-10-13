@@ -89,6 +89,9 @@ print(evaluate())
                 # Try to parse numerical output
         output = result.stdout.strip()
         print(output)
+        # Convert numpy types to native Python types and parse as JSON
+        output = output.replace("np.float64", "")
+        output = output.replace("(", "").replace(")", "")
         result = ast.literal_eval(output)
 
         # Access the values
