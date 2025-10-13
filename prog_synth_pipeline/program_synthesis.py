@@ -63,7 +63,7 @@ def evaluate() -> float:
   recipes_path, hints_path, 7, max_steps=100, reuse_environments=False,
             visualise=visualise)
 
-  env = env_sampler.sample_environment(task_name= 'make[arrow]')
+  env = env_sampler.sample_environment(task_name= 'make[stick]')
   reward = solve(env,  visualise=visualise)
   return reward
 {res}
@@ -273,7 +273,7 @@ def synthesis_baseline():
         plot =[]
         env = env_sampler.sample_environment(task_name=task)
         markdown = grid_to_markdown(env._current_state.grid, env.world.cookbook)
-        with open("prompt_specifications/specification_with_updated_nld_baseline.txt", "r") as f1, open("function_specific_prompts/make_arrow_base.txt", "r") as f2:
+        with open("prompt_specifications/specification_with_updated_nld_baseline.txt", "r") as f1, open("function_specific_prompts/make_stick_base.txt", "r") as f2:
             first_file_content = f1.read()
             second_file_content = f2.read()
         
@@ -356,7 +356,7 @@ def synthesis_baseline():
                 "```\n"
                 "Now return only the correct implementation of `make_stick` following these rules."
             )
-        plot_watermark(data, "make[arrow]")
+        plot_watermark(data, "make[stick]")
         return 0
 
 
