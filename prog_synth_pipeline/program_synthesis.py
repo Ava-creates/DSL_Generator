@@ -91,12 +91,13 @@ print(evaluate())
         print(output)
         # Convert numpy types to native Python types and parse as JSON
         output = output.replace("np.float64", "")
+        output = output.replace("np.float32", "")
         output = output.replace("(", "").replace(")", "")
         result = ast.literal_eval(output)
 
         # Access the values
         output, actions_count = result[0], result[1]
-        # print("output ", output)
+        print("output ", output)
         try:
             print(output)
             return float(output), True, actions_count, None
