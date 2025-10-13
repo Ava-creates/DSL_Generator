@@ -8,17 +8,17 @@ alias deactivate 'test $?_OLD_VIRTUAL_PATH != 0 && setenv PATH "$_OLD_VIRTUAL_PA
 # Unset irrelevant variables.
 deactivate nondestructive
 
-setenv VIRTUAL_ENV /Users/avani4/Desktop/DSL_Generator/new_dsl_env
+setenv VIRTUAL_ENV "/project/aip-lelis/avani/DSL_Generator/new_dsl_env"
 
 set _OLD_VIRTUAL_PATH="$PATH"
-setenv PATH "$VIRTUAL_ENV/"bin":$PATH"
+setenv PATH "$VIRTUAL_ENV/bin:$PATH"
 
 
 set _OLD_VIRTUAL_PROMPT="$prompt"
 
 if (! "$?VIRTUAL_ENV_DISABLE_PROMPT") then
-    set prompt = '(new_dsl_env) '"$prompt"
-    setenv VIRTUAL_ENV_PROMPT '(new_dsl_env) '
+    set prompt = "(new_dsl_env) $prompt"
+    setenv VIRTUAL_ENV_PROMPT "(new_dsl_env) "
 endif
 
 alias pydoc python -m pydoc
