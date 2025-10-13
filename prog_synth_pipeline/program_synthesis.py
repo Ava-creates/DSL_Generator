@@ -273,7 +273,7 @@ def synthesis_baseline():
         plot =[]
         env = env_sampler.sample_environment(task_name=task)
         markdown = grid_to_markdown(env._current_state.grid, env.world.cookbook)
-        with open("/Users/avanitiwari/Desktop/DSL_Generator/prompt_specifications/specification_with_updated_nld_baseline.txt", "r") as f1, open("/Users/avanitiwari/Desktop/DSL_Generator/function_specific_prompts/make_arrow_base.txt", "r") as f2:
+        with open("prompt_specifications/specification_with_updated_nld_baseline.txt", "r") as f1, open("function_specific_prompts/make_arrow_base.txt", "r") as f2:
             first_file_content = f1.read()
             second_file_content = f2.read()
         
