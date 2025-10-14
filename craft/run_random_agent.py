@@ -6,8 +6,7 @@ from __future__ import print_function
 import numpy as np
 import time
 
-import env_factory
-
+from . import env_factory
 
 def run_loop(env, n_steps, visualise=False):
   possible_actions = env.action_specs()
@@ -78,12 +77,12 @@ def run_loop(env, n_steps, visualise=False):
 
 def main():
   visualise = True
-  recipes_path = "resources/recipes.yaml"
-  hints_path = "resources/hints.yaml"
+  recipes_path = "craft/resources/recipes.yaml"
+  hints_path = "craft/resources/hints.yaml"
   # env_sampler = env_factory.EnvironmentFactory(
   #     recipes_path, hints_path, 6, max_steps=100, reuse_environments=False,
   #     visualise=visualise)
-  recipes_path_2 = "resources/recipes_for_synth.yaml"
+  recipes_path_2 = "craft/resources/recipes_for_synth.yaml"
   item = "arrow"
   env_sampler = env_factory.EnvironmentFactory(
             recipes_path_2, hints_path, 6, max_steps=100, 
