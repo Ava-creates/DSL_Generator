@@ -402,7 +402,7 @@ def synthesis_llm():
         # print(prompt)
         # break
         for i in range(10):
-                prompt = f"""
+            prompt = f"""
     You are a Domain Specific Language (DSL) program generator for the Craft domain. 
 
     ### Start State
