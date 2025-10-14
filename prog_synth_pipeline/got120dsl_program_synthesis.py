@@ -361,8 +361,7 @@ def synthesis_baseline():
             #     "2. Only output the complete function implementation inside the code block.\n\n"
             #     "Example of correct response format:\n"
             #     "```python\n"
-            #     "def make_stick(env):\n"
-            #     "    # your implementation here\n"
+            #     "def make_stick(env):\n"            #     "    # your implementation here\n"
             #     "```\n"
             #     "Now return only the correct implementation of `make_stick` following these rules."
             # )
@@ -379,18 +378,19 @@ def synthesis_baseline():
 
 def synthesis_llm():
     llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
-    params = SamplingParams(temperature=0.7, max_tokens=5000)
+    params = SamplingParams(temperature=0.7, max_tokens=15000)
     with open("cfg/cfg.txt") as f:
         cfg = f.read()
     with open("craft/resources/recipes.yaml") as f:
         recipes = f.read()
 
-    client = genai.Client()
+#    client = genai.Client()
     first_failing_funcs = []
     programs = []
 
     for task in tasks:
         plot =[]
+        print(task)
         plot.append((0,0))
         env = env_sampler.sample_environment(task_name=task)
         inter, reward, = 0, 0 
@@ -398,7 +398,7 @@ def synthesis_llm():
         rewards = []
         markdown = grid_to_markdown(env._current_state.grid, env.world.cookbook)
         # print(markdown)
-        program = "$MOVE_FUNC(UP) ;"
+        program = "MOVE_FUNC(UP) ;"
         # print(prompt)
         # break
         for i in range(10):
@@ -453,7 +453,7 @@ def synthesis_llm():
     ## Output Format Instructions
     Return ONLY the program string delimited by $ signs. Do not include any explanations, comments, or additional text outside the $ delimiters.
     Example output ->
-    $program$
+    $MOVE_FUNC(UP) ;$
 
     ##Previous program that did not solve the task:
     {program}
@@ -481,8 +481,8 @@ def synthesis_llm():
             # response = response.json()["response"]
             output = llm.generate([prompt], params)
             response = output[0].outputs[0].text
-
-            # print(response)
+            print(prompt)
+            print(response)
             # response = response.text for gemini
             # b = response.strip('$ ')
             b = re.search(r'\$(.*?)\$\s*', response)
