@@ -273,7 +273,7 @@ def synthesis_baseline():
     with open("craft/resources/recipes.yaml") as f:
         recipes = f.read()
 
-    client = genai.Client()
+    # client = genai.Client()
     first_failing_funcs = []
     programs = []
     tasks = ['make[stick]']
