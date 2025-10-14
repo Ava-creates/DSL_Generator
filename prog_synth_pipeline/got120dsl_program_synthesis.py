@@ -378,14 +378,14 @@ def synthesis_baseline():
 
 
 def synthesis_llm():
-    llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
+    llm = LLM(model="/scratch/avani/gpt", tensor_parallel_size=2)
     params = SamplingParams(temperature=0.7, max_tokens=5000)
     with open("cfg/cfg.txt") as f:
         cfg = f.read()
     with open("craft/resources/recipes.yaml") as f:
         recipes = f.read()
 
-    client = genai.Client()
+#    client = genai.Client()
     first_failing_funcs = []
     programs = []
 
@@ -458,8 +458,7 @@ def synthesis_llm():
     ##Return a program that is able to solve the task
     
     """
-        print(prompt)
-        break
+        
         for i in range(10):
             # response = client.models.generate_content(
             #                 model="gemini-2.5-pro", contents = prompt
@@ -482,18 +481,19 @@ def synthesis_llm():
             output = llm.generate([prompt], params)
             response = output[0].outputs[0].text
 
-            print(response)
+#            print(response)
             # response = response.text for gemini
             # b = response.strip('$ ')
-            response = "Here is $some text$ and more"
+        #    response = "Here is $some text$ and more"
             b = re.search(r'\$(.*?)\$\s*', response)
             if b:
                 b = b.group(1)
             else:
                 continue
             print(b)
+            program = b 
             # b= "COLLECT_FUNC(WOOD) ;  COLLECT_FUNC(IRON) ; CRAFT_FUNC(BRIDGE) ;"
-            programs.append(b)
+            #programs.append(b)
             a, program_str, results, s, r, eval_time, task, funcs, interact, rewa = evaluate(b, task ,env, inter, reward)
             # print(a)
             # print(len(interact))
