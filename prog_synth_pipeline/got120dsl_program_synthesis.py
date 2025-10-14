@@ -378,14 +378,14 @@ def synthesis_baseline():
 
 
 def synthesis_llm():
-    llm = LLM(model="/scratch/avani/gpt", tensor_parallel_size=2)
+    llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
     params = SamplingParams(temperature=0.7, max_tokens=5000)
     with open("cfg/cfg.txt") as f:
         cfg = f.read()
     with open("craft/resources/recipes.yaml") as f:
         recipes = f.read()
 
-#    client = genai.Client()
+    client = genai.Client()
     first_failing_funcs = []
     programs = []
 
@@ -399,7 +399,10 @@ def synthesis_llm():
         markdown = grid_to_markdown(env._current_state.grid, env.world.cookbook)
         # print(markdown)
         program = "$MOVE_FUNC(UP) ;"
-        prompt = f"""
+        # print(prompt)
+        # break
+        for i in range(10):
+                prompt = f"""
     You are a Domain Specific Language (DSL) program generator for the Craft domain. 
 
     ### Start State
@@ -458,8 +461,6 @@ def synthesis_llm():
     ##Return a program that is able to solve the task
     
     """
-        
-        for i in range(10):
             # response = client.models.generate_content(
             #                 model="gemini-2.5-pro", contents = prompt
             #             )
@@ -481,22 +482,19 @@ def synthesis_llm():
             output = llm.generate([prompt], params)
             response = output[0].outputs[0].text
 
-#            print(response)
+            # print(response)
             # response = response.text for gemini
             # b = response.strip('$ ')
-        #    response = "Here is $some text$ and more"
             b = re.search(r'\$(.*?)\$\s*', response)
             if b:
                 b = b.group(1)
             else:
                 continue
             print(b)
-            program = b 
+            program = b
             # b= "COLLECT_FUNC(WOOD) ;  COLLECT_FUNC(IRON) ; CRAFT_FUNC(BRIDGE) ;"
-            #programs.append(b)
+            # programs.append(b)
             a, program_str, results, s, r, eval_time, task, funcs, interact, rewa = evaluate(b, task ,env, inter, reward)
-            # print(a)
-            # print(len(interact))
             interactions += interact
             rewards += rewa
             inter+= interactions[-1] if interactions else 0
@@ -510,6 +508,7 @@ def synthesis_llm():
                     f.write(ans)
                 break
             else:
+                # program = b
                 find_bad_func(funcs, task)
         plot_interactions_rewards(interactions, rewards, task)
         plot_watermark(plot, task)
