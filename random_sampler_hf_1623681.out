@@ -1,0 +1,199 @@
+INFO 10-14 18:39:28 [__init__.py:216] Automatically detected platform cuda.
+Start symbol: s
+Using JSON config file: prog_synth_pipeline/task_config.json
+
+Generating programs (worklist)...
+INFO 10-14 18:39:31 [utils.py:233] non-default args: {'tensor_parallel_size': 4, 'disable_log_stats': True, 'model': '/scratch/avani/gpt'}
+INFO 10-14 18:39:43 [model.py:547] Resolved architecture: GptOssForCausalLM
+ERROR 10-14 18:39:43 [config.py:278] Error retrieving safetensors: Repo id must be in the form 'repo_name' or 'namespace/repo_name': '/scratch/avani/gpt'. Use `repo_type` argument if needed., retrying 1 of 2
+ERROR 10-14 18:39:45 [config.py:276] Error retrieving safetensors: Repo id must be in the form 'repo_name' or 'namespace/repo_name': '/scratch/avani/gpt'. Use `repo_type` argument if needed.
+INFO 10-14 18:39:45 [model.py:1730] Downcasting torch.float32 to torch.bfloat16.
+INFO 10-14 18:39:45 [model.py:1510] Using max model len 131072
+INFO 10-14 18:39:46 [scheduler.py:205] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 10-14 18:39:46 [config.py:271] Overriding max cuda graph capture size to 992 for performance.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:47 [core.py:644] Waiting for init message from front-end.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:47 [core.py:77] Initializing a V1 LLM engine (v0.11.0) with config: model='/scratch/avani/gpt', speculative_config=None, tokenizer='/scratch/avani/gpt', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=131072, download_dir=None, load_format=auto, tensor_parallel_size=4, pipeline_parallel_size=1, data_parallel_size=1, disable_custom_all_reduce=False, quantization=mxfp4, enforce_eager=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_fallback=False, disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='openai_gptoss'), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None), seed=0, served_model_name=/scratch/avani/gpt, enable_prefix_caching=True, chunked_prefill_enabled=True, pooler_config=None, compilation_config={"level":3,"debug_dump_path":"","cache_dir":"","backend":"","custom_ops":[],"splitting_ops":["vllm.unified_attention","vllm.unified_attention_with_output","vllm.mamba_mixer2","vllm.mamba_mixer","vllm.short_conv","vllm.linear_attention","vllm.plamo2_mamba_mixer","vllm.gdn_attention","vllm.sparse_attn_indexer"],"use_inductor":true,"compile_sizes":[],"inductor_compile_config":{"enable_auto_functionalized_v2":false},"inductor_passes":{},"cudagraph_mode":[2,1],"use_cudagraph":true,"cudagraph_num_of_warmups":1,"cudagraph_capture_sizes":[992,976,960,944,928,912,896,880,864,848,832,816,800,784,768,752,736,720,704,688,672,656,640,624,608,592,576,560,544,528,512,496,480,464,448,432,416,400,384,368,352,336,320,304,288,272,256,248,240,232,224,216,208,200,192,184,176,168,160,152,144,136,128,120,112,104,96,88,80,72,64,56,48,40,32,24,16,8,4,2,1],"cudagraph_copy_inputs":false,"full_cuda_graph":false,"use_inductor_graph_partition":false,"pass_config":{},"max_capture_size":992,"local_cache_dir":null}
+[1;36m(EngineCore_DP0 pid=820552)[0;0m WARNING 10-14 18:39:47 [multiproc_executor.py:720] Reducing Torch parallelism from 32 threads to 1 to avoid unnecessary CPU contention. Set OMP_NUM_THREADS in the external environment to tune this value as needed.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:47 [shm_broadcast.py:289] vLLM message queue communication handle: Handle(local_reader_ranks=[0, 1, 2, 3], buffer_handle=(4, 16777216, 10, 'psm_39649bdd'), local_subscribe_addr='ipc:///tmp/41cddadb-5932-456f-aaf2-b2494597cafb', remote_subscribe_addr=None, remote_addr_ipv6=False)
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:48 [shm_broadcast.py:289] vLLM message queue communication handle: Handle(local_reader_ranks=[0], buffer_handle=(1, 10485760, 10, 'psm_38cb225c'), local_subscribe_addr='ipc:///tmp/f73ec6ab-4109-44ec-b321-dbf0c5ac78b9', remote_subscribe_addr=None, remote_addr_ipv6=False)
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:48 [shm_broadcast.py:289] vLLM message queue communication handle: Handle(local_reader_ranks=[0], buffer_handle=(1, 10485760, 10, 'psm_65cf9e4f'), local_subscribe_addr='ipc:///tmp/f177b5e0-865e-4e0b-b9e3-66881f082967', remote_subscribe_addr=None, remote_addr_ipv6=False)
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:48 [shm_broadcast.py:289] vLLM message queue communication handle: Handle(local_reader_ranks=[0], buffer_handle=(1, 10485760, 10, 'psm_20daaa6c'), local_subscribe_addr='ipc:///tmp/006d9e4b-72ba-4de1-b3cd-8425bac4514e', remote_subscribe_addr=None, remote_addr_ipv6=False)
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:48 [shm_broadcast.py:289] vLLM message queue communication handle: Handle(local_reader_ranks=[0], buffer_handle=(1, 10485760, 10, 'psm_f1385f2a'), local_subscribe_addr='ipc:///tmp/13577b58-e5ea-4ebe-b862-15a30afa3a25', remote_subscribe_addr=None, remote_addr_ipv6=False)
+[Gloo] Rank 0 is connected to 3 peer ranks. Expected number of connected peer ranks is : 3
+[Gloo] Rank 2 is connected to 3 peer ranks. Expected number of connected peer ranks is : 3
+[Gloo] Rank 1 is connected to 3 peer ranks. Expected number of connected peer ranks is : 3
+[Gloo] Rank 3 is connected to 3 peer ranks. Expected number of connected peer ranks is : 3
+[Gloo] Rank 3 is connected to 3 peer ranks. Expected number of connected peer ranks is : 3
+[Gloo] Rank 1 is connected to 3 peer ranks. Expected number of connected peer ranks is : 3
+[Gloo] Rank 0 is connected to 3 peer ranks. Expected number of connected peer ranks is : 3
+[Gloo] Rank 2 is connected to 3 peer ranks. Expected number of connected peer ranks is : 3
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:49 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:49 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:49 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:49 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:49 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:49 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:49 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:49 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP0 pid=820552)[0;0m WARNING 10-14 18:39:50 [symm_mem.py:58] SymmMemCommunicator: Device capability 8.9 not supported, communicator is not available.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m WARNING 10-14 18:39:50 [symm_mem.py:58] SymmMemCommunicator: Device capability 8.9 not supported, communicator is not available.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m WARNING 10-14 18:39:50 [symm_mem.py:58] SymmMemCommunicator: Device capability 8.9 not supported, communicator is not available.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m WARNING 10-14 18:39:50 [symm_mem.py:58] SymmMemCommunicator: Device capability 8.9 not supported, communicator is not available.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m WARNING 10-14 18:39:50 [custom_all_reduce.py:144] Custom allreduce is disabled because it's not supported on more than two PCIe-only GPUs. To silence this warning, specify disable_custom_all_reduce=True explicitly.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m WARNING 10-14 18:39:50 [custom_all_reduce.py:144] Custom allreduce is disabled because it's not supported on more than two PCIe-only GPUs. To silence this warning, specify disable_custom_all_reduce=True explicitly.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m WARNING 10-14 18:39:50 [custom_all_reduce.py:144] Custom allreduce is disabled because it's not supported on more than two PCIe-only GPUs. To silence this warning, specify disable_custom_all_reduce=True explicitly.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m WARNING 10-14 18:39:50 [custom_all_reduce.py:144] Custom allreduce is disabled because it's not supported on more than two PCIe-only GPUs. To silence this warning, specify disable_custom_all_reduce=True explicitly.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:50 [shm_broadcast.py:289] vLLM message queue communication handle: Handle(local_reader_ranks=[1, 2, 3], buffer_handle=(3, 4194304, 6, 'psm_be20b9cd'), local_subscribe_addr='ipc:///tmp/4a4c6926-9816-4848-bb82-356d0e6ef7c5', remote_subscribe_addr=None, remote_addr_ipv6=False)
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 3 peer ranks. Expected number of connected peer ranks is : 3
+[Gloo] Rank 1 is connected to 3 peer ranks. Expected number of connected peer ranks is : 3
+[Gloo] Rank 2 is connected to 3 peer ranks. Expected number of connected peer ranks is : 3
+[Gloo] Rank 3 is connected to 3 peer ranks. Expected number of connected peer ranks is : 3
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:50 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:50 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:50 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:50 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:50 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:50 [__init__.py:1384] Found nccl from library libnccl.so.2
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:50 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:50 [pynccl.py:103] vLLM is using nccl==2.27.3
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:50 [parallel_state.py:1208] rank 0 in world size 4 is assigned as DP rank 0, PP rank 0, TP rank 0, EP rank 0
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:50 [parallel_state.py:1208] rank 1 in world size 4 is assigned as DP rank 0, PP rank 0, TP rank 1, EP rank 1
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:50 [parallel_state.py:1208] rank 2 in world size 4 is assigned as DP rank 0, PP rank 0, TP rank 2, EP rank 2
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:39:50 [parallel_state.py:1208] rank 3 in world size 4 is assigned as DP rank 0, PP rank 0, TP rank 3, EP rank 3
+[1;36m(EngineCore_DP0 pid=820552)[0;0m WARNING 10-14 18:39:50 [topk_topp_sampler.py:66] FlashInfer is not available. Falling back to the PyTorch-native implementation of top-p & top-k sampling. For the best performance, please install FlashInfer.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m WARNING 10-14 18:39:50 [topk_topp_sampler.py:66] FlashInfer is not available. Falling back to the PyTorch-native implementation of top-p & top-k sampling. For the best performance, please install FlashInfer.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m WARNING 10-14 18:39:50 [topk_topp_sampler.py:66] FlashInfer is not available. Falling back to the PyTorch-native implementation of top-p & top-k sampling. For the best performance, please install FlashInfer.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m WARNING 10-14 18:39:50 [topk_topp_sampler.py:66] FlashInfer is not available. Falling back to the PyTorch-native implementation of top-p & top-k sampling. For the best performance, please install FlashInfer.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:39:50 [gpu_model_runner.py:2602] Starting to load model /scratch/avani/gpt...
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:39:50 [gpu_model_runner.py:2602] Starting to load model /scratch/avani/gpt...
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:39:50 [gpu_model_runner.py:2602] Starting to load model /scratch/avani/gpt...
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:39:51 [gpu_model_runner.py:2602] Starting to load model /scratch/avani/gpt...
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:39:51 [gpu_model_runner.py:2634] Loading model from scratch...
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:39:51 [gpu_model_runner.py:2634] Loading model from scratch...
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:39:51 [gpu_model_runner.py:2634] Loading model from scratch...
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:39:51 [gpu_model_runner.py:2634] Loading model from scratch...
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:39:51 [cuda.py:361] Using Triton backend on V1 engine.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:39:51 [cuda.py:361] Using Triton backend on V1 engine.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:39:51 [cuda.py:361] Using Triton backend on V1 engine.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:39:51 [cuda.py:361] Using Triton backend on V1 engine.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:39:51 [mxfp4.py:98] Using Marlin backend
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:39:51 [mxfp4.py:98] Using Marlin backend
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:39:51 [mxfp4.py:98] Using Marlin backend
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:39:51 [mxfp4.py:98] Using Marlin backend
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:41:57 [default_loader.py:267] Loading weights took 125.63 seconds
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:41:57 [default_loader.py:267] Loading weights took 125.63 seconds
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m WARNING 10-14 18:41:57 [marlin_utils_fp4.py:196] Your GPU does not have native support for FP4 computation but FP4 quantization is being used. Weight-only FP4 compression will be used leveraging the Marlin kernel. This may degrade performance for compute-heavy workloads.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m WARNING 10-14 18:41:57 [marlin_utils_fp4.py:196] Your GPU does not have native support for FP4 computation but FP4 quantization is being used. Weight-only FP4 compression will be used leveraging the Marlin kernel. This may degrade performance for compute-heavy workloads.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:41:57 [default_loader.py:267] Loading weights took 125.64 seconds
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:41:57 [default_loader.py:267] Loading weights took 125.64 seconds
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m WARNING 10-14 18:41:57 [marlin_utils_fp4.py:196] Your GPU does not have native support for FP4 computation but FP4 quantization is being used. Weight-only FP4 compression will be used leveraging the Marlin kernel. This may degrade performance for compute-heavy workloads.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m WARNING 10-14 18:41:57 [marlin_utils_fp4.py:196] Your GPU does not have native support for FP4 computation but FP4 quantization is being used. Weight-only FP4 compression will be used leveraging the Marlin kernel. This may degrade performance for compute-heavy workloads.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:41:59 [gpu_model_runner.py:2653] Model loading took 17.2205 GiB and 127.578167 seconds
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:41:59 [gpu_model_runner.py:2653] Model loading took 17.2205 GiB and 127.592711 seconds
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:41:59 [gpu_model_runner.py:2653] Model loading took 17.2205 GiB and 127.647389 seconds
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:41:59 [gpu_model_runner.py:2653] Model loading took 17.2205 GiB and 127.634955 seconds
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:42:07 [backends.py:548] Using cache directory: /tmp/cache/vllm/torch_compile_cache/cbcb6ab1a8/rank_3_0/backbone for vLLM's torch.compile
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:42:07 [backends.py:548] Using cache directory: /tmp/cache/vllm/torch_compile_cache/cbcb6ab1a8/rank_1_0/backbone for vLLM's torch.compile
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:42:07 [backends.py:548] Using cache directory: /tmp/cache/vllm/torch_compile_cache/cbcb6ab1a8/rank_2_0/backbone for vLLM's torch.compile
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:42:07 [backends.py:559] Dynamo bytecode transform time: 7.69 s
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:42:07 [backends.py:548] Using cache directory: /tmp/cache/vllm/torch_compile_cache/cbcb6ab1a8/rank_0_0/backbone for vLLM's torch.compile
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:42:07 [backends.py:559] Dynamo bytecode transform time: 7.69 s
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:42:07 [backends.py:559] Dynamo bytecode transform time: 7.59 s
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:42:07 [backends.py:559] Dynamo bytecode transform time: 7.59 s
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:42:11 [backends.py:197] Cache the graph for dynamic shape for later use
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:42:11 [backends.py:197] Cache the graph for dynamic shape for later use
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:42:11 [backends.py:197] Cache the graph for dynamic shape for later use
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:42:11 [backends.py:197] Cache the graph for dynamic shape for later use
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:42:40 [backends.py:218] Compiling a graph for dynamic shape takes 31.60 s
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:42:40 [backends.py:218] Compiling a graph for dynamic shape takes 31.95 s
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:42:40 [backends.py:218] Compiling a graph for dynamic shape takes 32.34 s
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:42:40 [backends.py:218] Compiling a graph for dynamic shape takes 32.27 s
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:42:43 [marlin_utils.py:353] You are running Marlin kernel with bf16 on GPUs before SM90. You can consider change to fp16 to achieve better performance if possible.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:42:43 [marlin_utils.py:353] You are running Marlin kernel with bf16 on GPUs before SM90. You can consider change to fp16 to achieve better performance if possible.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:42:43 [marlin_utils.py:353] You are running Marlin kernel with bf16 on GPUs before SM90. You can consider change to fp16 to achieve better performance if possible.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:42:43 [marlin_utils.py:353] You are running Marlin kernel with bf16 on GPUs before SM90. You can consider change to fp16 to achieve better performance if possible.
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:42:43 [monitor.py:34] torch.compile takes 39.29 s in total
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:42:43 [monitor.py:34] torch.compile takes 39.85 s in total
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:42:43 [monitor.py:34] torch.compile takes 39.54 s in total
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:42:43 [monitor.py:34] torch.compile takes 40.03 s in total
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:42:45 [gpu_worker.py:298] Available KV cache memory: 20.81 GiB
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:42:45 [gpu_worker.py:298] Available KV cache memory: 20.81 GiB
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:42:45 [gpu_worker.py:298] Available KV cache memory: 20.81 GiB
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:42:45 [gpu_worker.py:298] Available KV cache memory: 20.81 GiB
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:42:46 [kv_cache_utils.py:1087] GPU KV cache size: 1,212,112 tokens
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:42:46 [kv_cache_utils.py:1091] Maximum concurrency for 131,072 tokens per request: 17.39x
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:42:46 [kv_cache_utils.py:1087] GPU KV cache size: 1,212,112 tokens
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:42:46 [kv_cache_utils.py:1091] Maximum concurrency for 131,072 tokens per request: 17.39x
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:42:46 [kv_cache_utils.py:1087] GPU KV cache size: 1,212,112 tokens
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:42:46 [kv_cache_utils.py:1091] Maximum concurrency for 131,072 tokens per request: 17.39x
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:42:46 [kv_cache_utils.py:1087] GPU KV cache size: 1,212,112 tokens
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:42:46 [kv_cache_utils.py:1091] Maximum concurrency for 131,072 tokens per request: 17.39x
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP3 pid=820564)[0;0m INFO 10-14 18:43:04 [gpu_model_runner.py:3480] Graph capturing finished in 18 secs, took 1.99 GiB
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP1 pid=820560)[0;0m INFO 10-14 18:43:04 [gpu_model_runner.py:3480] Graph capturing finished in 18 secs, took 1.99 GiB
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP0 pid=820558)[0;0m INFO 10-14 18:43:04 [gpu_model_runner.py:3480] Graph capturing finished in 18 secs, took 1.99 GiB
+[1;36m(EngineCore_DP0 pid=820552)[0;0m [1;36m(Worker_TP2 pid=820562)[0;0m INFO 10-14 18:43:04 [gpu_model_runner.py:3480] Graph capturing finished in 18 secs, took 1.99 GiB
+[1;36m(EngineCore_DP0 pid=820552)[0;0m INFO 10-14 18:43:04 [core.py:210] init engine (profile, create kv cache, warmup model) took 64.60 seconds
+INFO 10-14 18:43:05 [llm.py:306] Supported_tasks: ['generate']
+[0.0, 0]
+output  0.0
+0.0
+0.0 True 0 None
+[0.0, 0]
+output  0.0
+0.0
+0.0 True 0 None
+Process Error: Command failed with exit code 1
+Command: ['python', '/project/aip-lelis/avani/DSL_Generator/explicit_generated_code_819884_1760489076036174.py']
+Output: 
+Error: Traceback (most recent call last):
+  File "/project/aip-lelis/avani/DSL_Generator/explicit_generated_code_819884_1760489076036174.py", line 135, in <module>
+    print(evaluate())
+          ^^^^^^^^^^
+  File "/project/aip-lelis/avani/DSL_Generator/explicit_generated_code_819884_1760489076036174.py", line 34, in evaluate
+    reward = solve(env,  visualise=visualise)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/aip-lelis/avani/DSL_Generator/explicit_generated_code_819884_1760489076036174.py", line 8, in solve
+    actions_to_take = make_stick(env)
+                      ^^^^^^^^^^^^^^^
+  File "/project/aip-lelis/avani/DSL_Generator/explicit_generated_code_819884_1760489076036174.py", line 126, in make_stick
+    locations = np.argwhere(grid[:, :, workshop_idx] > 0)
+                            ~~~~^^^^^^^^^^^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), numpy.newaxis (`None`) and integer or boolean arrays are valid indices
+
+-1 False 0 Traceback (most recent call last):
+  File "/project/aip-lelis/avani/DSL_Generator/explicit_generated_code_819884_1760489076036174.py", line 135, in <module>
+    print(evaluate())
+          ^^^^^^^^^^
+  File "/project/aip-lelis/avani/DSL_Generator/explicit_generated_code_819884_1760489076036174.py", line 34, in evaluate
+    reward = solve(env,  visualise=visualise)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/aip-lelis/avani/DSL_Generator/explicit_generated_code_819884_1760489076036174.py", line 8, in solve
+    actions_to_take = make_stick(env)
+                      ^^^^^^^^^^^^^^^
+  File "/project/aip-lelis/avani/DSL_Generator/explicit_generated_code_819884_1760489076036174.py", line 126, in make_stick
+    locations = np.argwhere(grid[:, :, workshop_idx] > 0)
+                            ~~~~^^^^^^^^^^^^^^^^^^^^
+IndexError: only integers, slices (`:`), ellipsis (`...`), numpy.newaxis (`None`) and integer or boolean arrays are valid indices
+
+[0.0, 0]
+output  0.0
+0.0
+0.0 True 0 None
+[np.float32(0.0), 20]
+output  0.0
+0.0
+0.0 True 20 None
+-1 False 0 None
+ERROR 10-14 18:50:33 [core_client.py:564] Engine core proc EngineCore_DP0 died unexpectedly, shutting down client.
