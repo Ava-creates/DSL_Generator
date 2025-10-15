@@ -1,2 +1,2 @@
-def make_arrow(env):
+def make_stick(env):
     return []
