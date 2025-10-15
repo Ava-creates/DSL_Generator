@@ -329,7 +329,6 @@ def synthesis_baseline():
             # print(output[0].outputs[0].text)
             try:
                 # response = requests.post(api_url, headers=headers, json=payload, timeout=300)
-
                 # response = response.json()["response"]
                 response = output[0].outputs[0].text
                 # print(response)
@@ -341,7 +340,10 @@ def synthesis_baseline():
             a, b, c, d= eval(response)
             print(a, b, c, d)
             if a== -1 :
-                failed_programs.append(response + "\nError:\n"+ d)
+                if d:
+                    failed_programs.append(response + "\nError:\n"+ d)
+                else:
+                    failed_programs.append(response + "\nError:\n"+"Some error")        
                 continue
             else:
                 data.append((c, a))
