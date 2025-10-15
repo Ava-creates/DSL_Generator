@@ -2,6 +2,7 @@ from typing import List
 from collections import deque
 from cfg_parser import CFGParser
 import numpy as np
+from DSL_Generator.plotting import plot_watermark, plot_interactions_rewards
 import itertools
 import matplotlib.pyplot as plt
 from program_evaluator import ProgramEvaluator 
@@ -163,34 +164,6 @@ def evaluate_program_with_evaluator(evaluator, program_str: str, env, time) -> i
     #     print(E)
     #     return False, float('-inf'), 0.0
 
-def plot_watermark(data, task):
-    # print(data)
-    # print("here")
-    if len(data) < 2:
-        return
-
-    x_values = [sum(point[0] for point in data[:i+1]) for i in range(len(data))]
-    y_values = [max(point[1] for point in data[:i+1]) for i in range(len(data))]
-
-    plt.plot(x_values, y_values, marker='o')
-    plt.title('Reward vs Interactions')
-    plt.xlabel('Number of Interactions')
-    plt.ylabel('Reward')
-    plt.grid()
-    plt.savefig(f'results/plots/plot_{task}.png')
-    plt.close()
-
-def plot_interactions_rewards(interactions, rewards, task):
-        plt.figure(figsize=(10, 5))
-        # plt.plot(interactions, label='Interactions', marker='o')
-        plt.plot(rewards, label='Rewards', marker='x')
-        plt.title(f'Interactions and Rewards for Task: {task}')
-        plt.xlabel('Interactions')
-        plt.ylabel('Cummulative Reward')
-        plt.legend()
-        plt.grid()
-        plt.savefig(f'plot_{task}.png')
-        plt.close()
 
 def format_program(tokens: List[str]) -> str:
     result = []
