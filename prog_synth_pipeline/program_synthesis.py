@@ -24,6 +24,7 @@ import os
 import random
 import subprocess
 from vllm import LLM, SamplingParams
+import textwrap
 
 def eval(res):
     # with tempfile.TemporaryDirectory() as temp_dir:
@@ -202,6 +203,22 @@ def tokenize_rhs(rhs: str) -> List[List[str]]:
     alternatives = [alt.strip().split() for alt in rhs.split('|')]
     return alternatives
 
+
+def strip_function_def(code: str, func_name: str) -> str:
+    """If `code` starts with a Python function definition for `func_name`,
+    remove the `def ...:` line and return the dedented body. Otherwise
+    return `code` unchanged.
+
+    Example: given "def make_stick(env):\n    x=1\n    return x", returns "x=1\nreturn x".
+    """
+    # Match a def line at the start (allowing leading whitespace/newlines)
+    pattern = rf"^[ \t]*def\s+{re.escape(func_name)}\s*\([^\)]*\)\s*:\s*\n"
+    m = re.search(pattern, code, flags=re.MULTILINE)
+    if not m:
+        return code
+    body = code[m.end():]
+    return textwrap.dedent(body)
+
 def evaluate(program_str, task , env, inter, reward):
     results = set()
     result = evaluator.evaluate_program(program_str, env, time, inter, reward)
@@ -310,7 +327,11 @@ def synthesis_baseline():
                 # print(response)
             except:
                 continue 
-            a, b, c, d= eval(response)
+            # Remove leading `def make_stick(...):` if present and get body
+            response_body = strip_function_def(response, "make_stick")
+            # Re-wrap the body into a full def for evaluation (so eval() finds make_stick)
+            wrapped = f"def make_stick(env):\n" + textwrap.indent(response_body, "    ")
+            a, b, c, d = eval(wrapped)
             print(a, b, c, d)
             if a== -1 :
                 # if d:
@@ -320,6 +341,8 @@ def synthesis_baseline():
                 continue
             else:
                 data.append((c, a))
+                # save the stripped body (what's after `def make_stick(...)`)
+                programs.append(response_body.strip())
 
             # selected_failed_programs = random.sample(failed_programs, min(4, len(failed_programs)))
             # prompt = (
@@ -345,7 +368,8 @@ def synthesis_baseline():
         # Log data to a file
             with open("results/plots/data_make_stick_baseline.txt", "a") as log_file:
                 for interactions, reward in data:
-                    log_file.write(f"{interactions},{reward},{response}\n")
+                    last_prog = programs[-1] if programs else response
+                    log_file.write(f"{interactions},{reward},{last_prog}\n")
         plot_watermark(data, "make[stick]")
         return 0
 
