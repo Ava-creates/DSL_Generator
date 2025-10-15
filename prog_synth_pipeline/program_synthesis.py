@@ -340,14 +340,15 @@ def synthesis_baseline():
             a, b, c, d= eval(response)
             print(a, b, c, d)
             if a== -1 :
-                if d:
-                    failed_programs.append(response + "\nError:\n"+ d)
-                else:
-                    failed_programs.append(response + "\nError:\n"+"Some error")        
+                # if d:
+                #     failed_programs.append(response + "\nError:\n"+ d)
+                # else:
+                #     failed_programs.append(response + "\nError:\n"+"Some error")        
                 continue
             else:
                 data.append((c, a))
-            selected_failed_programs = random.sample(failed_programs, min(4, len(failed_programs)))
+                
+            # selected_failed_programs = random.sample(failed_programs, min(4, len(failed_programs)))
             # prompt = (
             #     f"{first_file_content}\n"
             #     f"{second_file_content}\n"
@@ -369,9 +370,9 @@ def synthesis_baseline():
             #     "Now return only the correct implementation of `make_stick` following these rules."
             # )
         # Log data to a file
-        with open("results/plot/data_make_stick_baseline.txt", "a") as log_file:
-            for interactions, reward in data:
-                log_file.write(f"{interactions},{reward}\n")
+            with open("results/plot/data_make_stick_baseline.txt", "a") as log_file:
+                for interactions, reward in data:
+                    log_file.write(f"{interactions},{reward},{response}\n")
         plot_watermark(data, "make[stick]")
         return 0
 
