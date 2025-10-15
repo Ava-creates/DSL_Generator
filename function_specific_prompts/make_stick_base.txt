@@ -30,7 +30,7 @@ def evaluate() -> float:
 
 
 @funsearch.evolve
-def make_stick(env: env.CraftLab) -> list[int]:
+def make_stick(env):
   """Returns a sequence of actions to complete the task of make[stick] 
     in the given environment. The function gathers the required primitives 
     from the recipe for 'stick' and then crafts the stick.
