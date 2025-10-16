@@ -136,21 +136,6 @@ def grid_to_markdown(grid, cookbook):
     df = pd.DataFrame(table)
     return df.to_markdown(index=False, headers=[])
 
-
-final =[]
-evaluator = ProgramEvaluator()
-recipes_path = "craft/resources/recipes.yaml"
-hints_path = "craft/resources/hints.yaml"
-env_sampler = env_factory.EnvironmentFactory(
-            recipes_path, hints_path, 0, max_steps=100, 
-            reuse_environments=False, visualise=False)
-
-
-with open("prog_synth_pipeline/task_config.json", "r") as f:
-        config = json.load(f)
-        tasks = config["tasks"]
-        time_limits = config["time"]
-
 def is_terminal(symbol: str, cfg: CFGParser) -> bool:
     return symbol not in cfg.non_terminals
 
@@ -164,7 +149,6 @@ def evaluate_program_with_evaluator(evaluator, program_str: str, env, time) -> i
     # except Exception as e:
     #     print(E)
     #     return False, float('-inf'), 0.0
-
 
 def format_program(tokens: List[str]) -> str:
     result = []
@@ -202,7 +186,6 @@ def format_program(tokens: List[str]) -> str:
 def tokenize_rhs(rhs: str) -> List[List[str]]:
     alternatives = [alt.strip().split() for alt in rhs.split('|')]
     return alternatives
-
 
 def strip_function_def(code: str, func_name: str) -> str:
     """If `code` starts with a Python function definition for `func_name`,
@@ -256,6 +239,18 @@ def find_bad_func(funcs, task):
     # Run FunSearch for each failing function
 
 def synthesis_baseline():
+    final =[]
+    evaluator = ProgramEvaluator()
+    recipes_path = "craft/resources/recipes.yaml"
+    hints_path = "craft/resources/hints.yaml"
+    env_sampler = env_factory.EnvironmentFactory(
+                recipes_path, hints_path, 0, max_steps=100, 
+                reuse_environments=False, visualise=False)
+
+    with open("prog_synth_pipeline/task_config.json", "r") as f:
+            config = json.load(f)
+            tasks = config["tasks"]
+            time_limits = config["time"]
     llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
     params = SamplingParams(temperature=0.7, max_tokens=5000)
     with open("cfg/cfg.txt") as f:
@@ -366,8 +361,8 @@ def synthesis_baseline():
             #     "Now return only the correct implementation of `make_stick` following these rules."
             # )
         # Log data to a file
-            with open("results/plots/data_make_stick_baseline.txt", "a") as log_file:
-                for interactions, reward in data:
+            with open("results/plots/data_make_stick_baseline_new.txt", "a") as log_file:
+                for interactions, reward in (c,a):
                     last_prog = programs[-1] if programs else response
                     log_file.write(f"{interactions},{reward},{last_prog}\n")
         plot_watermark(data, "make[stick]")
@@ -378,6 +373,14 @@ def synthesis_baseline():
 
 
 def synthesis_llm():
+
+    final =[]
+    evaluator = ProgramEvaluator()
+    recipes_path = "craft/resources/recipes.yaml"
+    hints_path = "craft/resources/hints.yaml"
+    env_sampler = env_factory.EnvironmentFactory(
+                recipes_path, hints_path, 7, max_steps=100, 
+                reuse_environments=False, visualise=False)
     with open("cfg/cfg.txt") as f:
         cfg = f.read()
     with open("craft/resources/recipes.yaml") as f:

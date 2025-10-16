@@ -19,8 +19,9 @@ def run_loop(env, n_steps, visualise=False):
   #   print("Initial observations:", observations)
   # print("VDFS \n", env.world.cookbook.index, "\n")
   # actions=[3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 4]
-  actions =[3, 4, 1, 1, 2, 4, 0, 2, 2, 2, 2, 4, 2, 4, 0, 0, 0, 0, 3, 4 , 1, 1, 2, 2, 2, 4]
+  # actions =[3, 4, 1, 1, 2, 4, 0, 2, 2, 2, 2, 4, 2, 4, 0, 0, 0, 0, 3, 4 , 1, 1, 2, 2, 2, 4]
   # actions= [3,4,0,0,4,0,2,2,4,0,0,3,4,0,3,0,3,0,0,2,2,4]
+  actions = [1,4,1,4]
   time.sleep(4)
   if False:
       env.step(0)
@@ -84,10 +85,17 @@ def main():
   #     visualise=visualise)
   recipes_path_2 = "craft/resources/recipes_for_synth.yaml"
   item = "arrow"
+  # env_sampler = env_factory.EnvironmentFactory(
+  #           recipes_path_2, hints_path, 6, max_steps=100, 
+  #           reuse_environments=False, visualise=True)
+  # env=env_sampler.sample_environment(task_name='make[goldarrow]')
+
   env_sampler = env_factory.EnvironmentFactory(
-            recipes_path_2, hints_path, 6, max_steps=100, 
-            reuse_environments=False, visualise=True)
-  env=env_sampler.sample_environment(task_name='make[goldarrow]')
+  recipes_path, hints_path, 0, max_steps=100, reuse_environments=False,
+            visualise=visualise)
+
+  env = env_sampler.sample_environment(task_name= 'make[stick]')
+  # reward = solve(env,  visualise=visualise)
   # env = env_sampler.sample_environment(task_name='make[knife]')
   print("Environment: task {}: {}".format(env.task_name, env.task))
   run_loop(env, 100 * 3, visualise=visualise)

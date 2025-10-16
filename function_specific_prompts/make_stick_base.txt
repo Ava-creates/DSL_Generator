@@ -31,13 +31,13 @@ def evaluate() -> float:
 
 @funsearch.evolve
 def make_stick(env):
-  """Returns a sequence of actions to complete the task of make[stick] 
-    in the given environment. The function gathers the required primitives 
-    from the recipe for 'stick' and then crafts the stick.
-  Args:
-      env: The environment instance.
+    """Returns a sequence of actions to complete the task of make[stick] 
+        in the given environment. The function gathers the required primitives 
+        from the recipe for 'stick' and then crafts the stick.
+      Args:
+          env: The environment instance.
 
-  Returns:
-      List[int]: A list of action indices the agent can execute to complete the task of making sticks.
-  """ 
+      Returns:
+          List[int]: A list of action indices the agent can execute to complete the task of making sticks.
+    """
   
