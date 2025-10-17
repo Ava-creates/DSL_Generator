@@ -1,4 +1,4 @@
-from msilib import text
+#from msilib import text
 from typing import List
 from collections import deque
 from cfg_parser import CFGParser
