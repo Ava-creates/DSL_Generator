@@ -1,8 +1,9 @@
+from mailbox import Message
 from typing import List
 from collections import deque
-from cfg_parser import CFGParser
+from .cfg_parser import CFGParser
 import numpy as np
-from DSL_Generator.plotting import plot_watermark, plot_interactions_rewards
+# from DSL_Generator.plotting import plot_watermark, plot_interactions_rewards
 import itertools
 import matplotlib.pyplot as plt
 from program_evaluator import ProgramEvaluator 
@@ -25,6 +26,13 @@ import random
 import subprocess
 from vllm import LLM, SamplingParams
 import textwrap
+from openai_harmony import (
+    load_harmony_encoding,
+    HarmonyEncodingName,
+    Message,
+    Role,
+    Conversation,
+)
 
 def eval(res):
     # with tempfile.TemporaryDirectory() as temp_dir:
@@ -291,6 +299,17 @@ def synthesis_baseline():
         data = []
         data.append((0, 0))
         failed_programs = []
+        enc = load_harmony_encoding(HarmonyEncodingName.HARMONY_GPT_OSS)
+
+        messages = [
+            Message.from_role_and_content(Role.SYSTEM, "Reasoning: medium"),
+            Message.from_role_and_content(Role.DEVELOPER, "You are a helpful coding assistant. Produce reasoning in the analysis channel and code in the final channel."),
+            Message.from_role_and_content(Role.USER, prompt)
+        ]
+        conv = Conversation(messages, encoding=enc)
+        input_str = conv.to_prompt_string()
+
+
         for i in range(500):
             # response = client.models.generate_content(
             #                 model="gemini-2.5-pro", contents = prompt
@@ -310,7 +329,31 @@ def synthesis_baseline():
 
             #vllm gpt 120b
 
-            output = llm.generate([prompt], params)
+            # output = llm.generate([prompt], params)
+            output = llm.generate([input_str], params)
+            raw = output[0].outputs[0].text
+            resp_conv = Conversation.from_string(raw, encoding=enc)
+
+            assistant_msgs = resp_conv.messages_of_role(Role.ASSISTANT)
+            analysis_msg, final_msg = None, None
+
+            for msg in assistant_msgs:
+                if msg.channel == "analysis":
+                    analysis_msg = msg
+                elif msg.channel == "final":
+                    final_msg = msg
+
+            analysis_content = analysis_msg.content if analysis_msg else None
+            final_content = final_msg.content if final_msg else raw
+
+            # --------------------------------------
+            # 5️⃣ Display results
+            # --------------------------------------
+            print("\n=== ANALYSIS ===\n")
+            print(analysis_content)
+
+            print("\n=== FINAL CODE ===\n")
+            print(final_content)
             # print(output[0].outputs[0].text)
             try:
                 # response = requests.post(api_url, headers=headers, json=payload, timeout=300)
@@ -365,7 +408,7 @@ def synthesis_baseline():
                 for interactions, reward in (c,a):
                     last_prog = programs[-1] if programs else response
                     log_file.write(f"{interactions},{reward},{last_prog}\n")
-        plot_watermark(data, "make[stick]")
+        # plot_watermark(data, "make[stick]")
         return 0
 
 
@@ -510,7 +553,7 @@ def synthesis_llm():
             else:
                 find_bad_func(funcs, task)
         plot_interactions_rewards(interactions, rewards, task)
-        plot_watermark(plot, task)
+        # plot_watermark(plot, task)
 
                 
     return programs
