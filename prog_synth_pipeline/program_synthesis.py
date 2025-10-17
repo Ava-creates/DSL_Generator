@@ -270,57 +270,29 @@ def synthesis_baseline():
         with open("prompt_specifications/specification_with_updated_nld_baseline.txt", "r") as f1, open("function_specific_prompts/make_stick_base.txt", "r") as f2:
             first_file_content = f1.read()
             second_file_content = f2.read()
-        prompt = f"""
-<|start|>system<|message|>
-You are a helpful reasoning and coding assistant.
-When responding, you must produce two channels:
-1. <|start|>assistant<|analysis|> — contains reasoning only (no code)
-2. <|start|>assistant<|final|> — contains only the final Python code 
-<|end|>
 
-<|start|>user<|message|>
-{first_file_content}
-{second_file_content}
-
-Your task:
-Return a **correct implementation** of the `make_stick(env)` function in Python.
-
-Formatting requirements:
-- The reasoning must go in the analysis channel.
-- The complete implementation must go in the final channel, inside a Python code block.
-
-Example expected output:
-<|start|>assistant<|analysis|>
-Let's reason step by step...
-<|end|>
-<|start|>assistant<|final|>
-def make_stick(env):
-    # implementation
-<|end|>
-<|end|>
-"""
-        # prompt = (
-        #         f"{first_file_content}\n"
-        #         f"{second_file_content}\n"
-        #         + "\n\n"
-        #         "Your task:\n"
-        #         "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
-        #         "Formatting Requirements (do NOT ignore):\n"
-        #         "1. Your response MUST begin exactly like this:\n"
-        #         "   ```python\n"
-        #         "   def make_stick(env):\n"
-        #         "2. Only output the complete function implementation inside the code block.\n\n"
-        #         "Example of correct response format:\n"
-        #         "```python\n"
-        #         "def make_stick(env):\n"
-        #         "    # your implementation here\n"
-        #         "```\n"
-        #         "Now return only the correct implementation of `make_stick` following these rules."
-        #     )
+        prompt = (
+                f"{first_file_content}\n"
+                f"{second_file_content}\n"
+                + "\n\n"
+                "Your task:\n"
+                "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
+                "Formatting Requirements (do NOT ignore):\n"
+                "1. Your response MUST begin exactly like this:\n"
+                "   ```python\n"
+                "   def make_stick(env):\n"
+                "2. Only output the complete function implementation inside the code block.\n\n"
+                "Example of correct response format:\n"
+                "```python\n"
+                "def make_stick(env):\n"
+                "    # your implementation here\n"
+                "```\n"
+                "Now return only the correct implementation of `make_stick` following these rules."
+            )
         data = []
         data.append((0, 0))
         failed_programs = []
-        for i in range(500):
+        for i in range(50):
             # response = client.models.generate_content(
             #                 model="gemini-2.5-pro", contents = prompt
             #             )
@@ -340,23 +312,9 @@ def make_stick(env):
             #vllm gpt 120b
 
             output = llm.generate([prompt], params)
-            # print(output[0].outputs[0].text)
             try:
-                # response = requests.post(api_url, headers=headers, json=payload, timeout=300)
-                # response = response.json()["response"]
+
                 response = output[0].outputs[0].text
-                print(response)
-                analysis_match = re.search(
-                    r"<|start|>assistant<|analysis|>(.*?)<|end|>", text, re.DOTALL
-                )
-                final_match = re.search(
-                r"<|start|>assistant<|final|>(.?)<|end|>", text, re.DOTALL)
-                analysis = analysis_match.group(1).strip() if analysis_match else None
-                final_code = final_match.group(1).strip() if final_match else None
-
-                print("\n=== ANALYSIS ===\n", analysis)
-                print("\n=== FINAL CODE ===\n", final_code)
-
                 response = response[response.index("```python")+len("```python"):]
                 response = response[:response.index("```")]
                 # print(response)
@@ -375,7 +333,7 @@ def make_stick(env):
                 #     failed_programs.append(response + "\nError:\n"+"Some error")        
                 continue
             else:
-                data.append((c, a))
+                data.append((c, a, wrapped))
                 # save the stripped body (what's after `def make_stick(...)`)
                 programs.append(response_body.strip())
 
