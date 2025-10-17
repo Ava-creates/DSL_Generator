@@ -290,7 +290,7 @@ def synthesis_baseline():
                 "Now return only the correct implementation of `make_stick` following these rules."
             )
         data = []
-        data.append((0, 0))
+        data.append((0, 0, ""))
         failed_programs = []
         for i in range(50):
             # response = client.models.generate_content(
@@ -360,9 +360,7 @@ def synthesis_baseline():
             # )
         # Log data to a file
             with open("results/plots/data_make_stick_baseline_new.txt", "w") as log_file:
-                for interactions, reward, wrapped in data[-1]:
-                    last_prog = programs[-1] if programs else response
-                    log_file.write(f"{interactions},{reward},{last_prog}\n")
+                    log_file.write(f"{c},{a},{wrapped}\n")
         # plot_watermark(data, "make[stick]")
         return 0
 
