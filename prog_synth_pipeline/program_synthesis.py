@@ -3,6 +3,8 @@ from typing import List
 from collections import deque
 from .cfg_parser import CFGParser
 import numpy as np
+from openai_harmony import _PyHarmonyEncoding
+
 # from DSL_Generator.plotting import plot_watermark, plot_interactions_rewards
 import itertools
 import matplotlib.pyplot as plt
@@ -299,7 +301,8 @@ def synthesis_baseline():
         data = []
         data.append((0, 0))
         failed_programs = []
-        enc = load_harmony_encoding(HarmonyEncodingName.HARMONY_GPT_OSS)
+        # enc = load_harmony_encoding(HarmonyEncodingName.HARMONY_GPT_OSS)
+        enc = _PyHarmonyEncoding(vocab_file="/scratch/avani/openai/vocab.json", merges_file="/scratch/avani/openai/merges.txt")
 
         messages = [
             Message.from_role_and_content(Role.SYSTEM, "Reasoning: medium"),
