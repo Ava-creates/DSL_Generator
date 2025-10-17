@@ -1,10 +1,8 @@
-from mailbox import Message
+from msilib import text
 from typing import List
 from collections import deque
-from .cfg_parser import CFGParser
+from cfg_parser import CFGParser
 import numpy as np
-from openai_harmony import _PyHarmonyEncoding
-
 # from DSL_Generator.plotting import plot_watermark, plot_interactions_rewards
 import itertools
 import matplotlib.pyplot as plt
@@ -28,13 +26,6 @@ import random
 import subprocess
 from vllm import LLM, SamplingParams
 import textwrap
-from openai_harmony import (
-    load_harmony_encoding,
-    HarmonyEncodingName,
-    Message,
-    Role,
-    Conversation,
-)
 
 def eval(res):
     # with tempfile.TemporaryDirectory() as temp_dir:
@@ -279,40 +270,56 @@ def synthesis_baseline():
         with open("prompt_specifications/specification_with_updated_nld_baseline.txt", "r") as f1, open("function_specific_prompts/make_stick_base.txt", "r") as f2:
             first_file_content = f1.read()
             second_file_content = f2.read()
-        
-        prompt = (
-                f"{first_file_content}\n"
-                f"{second_file_content}\n"
-                + "\n\n"
-                "Your task:\n"
-                "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
-                "Formatting Requirements (do NOT ignore):\n"
-                "1. Your response MUST begin exactly like this:\n"
-                "   ```python\n"
-                "   def make_stick(env):\n"
-                "2. Only output the complete function implementation inside the code block.\n\n"
-                "Example of correct response format:\n"
-                "```python\n"
-                "def make_stick(env):\n"
-                "    # your implementation here\n"
-                "```\n"
-                "Now return only the correct implementation of `make_stick` following these rules."
-            )
+        prompt = f"""
+<|start|>system<|message|>
+You are a helpful reasoning and coding assistant.
+When responding, you must produce two channels:
+1. <|start|>assistant<|analysis|> — contains reasoning only (no code)
+2. <|start|>assistant<|final|> — contains only the final Python code 
+<|end|>
+
+<|start|>user<|message|>
+{first_file_content}
+{second_file_content}
+
+Your task:
+Return a **correct implementation** of the `make_stick(env)` function in Python.
+
+Formatting requirements:
+- The reasoning must go in the analysis channel.
+- The complete implementation must go in the final channel, inside a Python code block.
+
+Example expected output:
+<|start|>assistant<|analysis|>
+Let's reason step by step...
+<|end|>
+<|start|>assistant<|final|>
+def make_stick(env):
+    # implementation
+<|end|>
+<|end|>
+"""
+        # prompt = (
+        #         f"{first_file_content}\n"
+        #         f"{second_file_content}\n"
+        #         + "\n\n"
+        #         "Your task:\n"
+        #         "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
+        #         "Formatting Requirements (do NOT ignore):\n"
+        #         "1. Your response MUST begin exactly like this:\n"
+        #         "   ```python\n"
+        #         "   def make_stick(env):\n"
+        #         "2. Only output the complete function implementation inside the code block.\n\n"
+        #         "Example of correct response format:\n"
+        #         "```python\n"
+        #         "def make_stick(env):\n"
+        #         "    # your implementation here\n"
+        #         "```\n"
+        #         "Now return only the correct implementation of `make_stick` following these rules."
+        #     )
         data = []
         data.append((0, 0))
         failed_programs = []
-        # enc = load_harmony_encoding(HarmonyEncodingName.HARMONY_GPT_OSS)
-        enc = _PyHarmonyEncoding(vocab_file="/scratch/avani/openai/vocab.json", merges_file="/scratch/avani/openai/merges.txt")
-
-        messages = [
-            Message.from_role_and_content(Role.SYSTEM, "Reasoning: medium"),
-            Message.from_role_and_content(Role.DEVELOPER, "You are a helpful coding assistant. Produce reasoning in the analysis channel and code in the final channel."),
-            Message.from_role_and_content(Role.USER, prompt)
-        ]
-        conv = Conversation(messages, encoding=enc)
-        input_str = conv.to_prompt_string()
-
-
         for i in range(500):
             # response = client.models.generate_content(
             #                 model="gemini-2.5-pro", contents = prompt
@@ -332,37 +339,24 @@ def synthesis_baseline():
 
             #vllm gpt 120b
 
-            # output = llm.generate([prompt], params)
-            output = llm.generate([input_str], params)
-            raw = output[0].outputs[0].text
-            resp_conv = Conversation.from_string(raw, encoding=enc)
-
-            assistant_msgs = resp_conv.messages_of_role(Role.ASSISTANT)
-            analysis_msg, final_msg = None, None
-
-            for msg in assistant_msgs:
-                if msg.channel == "analysis":
-                    analysis_msg = msg
-                elif msg.channel == "final":
-                    final_msg = msg
-
-            analysis_content = analysis_msg.content if analysis_msg else None
-            final_content = final_msg.content if final_msg else raw
-
-            # --------------------------------------
-            # 5️⃣ Display results
-            # --------------------------------------
-            print("\n=== ANALYSIS ===\n")
-            print(analysis_content)
-
-            print("\n=== FINAL CODE ===\n")
-            print(final_content)
+            output = llm.generate([prompt], params)
             # print(output[0].outputs[0].text)
             try:
                 # response = requests.post(api_url, headers=headers, json=payload, timeout=300)
                 # response = response.json()["response"]
                 response = output[0].outputs[0].text
-                # print(response)
+                print(response)
+                analysis_match = re.search(
+                    r"<|start|>assistant<|analysis|>(.*?)<|end|>", text, re.DOTALL
+                )
+                final_match = re.search(
+                r"<|start|>assistant<|final|>(.?)<|end|>", text, re.DOTALL)
+                analysis = analysis_match.group(1).strip() if analysis_match else None
+                final_code = final_match.group(1).strip() if final_match else None
+
+                print("\n=== ANALYSIS ===\n", analysis)
+                print("\n=== FINAL CODE ===\n", final_code)
+
                 response = response[response.index("```python")+len("```python"):]
                 response = response[:response.index("```")]
                 # print(response)
