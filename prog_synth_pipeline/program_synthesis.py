@@ -359,8 +359,8 @@ def synthesis_baseline():
             #     "Now return only the correct implementation of `make_stick` following these rules."
             # )
         # Log data to a file
-            with open("results/plots/data_make_stick_baseline_new.txt", "a") as log_file:
-                for interactions, reward in (c,a):
+            with open("results/plots/data_make_stick_baseline_new.txt", "w") as log_file:
+                for interactions, reward, wrapped in (c,a, wrapped):
                     last_prog = programs[-1] if programs else response
                     log_file.write(f"{interactions},{reward},{last_prog}\n")
         # plot_watermark(data, "make[stick]")
