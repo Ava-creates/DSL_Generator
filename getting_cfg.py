@@ -1,4 +1,4 @@
-from google import genai
+# from google import genai
 from typing import Tuple, Dict, Optional as Opt
 import os
 import sys
@@ -18,6 +18,7 @@ class Output(BaseModel):
     example_program: list[str]
 
 json_schema = Output.model_json_schema()
+print(json_schema)
 
 from vllm import SamplingParams
 from vllm import LLM as vLLM
@@ -81,8 +82,7 @@ Return:
 - a dictionary mapping TERMINAL_FUNCTION -> natural language description
 - an example program written in the grammar
 
-Strictly adhere to the fenced block output format above with no extra commentary outside code fences.
-
+Return them as indicated in the guided output format.
 '''
 
     def build(self, recipes: str) -> str:
