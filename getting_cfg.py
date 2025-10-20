@@ -8,7 +8,7 @@ import ast
 from pydantic import BaseModel
 from enum import Enum
 from vllm.sampling_params import StructuredOutputsParams
-from vllm.guided_decoding.settings import GuidedDecodingParams
+from vllm.sampling_params import GuidedDecodingParams
 
 
 
@@ -108,7 +108,7 @@ class GenAIWrapper:
             structured_outputs_params_json = StructuredOutputsParams(json=json_schema)
             guided_decoding_params = GuidedDecodingParams(json=json_schema)
 
-            self.params = SamplingParams(temperature=0.7, max_tokens=15000, structured_outputs=structured_outputs_params_json, guided_decoding=guided_decoding_params)
+            self.params = SamplingParams(temperature=0.7, max_tokens=15000,  guided_decoding=guided_decoding_params)
             output = self.llm.generate([prompt], sampling_params=self.params)
             response = output[0].outputs[0].text
             print(response)
