@@ -292,7 +292,7 @@ def synthesis_baseline():
         data = []
         data.append((0, 0, ""))
         failed_programs = []
-        for i in range(50):
+        for i in range(200):
             # response = client.models.generate_content(
             #                 model="gemini-2.5-pro", contents = prompt
             #             )
@@ -455,9 +455,8 @@ def synthesis_llm():
     ##Return a program that is able to solve the task
     
     """
-        print(prompt)
-        break
-        for i in range(10):
+
+        for i in range(50):
             # response = client.models.generate_content(
             #                 model="gemini-2.5-pro", contents = prompt
             #             )
