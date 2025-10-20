@@ -13,6 +13,6 @@ source new_dsl_env/bin/activate
 
 ##python -m funsearch.implementation.funsearch --model_type huggingface --function collect --spec_file  prompt_specifications/specification_jocelyn.txt
 
-##python3 prog_synth_pipeline/program_synthesis.py prog_synth_pipeline/task_config.json
+python3 prog_synth_pipeline/program_synthesis.py prog_synth_pipeline/task_config.json
 
-python3 -m funsearch.implementation.funsearch --spec_file prompt_specifications/specification_with_updated_nld_baseline.txt --func_file function_specific_prompts/make_stick_base.txt --func_init functions_generated/baseline.py --model_type huggingface
+##python3 -m funsearch.implementation.funsearch --spec_file prompt_specifications/specification_with_updated_nld_baseline.txt --func_file function_specific_prompts/make_stick_base.txt --func_init functions_generated/baseline.py --model_type huggingface

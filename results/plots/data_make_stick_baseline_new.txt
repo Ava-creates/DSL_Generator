@@ -1,0 +1,103 @@
+0,0.0,def make_stick(env):
+    """
+    Simple planner that:
+    1. Determines which primitive resources are needed to craft a stick.
+    2. Moves the agent to the nearest cell containing each needed primitive and uses it.
+    3. Moves to the required workshop and uses it to craft the stick.
+    The function returns a list of action indices (DOWN=0, UP=1, LEFT=2, RIGHT=3, USE=4).
+    """
+    import numpy as np
+
+    # Ensure the environment has an initialized state.
+    if not hasattr(env, "_current_state") or env._current_state is None:
+        # reset returns an observation dict; we only need the side‑effect of creating the state.
+        env.reset()
+
+    state = env._current_state               # CraftState
+    world = state.world                       # CraftWorld
+    goal_idx = env.task.goal                  # integer index of the desired item (stick)
+
+    # ------------------------------------------------------------------
+    # Helper to translate a movement vector into an action index.
+    # Action mapping (as defined in CraftLab.action_specs):
+    #   DOWN=0, UP=1, LEFT=2, RIGHT=3, USE=4
+    # ------------------------------------------------------------------
+    ACTION_DOWN, ACTION_UP, ACTION_LEFT, ACTION_RIGHT, ACTION_USE = 0, 1, 2, 3, 4
+
+    # ------------------------------------------------------------------
+    # Helper: move the agent from its current position to a target cell.
+    # It updates the mutable `pos` list and appends the required actions
+    # to the outer `plan` list.
+    # ------------------------------------------------------------------
+    def move_to(target, pos, plan):
+        """Append actions that move from `pos` to `target` (Manhattan moves)."""
+        while (pos[0], pos[1]) != target:
+            dx = target[0] - pos[0]
+            dy = target[1] - pos[1]
+            if dx != 0:                       # horizontal movement has priority
+                if dx > 0:
+                    plan.append(ACTION_RIGHT)
+                    pos[0] += 1
+                else:
+                    plan.append(ACTION_LEFT)
+                    pos[0] -= 1
+            elif dy != 0:                     # then vertical movement
+                if dy > 0:
+                    plan.append(ACTION_DOWN)
+                    pos[1] += 1
+                else:
+                    plan.append(ACTION_UP)
+                    pos[1] -= 1
+
+    # ------------------------------------------------------------------
+    # 1. Determine which primitive resources are required for the goal.
+    # ------------------------------------------------------------------
+    # The Cookbook method `primitives_for` returns a dict {primitive_idx: count}
+    needed_primitives = world.cookbook.primitives_for(goal_idx)
+
+    # ------------------------------------------------------------------
+    # 2. Collect each required primitive.
+    # ------------------------------------------------------------------
+    plan = []                                 # list of action indices to return
+    pos = list(state.pos)                     # mutable copy of current (x, y)
+
+    grid = state.grid                         # shape (W, H, n_kinds)
+
+    for prim_idx, required_cnt in needed_primitives.items():
+        # Find all cells that currently contain this primitive.
+        locations = np.argwhere(grid[:, :, prim_idx] > 0)
+
+        # If the primitive is absent from the map, we simply skip it.
+        if locations.size == 0:
+            continue
+
+        # We'll collect from the first location found (simple heuristic).
+        # For multiple required copies we reuse the same location – the
+        # environment will handle inventory counts.
+        target_cell = tuple(locations[0].tolist())
+
+        # Move to that cell.
+        move_to(target_cell, pos, plan)
+
+        # Use the primitive (collect / pick up). One USE per required count.
+        for _ in range(required_cnt):
+            plan.append(ACTION_USE)
+
+    # ------------------------------------------------------------------
+    # 3. Go to the workshop required for crafting the stick and craft it.
+    # ------------------------------------------------------------------
+    # The recipe dictionary contains a special key "_at" that indicates
+    # the workshop kind index.
+    recipe = world.cookbook.recipes.get(goal_idx, {})
+    workshop_idx = recipe.get("_at")
+
+    if workshop_idx is not None:
+        workshop_cells = np.argwhere(grid[:, :, workshop_idx] > 0)
+        if workshop_cells.size > 0:
+            workshop_target = tuple(workshop_cells[0].tolist())
+            move_to(workshop_target, pos, plan)
+            # Craft the item.
+            plan.append(ACTION_USE)
+
+    return plan
+
