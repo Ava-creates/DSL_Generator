@@ -102,7 +102,7 @@ class GenAIWrapper:
         if client == "vllm":
             self.llm = vLLM(model="/scratch/avani/gpt",    tensor_parallel_size=4 )
 
-    def generate(self, prompt: str, model: str = "gemini-2.5-pro") -> str:
+    def generate(self, prompt: str, model: str = "vllm") -> str:
         # Keep the original call semantics but guard against errors.
         if model == "vllm":
             structured_outputs_params_json = StructuredOutputsParams(json=json_schema)
@@ -255,7 +255,7 @@ def main(recipes_path: str = "craft/resources/recipes.yaml") -> int:
     try:
         loader = RecipeLoader(recipes_path)
         builder = CFGPromptBuilder()
-        llm_wrapper = GenAIWrapper()
+        llm_wrapper = GenAIWrapper("vllm")
         generator = CFGGenerator(loader, builder, llm_wrapper)
 
         output = generator.generate_cfg()
