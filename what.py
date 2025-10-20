@@ -1,4 +1,0 @@
-from openai_harmony import load_harmony_encoding, HarmonyEncodingName
-
-enc = load_harmony_encoding(HarmonyEncodingName.HARMONY_GPT_OSS)
-print(enc)

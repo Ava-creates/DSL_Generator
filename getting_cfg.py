@@ -5,8 +5,21 @@ import sys
 import re
 import json
 import ast
+from pydantic import BaseModel
+from enum import Enum
+from vllm.sampling_params import StructuredOutputsParams
 
 
+
+class Output(BaseModel):
+    CFG: str
+    terminal_functions_and_their_description: Dict[str, str]
+    example_program: list[str]
+
+json_schema = Output.model_json_schema()
+
+from vllm import SamplingParams
+from vllm import LLM as vLLM
 class RecipeLoader:
     """Single responsibility: load recipe file contents as a string."""
 
@@ -82,13 +95,26 @@ class GenAIWrapper:
     """
 
     def __init__(self, client: Opt[genai.Client] = None) -> None:
+
         self._client = client or genai.Client()
+
+        if client == "vllm":
+            self.llm = vLLM(model="/scratch/avani/gpt",    tensor_parallel_size=4 )
 
     def generate(self, prompt: str, model: str = "gemini-2.5-pro") -> str:
         # Keep the original call semantics but guard against errors.
-        response = self._client.models.generate_content(model=model, contents=prompt)
+        if model == "vllm":
+            structured_outputs_params_json = StructuredOutputsParams(json=json_schema)
+            self.params = SamplingParams(temperature=0.7, max_tokens=15000, structured_outputs=structured_outputs_params_json)
+            output = self.llm.generate([prompt], sampling_params=self.params)
+            response = output[0].outputs[0].text
+            print(response)
+            return response
+        else:
+            response = self._client.models.generate_content(model=model, contents=prompt)
         # Some versions may use .text or .response; favor .text if present.
         return getattr(response, "text", getattr(response, "response", str(response)))
+
 
 
 class CFGGenerator:
