@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=funsearch
+#SBATCH --job-name=funsearch%j
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=avani4@ualberta.ca
 #SBATCH --output=vulcan/random_sampler_hf_%j.out

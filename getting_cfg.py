@@ -44,11 +44,6 @@ class CFGPromptBuilder:
     TEMPLATE = '''
 You are a context-free grammar (CFG) designer. Given the domain specified below in natural language, return a CFG in BNF format that models valid actions in this domain. Use UPPERCASE for all terminal function names and terminal symbols. Do not include assignments like X ::= "x" — only include grammar rules. Terminal functions can take arguments in LPAR and RPAR.
 
-Output MUST consist of exactly three fenced code blocks in this order:
-1) CFG in a fenced block labelled bnf
-2) Terminal functions dictionary as pure JSON in a fenced block labelled json
-3) One example program in a fenced block (label can be dsl or text)
-
 For example:
 ```bnf
 expr   ::= term PLUS expr | term
