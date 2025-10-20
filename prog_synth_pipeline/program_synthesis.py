@@ -359,7 +359,7 @@ def synthesis_baseline():
             #     "Now return only the correct implementation of `make_stick` following these rules."
             # )
         # Log data to a file
-            with open("results/plots/data_make_stick_baseline_new_17thoct_easy.txt", "w") as log_file:
+            with open("results/plots/data_make_stick_baseline_new_19thoct_easy.txt", "a") as log_file:
                     log_file.write(f"{c},{a},{wrapped}\n")
         # plot_watermark(data, "make[stick]")
         return 0
