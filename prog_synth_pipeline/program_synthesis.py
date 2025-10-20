@@ -310,15 +310,16 @@ def synthesis_baseline():
             # headers = {"Content-Type": "application/json"}
 
             #vllm gpt 120b
-
+            actually_getting_answer = 0
             output = llm.generate([prompt], params)
             try:
-
+                print(actually_getting_answer)
                 response = output[0].outputs[0].text
                 response = response[response.index("```python")+len("```python"):]
                 response = response[:response.index("```")]
                 # print(response)
             except:
+            
                 continue 
             # Remove leading `def make_stick(...):` if present and get body
             response_body = strip_function_def(response, "make_stick")
@@ -326,42 +327,32 @@ def synthesis_baseline():
             wrapped = f"def make_stick(env):\n" + textwrap.indent(response_body, "    ")
             a, b, c, d = eval(wrapped)
             print(a, b, c, d)
-            if a== -1 :
-                # if d:
-                #     failed_programs.append(response + "\nError:\n"+ d)
-                # else:
-                #     failed_programs.append(response + "\nError:\n"+"Some error")        
+            if a== -1 :  
                 continue
             else:
+                # ensure results directory exists
+
+
+                # keep the existing in-memory record
                 data.append((c, a, wrapped))
                 # save the stripped body (what's after `def make_stick(...)`)
                 programs.append(response_body.strip())
-
-            # selected_failed_programs = random.sample(failed_programs, min(4, len(failed_programs)))
-            # prompt = (
-            #     f"{first_file_content}\n"
-            #     f"{second_file_content}\n"
-            #     "Previous Failed Programs:\n"
-            #     + "\n".join(selected_failed_programs)
-            #     + "\n\n"
-            #     "Your task:\n"
-            #     "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
-            #     "Formatting Requirements (do NOT ignore):\n"
-            #     "1. Your response MUST begin exactly like this:\n"
-            #     "   ```python\n"
-            #     "   def make_stick(env):\n"
-            #     "2. Only output the complete function implementation inside the code block.\n\n"
-            #     "Example of correct response format:\n"
-            #     "```python\n"
-            #     "def make_stick(env):\n"
-            #     "    # your implementation here\n"
-            #     "```\n"
-            #     "Now return only the correct implementation of `make_stick` following these rules."
-            # )
-        # Log data to a file
+                actually_getting_answer += 1
             with open("results/plots/data_make_stick_baseline_new_19thoct_easy.txt", "a") as log_file:
                     log_file.write(f"{c},{a},{wrapped}\n")
         # plot_watermark(data, "make[stick]")
+        os.makedirs("results", exist_ok=True)
+        out_file = "results/data_make_stick_baseline_new_19thoct_easy.csv"
+        write_header = not os.path.exists(out_file)
+
+                # append a CSV line with timestamp, actions_count, reward, success, and program
+        with open(out_file, "a", encoding="utf-8") as f:
+                    if write_header:
+                        f.write("timestamp,actions_count,reward,success,program\n")
+                    ts = time.time()
+                    # wrap program in JSON string to safely escape newlines/commas
+                    program_json = json.dumps(wrapped)
+                    f.write(f"{ts},{c},{a},{b},{program_json}\n")
         return 0
 
 
