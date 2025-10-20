@@ -1,4 +1,4 @@
-# from google import genai
+from google import genai
 from typing import Tuple, Dict, Optional as Opt
 import os
 import sys
@@ -82,7 +82,7 @@ Return:
 - a dictionary mapping TERMINAL_FUNCTION -> natural language description
 - an example program written in the grammar
 
-Return them as indicated in the guided output format.
+Return them as indicated in the guided output format. Do not return anything other than that in the final answer.
 '''
 
     def build(self, recipes: str) -> str:
