@@ -291,7 +291,7 @@ def synthesis_baseline():
             )
         data = []
         data.append((0, 0, ""))
-        failed_programs = []
+        actually_getting_answer = 0
         for i in range(200):
             # response = client.models.generate_content(
             #                 model="gemini-2.5-pro", contents = prompt
@@ -310,7 +310,7 @@ def synthesis_baseline():
             # headers = {"Content-Type": "application/json"}
 
             #vllm gpt 120b
-            actually_getting_answer = 0
+            print("answers got sof ar", actually_getting_answer)
             output = llm.generate([prompt], params)
             try:
                 print(actually_getting_answer)

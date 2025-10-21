@@ -44,7 +44,7 @@ from craft import craft, env, env_factory
 import random
 def solve(env, visualise=False) -> float:
   """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
-  actions_to_take = make_stick(env)
+  actions_to_take = make_arrow(env)
   total_reward = 0.0
 
   for t in range(len(actions_to_take)):
@@ -69,7 +69,7 @@ def evaluate() -> float:
   recipes_path, hints_path, 7, max_steps=100, reuse_environments=False,
             visualise=visualise)
 
-  env = env_sampler.sample_environment(task_name= 'make[stick]')
+  env = env_sampler.sample_environment(task_name= 'make[arrow]')
   reward = solve(env,  visualise=visualise)
   return reward
 {res}
@@ -262,12 +262,12 @@ def synthesis_baseline():
     # client = genai.Client()
     first_failing_funcs = []
     programs = []
-    tasks = ['make[stick]']
+    tasks = ['make[arrow]']
     for task in tasks:
         plot =[]
         env = env_sampler.sample_environment(task_name=task)
         markdown = grid_to_markdown(env._current_state.grid, env.world.cookbook)
-        with open("prompt_specifications/specification_with_updated_nld_baseline.txt", "r") as f1, open("function_specific_prompts/make_stick_base.txt", "r") as f2:
+        with open("prompt_specifications/specification_with_updated_nld_baseline.txt", "r") as f1, open("function_specific_prompts/make_arrow_base.txt", "r") as f2:
             first_file_content = f1.read()
             second_file_content = f2.read()
 
@@ -276,18 +276,18 @@ def synthesis_baseline():
                 f"{second_file_content}\n"
                 + "\n\n"
                 "Your task:\n"
-                "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
+                "Return a **correct implementation** of the `make_arrow` function in Python.\n\n"
                 "Formatting Requirements (do NOT ignore):\n"
                 "1. Your response MUST begin exactly like this:\n"
                 "   ```python\n"
-                "   def make_stick(env):\n"
+                "   def make_arrow(env):\n"
                 "2. Only output the complete function implementation inside the code block.\n\n"
                 "Example of correct response format:\n"
                 "```python\n"
-                "def make_stick(env):\n"
+                "def make_arrow(env):\n"
                 "    # your implementation here\n"
                 "```\n"
-                "Now return only the correct implementation of `make_stick` following these rules."
+                "Now return only the correct implementation of `make_arrow` following these rules."
             )
         data = []
         data.append((0, 0, ""))
@@ -322,9 +322,9 @@ def synthesis_baseline():
             
                 continue 
             # Remove leading `def make_stick(...):` if present and get body
-            response_body = strip_function_def(response, "make_stick")
+            response_body = strip_function_def(response, "make_arrow")
             # Re-wrap the body into a full def for evaluation (so eval() finds make_stick)
-            wrapped = f"def make_stick(env):\n" + textwrap.indent(response_body, "    ")
+            wrapped = f"def make_arrow(env):\n" + textwrap.indent(response_body, "    ")
             a, b, c, d = eval(wrapped)
             print(a, b, c, d)
             if a== -1 :  
@@ -338,17 +338,17 @@ def synthesis_baseline():
                 # save the stripped body (what's after `def make_stick(...)`)
                 programs.append(response_body.strip())
                 actually_getting_answer += 1
-            with open("results/plots/data_make_stick_baseline_new_19thoct_hard.txt", "a") as log_file:
+            with open("results/plots/data_make_arrow_baseline_new_21st_oct_hard_arrow.txt", "a") as log_file:
                     log_file.write(f"{c},{a},{wrapped}\n")
         # plot_watermark(data, "make[stick]")
         os.makedirs("results", exist_ok=True)
-        out_file = "results/data_make_stick_baseline_new_19thoct_hard.csv"
+        out_file = "results/data_make_arrow_baseline_new_21stoct_hard_arrow.csv"
         write_header = not os.path.exists(out_file)
 
                 # append a CSV line with timestamp, actions_count, reward, success, and program
         with open(out_file, "a", encoding="utf-8") as f:
                     if write_header:
-                        f.write("timestamp,actions_count,reward,success,program\n")
+                        f.write("actions_count,reward,program\n")
                     for  c,a, wrapped in data:
                     # wrap program in JSON string to safely escape newlines/commas
                         program_json = json.dumps(wrapped)
