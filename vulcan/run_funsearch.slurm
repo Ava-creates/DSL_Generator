@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=funsearch%j
+#SBATCH --job-name=funsearch_baseline
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=avani4@ualberta.ca
 #SBATCH --output=vulcan/random_sampler_hf_%j.out
 #SBATCH --error=vulcan/random_sampler_hf_%j.err
-#SBATCH --time=8:00:00
+#SBATCH --time=48:00:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
 #SBATCH --gres=gpu:4
