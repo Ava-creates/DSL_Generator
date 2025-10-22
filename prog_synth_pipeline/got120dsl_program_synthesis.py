@@ -401,7 +401,7 @@ def synthesis_llm():
         program = "MOVE_FUNC(UP) ;"
         # print(prompt)
         # break
-        for i in range(10):
+        for i in range(30):
             prompt = f"""
     You are a Domain Specific Language (DSL) program generator for the Craft domain. 
 
@@ -481,17 +481,21 @@ def synthesis_llm():
             # response = response.json()["response"]
             output = llm.generate([prompt], params)
             response = output[0].outputs[0].text
-            print(prompt)
-            print(response)
+
             # response = response.text for gemini
             # b = response.strip('$ ')
             b = re.search(r'\$(.*?)\$\s*', response)
+            os.makedirs("results/program_synthesis", exist_ok=True)
+            log_path = os.path.join("results/program_synthesis", "programs.log")
+            with open(log_path, "a", encoding="utf-8") as log_f:
+                log_f.write(f"Task: {task} | Program: {b}\n")
             if b:
                 b = b.group(1)
             else:
                 continue
-            print(b)
+            # print(b)
             program = b
+ 
             # b= "COLLECT_FUNC(WOOD) ;  COLLECT_FUNC(IRON) ; CRAFT_FUNC(BRIDGE) ;"
             # programs.append(b)
             a, program_str, results, s, r, eval_time, task, funcs, interact, rewa = evaluate(b, task ,env, inter, reward)
@@ -503,15 +507,17 @@ def synthesis_llm():
             plot.append((len(interact), r))
             # print(a, program_str, results, s, r, eval_time, task, funcs )
             if s :
-                with open("program_for_tasks.log", 'a') as f:
+                with open(log_path, "a", encoding="utf-8") as log_f:
+                    log_f.write(f"Task: {task} | Program: {b}| Success: {s}\n")
+                with open("program_for_tasks_21stoct.log", 'a') as f:
                     ans = program_str + "," +task +","+"True,"+str(r)+","+ str(eval_time)+"\n"
                     f.write(ans)
                 break
             else:
                 # program = b
                 find_bad_func(funcs, task)
-        plot_interactions_rewards(interactions, rewards, task)
-        plot_watermark(plot, task)
+        # plot_interactions_rewards(interactions, rewards, task)
+        # plot_watermark(plot, task)
 
                 
     return programs
