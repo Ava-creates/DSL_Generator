@@ -177,7 +177,7 @@ def plot_watermark(data, task):
     plt.xlabel('Number of Interactions')
     plt.ylabel('Reward')
     plt.grid()
-    plt.savefig(f'results/plots/plot_{task}.png')
+    plt.savefig(f'results/plots/plot_21st_{task}.png')
     plt.close()
 
 def plot_interactions_rewards(interactions, rewards, task):
@@ -503,7 +503,23 @@ def synthesis_llm():
             rewards += rewa
             inter+= interactions[-1] if interactions else 0
             reward+= rewards[-1] if rewards else 0
-            print(interact, rewa)
+
+            os.makedirs("results/program_synthesis", exist_ok=True)
+            record = {
+                "task": task,
+                "program": program_str,
+                "success": bool(s),
+                "total_reward": r,
+                "eval_time": eval_time,
+                "interactions": interact,
+                "rewards": rewa,
+                "timestamp": int(time.time())
+            }
+            json_path = os.path.join("results/program_synthesis", "programs_results.jsonl")
+
+            with open(json_path, "a", encoding="utf-8") as jf:
+                jf.write(json.dumps(record) + "\n")
+                
             plot.append((len(interact), r))
             # print(a, program_str, results, s, r, eval_time, task, funcs )
             if s :
@@ -512,12 +528,13 @@ def synthesis_llm():
                 with open("program_for_tasks_21stoct.log", 'a') as f:
                     ans = program_str + "," +task +","+"True,"+str(r)+","+ str(eval_time)+"\n"
                     f.write(ans)
+                    
                 break
             else:
                 # program = b
                 find_bad_func(funcs, task)
-        # plot_interactions_rewards(interactions, rewards, task)
-        # plot_watermark(plot, task)
+        plot_interactions_rewards(interactions, rewards, task)
+        plot_watermark(plot, task)
 
                 
     return programs
