@@ -387,7 +387,7 @@ def synthesis_llm():
 #    client = genai.Client()
     first_failing_funcs = []
     programs = []
-
+    tasks = ["get[gem]"]
     for task in tasks:
         plot =[]
         print(task)
