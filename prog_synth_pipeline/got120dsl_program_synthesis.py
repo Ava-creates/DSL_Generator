@@ -518,8 +518,9 @@ def synthesis_llm():
             json_path = os.path.join("results/program_synthesis", "programs_results.jsonl")
 
             with open(json_path, "a", encoding="utf-8") as jf:
-                jf.write(json.dumps(record) + "\n")
-                
+#                jf.write(json.dumps(record) + "\n")
+                 jf.write(json.dumps(record, default=lambda o: float(o) if hasattr(o, 'dtype') else str(o)) + "\n")
+               
             plot.append((len(interact), r))
             # print(a, program_str, results, s, r, eval_time, task, funcs )
             if s :
