@@ -13,11 +13,10 @@ Usage (from repo root):
 The script will parse floats robustly and skip malformed lines. Use
 --max-points N --tail to select the last N points (bottom N points).
 """
-
-import argparse
 import os
+import re
 from typing import List, Tuple
-
+import argparse
 from plotting import plot_watermark
 
 
@@ -28,28 +27,61 @@ def read_data_file(path: str) -> List[Tuple[float, float]]:
     extract numbers by filtering non-numeric characters if needed.
     """
     data: List[Tuple[float, float]] = []
+
     if not os.path.exists(path):
         raise FileNotFoundError(path)
+
+    # regex for lines starting with two numbers separated by a comma
+    num_pattern = re.compile(r"^\s*([+-]?\d+(?:\.\d+)?),\s*([+-]?\d+(?:\.\d+)?),")
+
     with open(path, 'r', encoding='utf-8') as f:
         for ln in f:
-            line = ln.strip()
+            match = num_pattern.match(ln)
+            if not match:
+                continue
+
+            try:
+                env_inter = float(match.group(1))
+                reward = float(match.group(2))
+            except ValueError:
+                continue
+
+            data.append((env_inter, reward))
+    print(len(data))
+    return data
+
+import json
+
+def extract_env_and_reward(path):
+    """
+    Reads a JSONL file and extracts (env_interactions, reward) pairs.
+
+    Args:
+        path (str): Path to the input file containing one JSON object per line.
+
+    Returns:
+        List[Tuple[int | None, float | None]]: A list of (env_interactions, reward) tuples.
+    """
+    data = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
             if not line:
                 continue
-            parts = line.split(',')
-            if len(parts) < 2:
-                continue
             try:
-                env_inter = float(parts[0].strip())
-                reward = float(parts[1].strip())
-            except Exception:
-                # permissive numeric extraction
-                try:
-                    env_inter = float(''.join(ch for ch in parts[0] if (ch.isdigit() or ch in '.-+eE')))
-                    reward = float(''.join(ch for ch in parts[1] if (ch.isdigit() or ch in '.-+eE')))
-                except Exception:
-                    continue
-            data.append((env_inter, reward))
+                obj = json.loads(line)
+                env_interactions = obj.get("env_interactions", None)
+
+                # extract reward (first value in scores dict)
+                scores = obj.get("scores", {})
+                reward = next(iter(scores.values()), None)
+
+                data.append((env_interactions, reward))
+            except json.JSONDecodeError as e:
+                print(f"Skipping bad line: {e}")
     return data
+
+
 
 
 def main() -> int:
@@ -61,19 +93,17 @@ def main() -> int:
     p.add_argument('--tail', action='store_true', help='When used with --max-points, take the last N points (tail)')
     args = p.parse_args()
 
-    data = read_data_file(args.datafile)
-    if not data:
-        print('No numeric rows parsed from', args.datafile)
-        return 2
+        # data = read_data_file(args.datafile)
+        # if not data:
+        #     print('No numeric rows parsed from', args.datafile)
+        #     return 2
 
-    # Optionally limit number of points
-    if args.max_points and args.max_points > 0:
-        if args.tail:
-            data = data[-args.max_points:]
-        else:
-            data = data[: args.max_points]
+    #
+
+    data = extract_env_and_reward(args.datafile)
 
     os.makedirs(args.out_dir, exist_ok=True)
+    print(data)
     plot_watermark(data, args.task, out_dir=args.out_dir)
     print(f'Wrote plot for {len(data)} points to {args.out_dir}')
     return 0

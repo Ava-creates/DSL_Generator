@@ -19,20 +19,42 @@ def plot_watermark(data: List[Tuple[int, float]], task: str, out_dir: str = "res
         task: task name used for the filename.
         out_dir: directory to save the plot into.
     """
-    if len(data) < 2:
-        return
+    print(task)
+    x_vals = []
+    y_vals = []
 
-    x_values = [sum(point[0] for point in data[: i + 1]) for i in range(len(data))]
-    y_values = [max(point[1] for point in data[: i + 1]) for i in range(len(data))]
+    cumulative_x = 0
+    max_y = float('-inf')
 
-    plt.plot(x_values, y_values, marker="o")
-    plt.title("Reward vs Interactions")
+    for a, b in data:
+        if a != -1:
+            cumulative_x += a  # sum of first values ignoring -1
+        max_y = max(max_y, b)  # running max of second values
+        x_vals.append(cumulative_x)
+        y_vals.append(max_y)
+    print(len(y_vals))
+    plt.figure(figsize=(8,4))
+    plt.plot(x_vals, y_vals, marker='o', linestyle='-', alpha=0.8)
+    plt.title("Cumulative X vs Running Max Y")
     plt.xlabel("Number of Interactions")
     plt.ylabel("Reward")
-    plt.grid()
-    plt.tight_layout()
+    plt.grid(True)
+    # plt.show()
     plt.savefig(f"{out_dir}/plot_{task}.png")
-    plt.close()
+
+    # if len(data) < 2:
+    #     return
+
+    # x_values = [sum(point[0] for point in data[: i + 1]) for i in range(len(data))]
+    # y_values = [max(point[1] for point in data[: i + 1]) for i in range(len(data))]
+
+    # plt.plot(x_values, y_values, marker="o")
+    # plt.title("Reward vs Interactions")
+
+    # plt.grid()
+    # plt.tight_layout()
+    # plt.savefig(f"{out_dir}/plot_{task}.png")
+    # plt.close()
 
 
 def plot_interactions_rewards(interactions: Iterable[int], rewards: Iterable[float], task: str, out_path: str = "plot_{task}.png") -> None:

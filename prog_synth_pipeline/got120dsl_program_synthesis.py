@@ -387,7 +387,7 @@ def synthesis_llm():
 #    client = genai.Client()
     first_failing_funcs = []
     programs = []
-    tasks = ["get[gem]"]
+    tasks = ["make[stick]", "make[arrow]", "get[gem]" ]
     for task in tasks:
         plot =[]
         print(task)
@@ -534,7 +534,7 @@ def synthesis_llm():
             else:
                 # program = b
                 find_bad_func(funcs, task)
-        plot_interactions_rewards(interactions, rewards, task)
+        # plot_interactions_rewards(interactions, rewards, task)
         plot_watermark(plot, task)
 
                 
