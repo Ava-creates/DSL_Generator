@@ -395,7 +395,7 @@ def synthesis_llm():
 #    client = genai.Client()
     first_failing_funcs = []
     programs = []
-    tasks = ["make[stick]", "make[arrow]", "get[gem]" ]
+    tasks = [ "get[gem]" ]
     for task in tasks:
         plot =[]
         print(task)
@@ -409,6 +409,8 @@ def synthesis_llm():
         program = "MOVE_FUNC(UP) ;"
         # print(prompt)
         # break
+        programs= []
+        programs.append(program)
         for i in range(30):
             prompt = f"""
     You are a Domain Specific Language (DSL) program generator for the Craft domain. 
@@ -464,7 +466,7 @@ def synthesis_llm():
     $MOVE_FUNC(UP) ;$
 
     ##Previous program that did not solve the task:
-    {program}
+    {programs}
 
     ##Return a program that is able to solve the task
     
@@ -503,7 +505,7 @@ def synthesis_llm():
                 continue
             # print(b)
             program = b
- 
+            programs.append(b)
             # b= "COLLECT_FUNC(WOOD) ;  COLLECT_FUNC(IRON) ; CRAFT_FUNC(BRIDGE) ;"
             # programs.append(b)
             a, program_str, results, s, r, eval_time, task, funcs, interact, rewa = evaluate(b, task ,env, inter, reward)
