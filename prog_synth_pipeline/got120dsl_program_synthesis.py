@@ -412,6 +412,7 @@ def synthesis_llm():
         programs= []
         programs.append(program)
         for i in range(30):
+            programs_str = "\n".join(programs)  
             prompt = f"""
     You are a Domain Specific Language (DSL) program generator for the Craft domain. 
 
@@ -465,8 +466,8 @@ def synthesis_llm():
     Example output ->
     $MOVE_FUNC(UP) ;$
 
-    ##Previous program that did not solve the task:
-    {programs}
+    ##Previous program that FAILED to solve the task:
+    {programs_str}
 
     ##Return a program that is able to solve the task
     
@@ -489,6 +490,7 @@ def synthesis_llm():
             # headers = {"Content-Type": "application/json"}
             # response = requests.post(api_url, headers=headers, json=payload, timeout=300)
             # response = response.json()["response"]
+            print(prompt)
             output = llm.generate([prompt], params)
             response = output[0].outputs[0].text
 
