@@ -386,7 +386,7 @@ def synthesis_baseline():
 
 def synthesis_llm():
     llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
-    params = SamplingParams(temperature=0.7, max_tokens=15000)
+    params = SamplingParams(temperature=0.6, max_tokens=5000)
     with open("cfg/cfg.txt") as f:
         cfg = f.read()
     with open("craft/resources/recipes.yaml") as f:
