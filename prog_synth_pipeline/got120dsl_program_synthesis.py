@@ -1,3 +1,4 @@
+from datetime import date
 from typing import List
 from collections import deque
 from cfg_parser import CFGParser
@@ -171,7 +172,7 @@ def plot_watermark(data, task):
 
     cumulative_x = 0
     max_y = float('-inf')
-
+    
     for a, b in data:
         if a != -1:
             cumulative_x += a  # sum of first values ignoring -1
@@ -185,7 +186,7 @@ def plot_watermark(data, task):
     plt.xlabel('Number of Interactions')
     plt.ylabel('Reward')
     plt.grid()
-    plt.savefig(f'results/plots/plot_21st_{task}.png')
+    plt.savefig(f'results/plots/plot_{date.today().isoformat()}_{task}.png')
     plt.close()
 
 def plot_interactions_rewards(interactions, rewards, task):
@@ -516,7 +517,7 @@ def synthesis_llm():
             inter+= interactions[-1] if interactions else 0
             reward+= rewards[-1] if rewards else 0
 
-            os.makedirs("results/program_synthesis", exist_ok=True)
+            os.makedirs(f"results/program_synthesis/{task}", exist_ok=True)
             record = {
                 "task": task,
                 "program": program_str,
@@ -527,7 +528,7 @@ def synthesis_llm():
                 "rewards": rewa,
                 "timestamp": int(time.time())
             }
-            json_path = os.path.join("results/program_synthesis", "programs_results.jsonl")
+            json_path = os.path.join("results/program_synthesis", f"programs_results_date_{date.today().isoformat()}.jsonl")
 
             with open(json_path, "a", encoding="utf-8") as jf:
 #                jf.write(json.dumps(record) + "\n")
@@ -536,12 +537,6 @@ def synthesis_llm():
             plot.append((len(interact), r))
             # print(a, program_str, results, s, r, eval_time, task, funcs )
             if s :
-                with open(log_path, "a", encoding="utf-8") as log_f:
-                    log_f.write(f"Task: {task} | Program: {b}| Success: {s}\n")
-                with open("program_for_tasks_21stoct.log", 'a') as f:
-                    ans = program_str + "," +task +","+"True,"+str(r)+","+ str(eval_time)+"\n"
-                    f.write(ans)
-                    
                 break
             else:
                 # program = b
