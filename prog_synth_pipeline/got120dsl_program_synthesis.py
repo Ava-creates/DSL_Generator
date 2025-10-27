@@ -172,7 +172,7 @@ def plot_watermark(data, task):
 
     cumulative_x = 0
     max_y = float('-inf')
-    
+
     for a, b in data:
         if a != -1:
             cumulative_x += a  # sum of first values ignoring -1
@@ -387,7 +387,7 @@ def synthesis_baseline():
 
 def synthesis_llm():
     llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
-    params = SamplingParams(temperature=0.6, max_tokens=5000)
+    params = SamplingParams(temperature=0.7, max_tokens=5000)
     with open("cfg/cfg.txt") as f:
         cfg = f.read()
     with open("craft/resources/recipes.yaml") as f:
@@ -467,8 +467,9 @@ def synthesis_llm():
     Example output ->
     $MOVE_FUNC(UP) ;$
 
-    ##Previous program that FAILED to solve the task:
+    ##Previous programs that FAILED to solve the task:
     {programs_str}
+    These programs are syntactically correct but did not solve the task. When generating a new program, avoid repeating the mistakes made in these failed programs, and generate semantically different programs.
 
     ##Return a program that is able to solve the task
     
@@ -499,16 +500,17 @@ def synthesis_llm():
             # b = response.strip('$ ')
             b = re.search(r'\$(.*?)\$\s*', response)
             os.makedirs("results/program_synthesis", exist_ok=True)
-            log_path = os.path.join("results/program_synthesis", "programs.log")
-            with open(log_path, "a", encoding="utf-8") as log_f:
-                log_f.write(f"Task: {task} | Program: {b}\n")
+
             if b:
                 b = b.group(1)
             else:
                 continue
             # print(b)
+            # Check if all alphabetic characters in b are lowercase
+            is_all_upper = all((not ch.isalpha()) or ch.isupper() for ch in b)
+            if not is_all_upper:
+                continue
             program = b
-            programs.append(b)
             # b= "COLLECT_FUNC(WOOD) ;  COLLECT_FUNC(IRON) ; CRAFT_FUNC(BRIDGE) ;"
             # programs.append(b)
             a, program_str, results, s, r, eval_time, task, funcs, interact, rewa = evaluate(b, task ,env, inter, reward)
@@ -526,9 +528,8 @@ def synthesis_llm():
                 "eval_time": eval_time,
                 "interactions": interact,
                 "rewards": rewa,
-                "timestamp": int(time.time())
             }
-            json_path = os.path.join("results/program_synthesis", f"programs_results_date_{date.today().isoformat()}.jsonl")
+            json_path = os.path.join("results/program_synthesis", f"programs_results_date_{date.now().isoformat()}.jsonl")
 
             with open(json_path, "a", encoding="utf-8") as jf:
 #                jf.write(json.dumps(record) + "\n")

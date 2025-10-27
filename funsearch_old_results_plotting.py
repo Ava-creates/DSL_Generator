@@ -134,59 +134,6 @@ def process_function_bodies_from_log(source_log: str, support_file: str, task: s
             count += 1
 
 
-def plot_from_log(log_path: str = 'eval_log.jsonl', task: str = 'task', out_dir: str = 'results/plots', max_points: int = 0, tail: bool = False) -> None:
-    """Read the JSONL log and plot (actions_count, value) pairs using plot_watermark.
-
-    The log entries are expected to contain 'actions_count' and 'value'. Malformed
-    or missing entries are skipped.
-    """
-    if not os.path.exists(log_path):
-        raise FileNotFoundError(log_path)
-
-    data: List[Tuple[int, float]] = []
-    with open(log_path, 'r', encoding='utf-8') as f:
-        for ln in f:
-            ln = ln.strip()
-            if not ln:
-                continue
-            try:
-                obj = json.loads(ln)
-            except Exception:
-                continue
-            val = obj.get('value')
-            ac = obj.get('actions_count')
-            if val is None or ac is None:
-                continue
-            try:
-                data.append((int(ac), float(val)))
-            except Exception:
-                continue
-
-    if not data:
-        print('No valid entries in', log_path)
-        return
-
-    # Optionally limit points
-    if max_points and max_points > 0:
-        if tail:
-            data = data[-max_points:]
-        else:
-            data = data[:max_points]
-
-    os.makedirs(out_dir, exist_ok=True)
-    if plot_watermark is None:
-        # lazy import fallback
-        try:
-            from prog_synth_pipeline.plotting import plot_watermark as pw
-            pw(data, task, out_dir=out_dir)
-        except Exception as e:
-            print('plot_watermark not available:', e)
-            return
-    else:
-        plot_watermark(data, task, out_dir=out_dir)
-    print(f'Wrote plot for {len(data)} points to {out_dir}')
-
-
 def main() -> int:
     p = argparse.ArgumentParser(description='Evaluate candidates and/or plot eval_log.jsonl')
     p.add_argument('--log', default='eval_log.jsonl', help='Path to eval JSONL log')

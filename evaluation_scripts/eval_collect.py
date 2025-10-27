@@ -145,5 +145,3 @@ def evaluate() -> float:
     reward += r
 
   return reward
-
-def collect(env, primitive):
