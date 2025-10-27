@@ -505,12 +505,13 @@ def synthesis_llm():
                 b = b.group(1)
             else:
                 continue
-            # print(b)
+            print(b)
             # Check if all alphabetic characters in b are lowercase
             is_all_upper = all((not ch.isalpha()) or ch.isupper() for ch in b)
             if not is_all_upper:
                 continue
             program = b
+            # print(b)
             # b= "COLLECT_FUNC(WOOD) ;  COLLECT_FUNC(IRON) ; CRAFT_FUNC(BRIDGE) ;"
             programs.append(b)
             a, program_str, results, s, r, eval_time, task, funcs, interact, rewa = evaluate(b, task ,env, inter, reward)

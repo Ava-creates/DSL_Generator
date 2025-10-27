@@ -151,77 +151,49 @@ def evaluate() -> float:
 
 
 def collect(env, primitive):
-  def get_primitive_index(primitive_name):
-      return env._current_state.world.cookbook.index[primitive_name]
+  def _find_shortest_path(grid, start_pos, target_kind, inventory):
+    width, height = grid.shape[:2]
+    directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+    queue = collections.deque([(start_pos[0], start_pos[1], [])])
+    visited = set()
+    
+    while queue:
+      x, y, path = queue.popleft()
+      
+      if grid[x, y].argmax() == target_kind and (x, y) != start_pos:
+        return path
+      
+      for dx, dy in directions:
+        nx, ny = x + dx, y + dy
+        if 0 <= nx < width and 0 <= ny < height and (nx, ny) not in visited:
+          cell_content_index = grid[nx, ny].argmax()
+          # Allow movement on clear cells or through tools that are available in the inventory
+          if grid[nx, ny].sum() == 1 or inventory[cell_content_index] > 0:  
+            visited.add((nx, ny))
+            queue.append((nx, ny, path + [(dx, dy)]))
+    
+    return None
 
-  actions = {
-      "UP": 0,
-      "DOWN": 1,
-      "LEFT": 2,
-      "RIGHT": 3,
-      "USE": 4
-  }
-
-  def get_neighbors(pos):
-      x, y = pos
-      return [(x + dx, y + dy) for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]]
+  def _get_action_index_from_direction(direction):
+    mapping = {(-1, 0): craft.LEFT, (1, 0): craft.RIGHT, (0, -1): craft.DOWN, (0, 1): craft.UP}
+    return mapping.get(direction)
 
   current_state = env._current_state
-
-  queue = collections.deque([(current_state.pos, [])])
-  visited = set([current_state.pos])
-
-  target_primitive_index = get_primitive_index(primitive)
-
-  while queue:
-      pos, actions_taken = queue.popleft()
-
-      if current_state.grid[pos[0], pos[1], target_primitive_index] > 0:
-          return actions_taken + [actions["USE"]]
-
-      neighbors = get_neighbors(pos)
-      for neighbor in neighbors:
-          nx, ny = neighbor
-
-          # Ensure the neighbor is within bounds.
-          if 0 <= nx < current_state.grid.shape[1] and 0 <= ny < current_state.grid.shape[0]:
-              # Check if the cell is not blocked by non-grabbable entities.
-              blocked = False
-              for env_index in current_state.world.non_grabbable_indices:
-                  if current_state.grid[ny, nx, env_index] > 0:
-                      blocked = True
-
-              if not blocked:
-                  if neighbor not in visited:
-                      visited.add(neighbor)
-
-                      dx, dy = nx - pos[0], ny - pos[1]
-                      if dx == 1:
-                          action = actions["RIGHT"]
-                      elif dx == -1:
-                          action = actions["LEFT"]
-                      elif dy == 1:
-                          action = actions["DOWN"]
-                      else:  # dy == -1
-                          action = actions["UP"]
-
-                      queue.append((neighbor, actions_taken + [action]))
-
-              else:
-                  # Check if any tool in inventory can be used to clear the path.
-                  for tool_index in current_state.world.grabbable_indices:
-                      if current_state.inventory[tool_index] > 0 and current_state.grid[ny, nx, tool_index] > 0:
-                          return actions_taken + [actions["USE"]]
-
-      # Check if there is any obstacle that needs to be cleared.
-      for env_index in current_state.world.non_grabbable_indices:
-          if current_state.grid[pos[0], pos[1], env_index] > 0:
-              # Use the tool if available and applicable.
-              for tool_index in current_state.world.grabbable_indices:
-                  if current_state.inventory[tool_index] > 0:
-                      return actions_taken + [actions["USE"]]
-
-  return []
+  grid = current_state.grid
+  pos = current_state.pos
+  inventory = current_state.inventory
+  
+  primitive_index = current_state.world.cookbook.index.index(primitive)
+  
+  path_to_primitive = _find_shortest_path(grid, pos, primitive_index, inventory)
+  
+  if not path_to_primitive:
+    return []
+  
+  actions = [_get_action_index_from_direction(step) for step in path_to_primitive]
+  actions.append(craft.USE)  # Add action to collect the primitive
+  
+  return actions
 
 
 print(evaluate())
