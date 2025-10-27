@@ -1,3 +1,16 @@
 {"task": "get[gem]", "program": "COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0, "eval_time": 0.01648998260498047, "interactions": [], "rewards": [], "timestamp": 1761588743}
 {"task": "get[gem]", "program": "COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0, "eval_time": 0.0128936767578125, "interactions": [], "rewards": [], "timestamp": 1761588755}
 {"task": "get[gem]", "program": "COLLECT_FUNC(GEM);", "success": false, "total_reward": 0, "eval_time": 0.012931108474731445, "interactions": [], "rewards": [], "timestamp": 1761588785}
+{"task": "get[gem]", "program": "MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0.0, "eval_time": 0.016974210739135742, "interactions": [1, 2, 3, 4, 5], "rewards": [0.0, 0.0, 0.0, 0.0, 0.0]}
+{"task": "get[gem]", "program": "COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0.0, "eval_time": 0.012771129608154297, "interactions": [], "rewards": []}
+{"task": "get[gem]", "program": "MOVE_FUNC(UP) ;", "success": false, "total_reward": 0.0, "eval_time": 0.0005068778991699219, "interactions": [11], "rewards": [0.0]}
+{"task": "get[gem]", "program": "MOVE_FUNC(UP) ;", "success": false, "total_reward": 0.0, "eval_time": 0.0005691051483154297, "interactions": [22], "rewards": [0.0]}
+{"task": "get[gem]", "program": "COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0.0, "eval_time": 0.01471400260925293, "interactions": [], "rewards": []}
+{"task": "get[gem]", "program": "MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0.0, "eval_time": 0.014571666717529297, "interactions": [66, 67, 68, 69, 70], "rewards": [0.0, 0.0, 0.0, 0.0, 0.0]}
+{"task": "get[gem]", "program": "COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0.0, "eval_time": 0.012723445892333984, "interactions": [], "rewards": []}
+{"task": "get[gem]", "program": "MOVE_FUNC(DOWN) ; COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0.0, "eval_time": 0.015009403228759766, "interactions": [206], "rewards": [0.0]}
+{"task": "get[gem]", "program": "COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0.0, "eval_time": 0.012790441513061523, "interactions": [], "rewards": []}
+{"task": "get[gem]", "program": "MOVE_FUNC(DOWN) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(UP) ; COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0.0, "eval_time": 0.015086174011230469, "interactions": [618, 619, 620, 621, 622, 623, 624], "rewards": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}
+{"task": "get[gem]", "program": "MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; MOVE_FUNC(RIGHT) ; COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0.0, "eval_time": 0.014431238174438477, "interactions": [1242, 1243, 1244, 1245, 1246], "rewards": [0.0, 0.0, 0.0, 0.0, 0.0]}
+{"task": "get[gem]", "program": "COLLECT_FUNC(GEM);", "success": false, "total_reward": 0.0, "eval_time": 0.01268148422241211, "interactions": [], "rewards": []}
+{"task": "get[gem]", "program": "COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0.0, "eval_time": 0.01263284683227539, "interactions": [], "rewards": []}
