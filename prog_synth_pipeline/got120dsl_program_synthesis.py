@@ -529,7 +529,7 @@ def synthesis_llm():
                 "interactions": interact,
                 "rewards": rewa,
             }
-            json_path = os.path.join("results/program_synthesis", f"programs_results_date_{date.now().isoformat()}.jsonl")
+            json_path = os.path.join("results/program_synthesis", f"programs_results_date_{date.today().isoformat()}.jsonl")
 
             with open(json_path, "a", encoding="utf-8") as jf:
 #                jf.write(json.dumps(record) + "\n")
