@@ -512,7 +512,7 @@ def synthesis_llm():
                 continue
             program = b
             # b= "COLLECT_FUNC(WOOD) ;  COLLECT_FUNC(IRON) ; CRAFT_FUNC(BRIDGE) ;"
-            # programs.append(b)
+            programs.append(b)
             a, program_str, results, s, r, eval_time, task, funcs, interact, rewa = evaluate(b, task ,env, inter, reward)
             interactions += interact
             rewards += rewa

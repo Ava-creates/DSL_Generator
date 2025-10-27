@@ -134,7 +134,7 @@ def process_function_bodies_from_log(source_log: str, support_file: str, task: s
             print(' ->', res)
             count += 1
 
-
+    print(a_count)
     return a_count
 
 

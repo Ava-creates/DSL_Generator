@@ -151,57 +151,77 @@ def evaluate() -> float:
 
 
 def collect(env, primitive):
-  import numpy as np
-  from collections import deque
+  def get_primitive_index(primitive_name):
+      return env._current_state.world.cookbook.index[primitive_name]
 
-  # Get the index of the target primitive and the agent's current position
-  primitive_index = env.world.cookbook.index[primitive]
-  start_x, start_y = env._current_state.pos
+  actions = {
+      "UP": 0,
+      "DOWN": 1,
+      "LEFT": 2,
+      "RIGHT": 3,
+      "USE": 4
+  }
 
-  # Directions and their corresponding actions
-  directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-  action_map = {(-1, 0): craft.LEFT, (1, 0): craft.RIGHT, 
-                (0, -1): craft.DOWN, (0, 1): craft.UP}
+  def get_neighbors(pos):
+      x, y = pos
+      return [(x + dx, y + dy) for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]]
 
-  # Helper function to check if a cell is blocked by obstacles other than the primitive itself
-  def is_blocked(x, y):
-    return any(env._current_state.grid[x, y][i] > 0 for i in range(len(env._current_state.grid[x, y]))
-               if i != primitive_index)
+  current_state = env._current_state
 
-  # Helper function to check if a cell can be used with available tools
-  def can_use_tools(x, y):
-      tool_indices = [env.world.cookbook.index[tool] for tool in env.world.cookbook.index if tool.endswith("WORKSHOP")]
-      return any(env._current_state.inventory[i] > 0 for i in tool_indices)
+  queue = collections.deque([(current_state.pos, [])])
+  visited = set([current_state.pos])
 
-  # BFS to find the shortest path to a cell containing the primitive
-  visited = set()
-  queue = deque([(start_x, start_y, [])])  # (x, y, path)
+  target_primitive_index = get_primitive_index(primitive)
 
   while queue:
-    x, y, path = queue.popleft()
+      pos, actions_taken = queue.popleft()
 
-    if (x, y) in visited:
-      continue
+      if current_state.grid[pos[0], pos[1], target_primitive_index] > 0:
+          return actions_taken + [actions["USE"]]
 
-    visited.add((x, y))
+      neighbors = get_neighbors(pos)
+      for neighbor in neighbors:
+          nx, ny = neighbor
 
-    for dx, dy in directions:
-      nx, ny = x + dx, y + dy
-      
-      # Check bounds
-      if 0 <= nx < env._current_state.grid.shape[0] and 0 <= ny < env._current_state.grid.shape[1]:
-        # If the cell contains the primitive, return the path to it
-        if env._current_state.grid[nx, ny][primitive_index] > 0:
-          move_action = action_map[(dx, dy)]
-          use_action = craft.USE
-          return path + [move_action, use_action]
-        
-        # If the cell is not blocked and hasn't been visited, add to queue
-        if not is_blocked(nx, ny):
-          move_action = action_map[(dx, dy)]
-          queue.append((nx, ny, path + [move_action]))
+          # Ensure the neighbor is within bounds.
+          if 0 <= nx < current_state.grid.shape[1] and 0 <= ny < current_state.grid.shape[0]:
+              # Check if the cell is not blocked by non-grabbable entities.
+              blocked = False
+              for env_index in current_state.world.non_grabbable_indices:
+                  if current_state.grid[ny, nx, env_index] > 0:
+                      blocked = True
 
-  return []  # Return an empty list if no path found
+              if not blocked:
+                  if neighbor not in visited:
+                      visited.add(neighbor)
+
+                      dx, dy = nx - pos[0], ny - pos[1]
+                      if dx == 1:
+                          action = actions["RIGHT"]
+                      elif dx == -1:
+                          action = actions["LEFT"]
+                      elif dy == 1:
+                          action = actions["DOWN"]
+                      else:  # dy == -1
+                          action = actions["UP"]
+
+                      queue.append((neighbor, actions_taken + [action]))
+
+              else:
+                  # Check if any tool in inventory can be used to clear the path.
+                  for tool_index in current_state.world.grabbable_indices:
+                      if current_state.inventory[tool_index] > 0 and current_state.grid[ny, nx, tool_index] > 0:
+                          return actions_taken + [actions["USE"]]
+
+      # Check if there is any obstacle that needs to be cleared.
+      for env_index in current_state.world.non_grabbable_indices:
+          if current_state.grid[pos[0], pos[1], env_index] > 0:
+              # Use the tool if available and applicable.
+              for tool_index in current_state.world.grabbable_indices:
+                  if current_state.inventory[tool_index] > 0:
+                      return actions_taken + [actions["USE"]]
+
+  return []
 
 
 print(evaluate())
