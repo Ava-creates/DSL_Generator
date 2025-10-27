@@ -85,7 +85,7 @@ def main():
         print("No data parsed from", args.log)
         return 1
 
-    csv_path = os.path.join(args.out_dir, "aggregated_log.csv")
+    csv_path = os.path.join(args.out_dir, "aggregated_log_collect.csv")
     write_csv(data, csv_path)
     print(f"Wrote CSV to {csv_path}")
 

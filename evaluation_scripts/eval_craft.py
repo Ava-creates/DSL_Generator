@@ -2,7 +2,7 @@
 import numpy as np
 import time
 import collections
-from DSL_Generator.craft import env_factory
+from craft import env_factory
 
 def solve(env, item, visualise=False) -> float:
     """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
@@ -21,8 +21,8 @@ def evaluate() -> float:
   """Evaluates a crafting policy on a sample task."""
   #max reward is 6 for this fucntion so any craft objet that can get when it is working properly
   visualise = False
-  recipes_path = "DSL_Generator/craft/resources/recipes.yaml"
-  hints_path = "DSL_Generator/craft/resources/hints.yaml"
+  recipes_path = "craft/resources/recipes.yaml"
+  hints_path = "craft/resources/hints.yaml"
   reward = 0
   actions= 0 
   for i in range(11):
@@ -170,7 +170,7 @@ def evaluate() -> float:
       reward += solve(env, item, visualise=visualise)[0]  # +1 this does not
       actions += solve(env, item, visualise=visualise)[1] 
     else:
-      recipes_path_2 = "resources/recipes_for_synth.yaml"
+      recipes_path_2 = "craft/resources/recipes_for_synth.yaml"
       item = "arrow"
       env_sampler = env_factory.EnvironmentFactory(
             recipes_path_2, hints_path, 6, max_steps=100, 

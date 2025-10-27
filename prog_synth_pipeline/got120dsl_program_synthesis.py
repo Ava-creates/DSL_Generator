@@ -387,7 +387,7 @@ def synthesis_baseline():
 
 def synthesis_llm():
     llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
-    params = SamplingParams(temperature=0.7, max_tokens=5000)
+    params = SamplingParams(temperature=0.8, max_tokens=5000)
     with open("cfg/cfg.txt") as f:
         cfg = f.read()
     with open("craft/resources/recipes.yaml") as f:
@@ -396,7 +396,7 @@ def synthesis_llm():
 #    client = genai.Client()
     first_failing_funcs = []
     programs = []
-    tasks = [ "get[gem]" ]
+    tasks = ["make[stick]", "make[arrow]", "get[gem]"]
     for task in tasks:
         plot =[]
         print(task)
@@ -530,7 +530,7 @@ def synthesis_llm():
                 "interactions": interact,
                 "rewards": rewa,
             }
-            json_path = os.path.join("results/program_synthesis", f"programs_results_date_{date.today().isoformat()}.jsonl")
+            json_path = os.path.join(f"results/program_synthesis/{task}", f"programs_results_date_{date.today().isoformat()}.jsonl")
 
             with open(json_path, "a", encoding="utf-8") as jf:
 #                jf.write(json.dumps(record) + "\n")

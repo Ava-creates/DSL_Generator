@@ -96,7 +96,7 @@ def process_function_bodies_from_log(source_log: str, support_file: str, task: s
         raise FileNotFoundError(source_log)
 
     count = 0
-    a_count = 0
+    a_actions =0
     with open(source_log, 'r', encoding='utf-8') as f:
         for ln in f:
             if max_to_process and count >= max_to_process:
@@ -118,7 +118,7 @@ def process_function_bodies_from_log(source_log: str, support_file: str, task: s
             if not func_body:
                 continue
 
-            wrapper = f"def collect(env, primitive):\n{func_body}\n"
+            wrapper = f"def craft(env, item):\n{func_body}\n"
 
             # Run eval on the wrapped function; eval() will append to eval_log.jsonl
             print(f'Processing function #{count+1} from {source_log}...')
@@ -126,17 +126,15 @@ def process_function_bodies_from_log(source_log: str, support_file: str, task: s
             # res is a tuple: (reward, success_bool, actions_count, stderr_or_none)
             reward = res[0]
             actions_count = res[2]
-            a_count += actions_count
+            a_actions+=actions_count
             # Log the result to eval_log.jsonl
-            with open('eval_log.jsonl', 'a', encoding='utf-8') as log_f:
+            with open('eval_log_craft.jsonl', 'a', encoding='utf-8') as log_f:
                 json.dump({'value': reward, 'actions_count': actions_count}, log_f)
                 log_f.write('\n')
             print(' ->', res)
             count += 1
 
-    print(a_count)
-    return a_count
-
+    print(f'Processed {count} functions from {source_log}. Total actions: {a_actions}')
 
 
  
