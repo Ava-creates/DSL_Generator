@@ -500,7 +500,7 @@ def synthesis_llm():
             # b = response.strip('$ ')
             b = re.search(r'\$(.*?)\$\s*', response)
             os.makedirs("results/program_synthesis", exist_ok=True)
-
+            print(b)
             if b:
                 b = b.group(1)
             else:
