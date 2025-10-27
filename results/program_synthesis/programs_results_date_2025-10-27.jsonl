@@ -1,0 +1,3 @@
+{"task": "get[gem]", "program": "COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0, "eval_time": 0.01648998260498047, "interactions": [], "rewards": [], "timestamp": 1761588743}
+{"task": "get[gem]", "program": "COLLECT_FUNC(GEM) ;", "success": false, "total_reward": 0, "eval_time": 0.0128936767578125, "interactions": [], "rewards": [], "timestamp": 1761588755}
+{"task": "get[gem]", "program": "COLLECT_FUNC(GEM);", "success": false, "total_reward": 0, "eval_time": 0.012931108474731445, "interactions": [], "rewards": [], "timestamp": 1761588785}
