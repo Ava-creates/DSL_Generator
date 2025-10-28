@@ -118,7 +118,7 @@ def process_function_bodies_from_log(source_log: str, support_file: str, task: s
             if not func_body:
                 continue
 
-            wrapper = f"def craft(env, item):\n{func_body}\n"
+            wrapper = f"def collect(env, primitive):\n{func_body}\n"
 
             # Run eval on the wrapped function; eval() will append to eval_log.jsonl
             print(f'Processing function #{count+1} from {source_log}...')

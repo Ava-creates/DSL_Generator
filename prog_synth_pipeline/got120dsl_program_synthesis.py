@@ -13,7 +13,7 @@ from multiprocessing import Pool, cpu_count
 from craft import env_factory
 import json
 import sys
-from google import genai
+# from google import genai
 import ast
 import re
 import requests
@@ -396,7 +396,7 @@ def synthesis_llm():
 #    client = genai.Client()
     first_failing_funcs = []
     programs = []
-    tasks = ["make[stick]", "make[arrow]", "get[gem]"]
+    tasks = ["get[gem]"]
     for task in tasks:
         plot =[]
         print(task)
