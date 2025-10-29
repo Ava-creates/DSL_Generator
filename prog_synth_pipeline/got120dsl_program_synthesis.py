@@ -568,6 +568,7 @@ def synthesis_llm():
     print("Failed to find a solution for task:", task)
     print(programs)
     conversation = [{"role": "user", "content": f"Here are some programs that FAILED to solve the task {task}:\n{programs} \nPlease provide insights on why these programs might have failed and suggest improvements for future program synthesis attempts also if we should update the cfg somehow? FIve updated CFG or final suggestions in bullet points"}]
+    output = llm.chat(conversation, params)
     print(output[0].outputs[0].text)
     return programs
 
