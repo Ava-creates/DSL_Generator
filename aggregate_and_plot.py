@@ -26,9 +26,10 @@ def read_programs_results(path: str, offset: int = 26000):
     program-results series.
     """
     data = []
-
+    data.append((26000, 0.0))
     with open(path, 'r', encoding='utf-8') as f:
         i =0 
+        
         for ln in f:
             ln = ln.strip()
             if not ln:
@@ -39,9 +40,8 @@ def read_programs_results(path: str, offset: int = 26000):
                 continue
             x= rec.get('interactions')[-1]
             y = rec.get('total_reward', 0.0)
-            x += offset
             data.append((x, y))
-    print(data)
+    # print(data)
     return data
 
 def plot_two_series(data_a, label_a: str, data_b, label_b: str, task: str, out_dir: str = 'results/plots') -> None:
@@ -81,10 +81,11 @@ def plot_two_series(data_a, label_a: str, data_b, label_b: str, task: str, out_d
 
     if data_a:
         xa, ya = best_so_far(data_a)
-        plt.plot(xa, ya, label=label_a, marker='o')
+        # plt.plot(xa, ya, label=label_a, marker='o')
 
     if data_b:
         xb, yb = best_so_far(data_b)
+        print(xb, yb)
         plt.plot(xb, yb, label=label_b, marker='x')
 
     plt.title(f'Reward vs Interactions ({task})')

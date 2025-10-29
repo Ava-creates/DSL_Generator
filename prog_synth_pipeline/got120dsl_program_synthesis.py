@@ -392,7 +392,7 @@ def synthesis_llm():
         cfg = f.read()
     with open("craft/resources/recipes.yaml") as f:
         recipes = f.read()
-
+    extra_body={"reasoning_effort": "high"}
 #    client = genai.Client()
     first_failing_funcs = []
     programs = []
@@ -493,7 +493,7 @@ def synthesis_llm():
             # response = requests.post(api_url, headers=headers, json=payload, timeout=300)
             # response = response.json()["response"]
             print(prompt)
-            output = llm.generate([prompt], params)
+            output = llm.generate([prompt], params, extra_body)
             response = output[0].outputs[0].text
 
             # response = response.text for gemini
