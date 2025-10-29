@@ -406,6 +406,7 @@ def synthesis_llm():
     first_failing_funcs = []
     programs = []
     tasks = ["get[gem]"]
+    reasoning = {}
     for task in tasks:
         plot =[]
         print(task)
@@ -421,7 +422,7 @@ def synthesis_llm():
         # break
         programs= []
         programs.append(program)
-        for i in range(30):
+        for i in range(10):
             programs_str = "\n".join(programs)  
             prompt = f"""
     You are a Domain Specific Language (DSL) program generator for the Craft domain. 
@@ -507,7 +508,7 @@ def synthesis_llm():
             output = llm.chat(conversation, params)
             # output = llm.generate([prompt], params, extra_body)
             response = output[0].outputs[0].text
-            print("Raw response:", response)
+            # print("Raw response:", response)
             # response = response.text for gemini
             # b = response.strip('$ ')
             marker_match = re.search(r'assistantfinal', response, re.IGNORECASE)
@@ -536,7 +537,7 @@ def synthesis_llm():
             rewards += rewa
             inter+= interactions[-1] if interactions else 0
             reward+= rewards[-1] if rewards else 0
-
+            reasoning[program_str]= response
             os.makedirs(f"results/program_synthesis/{task}", exist_ok=True)
             record = {
                 "task": task,
@@ -560,10 +561,13 @@ def synthesis_llm():
             else:
                 # program = b
                 find_bad_func(funcs, task)
-        # plot_interactions_rewards(interactions, rewards, task)
-        plot_watermark(plot, task)
+        # # plot_interactions_rewards(interactions, rewards, task)
+        # plot_watermark(plot, task)
+    if not s:
+            print("Failed to find a solution for task:", task)
 
-                
+            conversation = [{"role": "user", "content": f"Here are some programs that FAILED to solve the task {task}:\n{reasoning} \nPlease provide insights on why these programs might have failed and suggest improvements for future program synthesis attempts also if we should update the cfg somehow?"}]
+            print(response := output[0].outputs[0].text)
     return programs
 
 
