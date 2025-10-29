@@ -563,11 +563,10 @@ def synthesis_llm():
                 find_bad_func(funcs, task)
         # # plot_interactions_rewards(interactions, rewards, task)
         # plot_watermark(plot, task)
-    if not s:
-            print("Failed to find a solution for task:", task)
 
-            conversation = [{"role": "user", "content": f"Here are some programs that FAILED to solve the task {task}:\n{reasoning} \nPlease provide insights on why these programs might have failed and suggest improvements for future program synthesis attempts also if we should update the cfg somehow?"}]
-            print(response := output[0].outputs[0].text)
+    print("Failed to find a solution for task:", task)
+    conversation = [{"role": "user", "content": f"Here are some programs that FAILED to solve the task {task}:\n{reasoning} \nPlease provide insights on why these programs might have failed and suggest improvements for future program synthesis attempts also if we should update the cfg somehow?"}]
+    print(response := output[0].outputs[0].text)
     return programs
 
 
