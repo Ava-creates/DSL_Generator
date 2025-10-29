@@ -2,8 +2,8 @@
 #SBATCH --job-name=funsearch_baseline
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=avani4@ualberta.ca
-#SBATCH --output=vulcan/random_sampler_hf_%j.out
-#SBATCH --error=vulcan/random_sampler_hf_%j.err
+#SBATCH --output=vulcan/log/random_sampler_hf_%j.out
+#SBATCH --error=vulcan/log/random_sampler_hf_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G

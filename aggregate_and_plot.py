@@ -8,7 +8,9 @@ The script reads each JSON object per line, extracts `env_interactions` and
 `plot_watermark` to produce a PNG.
 """
 import argparse
+from datetime import date
 import json
+
 import os
 from typing import List, Tuple
 
@@ -77,11 +79,11 @@ def plot_two_series(data_a, label_a: str, data_b, label_b: str, task: str, out_d
             cumsum.append(total)
         return cumsum, best
 
-    print(data_a, data_b)
+    # print(data_a, data_b)
 
     if data_a:
         xa, ya = best_so_far(data_a)
-        # plt.plot(xa, ya, label=label_a, marker='o')
+        plt.plot(xa, ya, label=label_a, marker='o')
 
     if data_b:
         xb, yb = best_so_far(data_b)
@@ -95,11 +97,10 @@ def plot_two_series(data_a, label_a: str, data_b, label_b: str, task: str, out_d
     plt.grid(True)
 
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, f'plot_{task}_compare.png')
+    out_path = os.path.join(out_dir, f'plot_{task}_{date.today().isoformat()}.png')
     plt.tight_layout()
     plt.savefig(out_path)
     plt.close()
-    print(f"✅ Saved plot to {out_path}")
 
 
 def extract_reward(record: dict) -> float:
@@ -162,18 +163,12 @@ def main():
 
     data = read_log(args.log)
 
-    # Call plot_watermark (expects list of (interactions, reward))
-    # os.makedirs(args.out_dir, exist_ok=True)
-    # plot_watermark(data, args.task, out_dir=args.out_dir)
-    # print(f"Saved plot to {args.out_dir}")
-
-    # If a programs file is provided, read it, offset interactions, and plot both series
     if args.programs_file:
         try:
             prog_data = read_programs_results(args.programs_file, offset=args.program_offset)
             # prod label
             label_a = "baseline"
-            label_b = "out method"
+            label_b = "our method"
             plot_two_series(data, label_a, prog_data, label_b, args.task, out_dir=args.out_dir)
         except Exception as e:
             print(f"Failed to read/plot programs file: {e}")

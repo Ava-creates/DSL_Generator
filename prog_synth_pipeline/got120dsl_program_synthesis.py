@@ -493,9 +493,11 @@ def synthesis_llm():
             # response = requests.post(api_url, headers=headers, json=payload, timeout=300)
             # response = response.json()["response"]
             print(prompt)
-            output = llm.generate([prompt], params, extra_body)
+            conversation = [{"role": "user", "content": prompt}]
+            output = llm.chat(conversation, params, reasoning_effort="high")
+            # output = llm.generate([prompt], params, extra_body)
             response = output[0].outputs[0].text
-
+            print("Raw response:", response)
             # response = response.text for gemini
             # b = response.strip('$ ')
             b = re.search(r'\$(.*?)\$\s*', response)
