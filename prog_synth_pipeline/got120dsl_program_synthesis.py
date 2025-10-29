@@ -492,9 +492,8 @@ def synthesis_llm():
             # headers = {"Content-Type": "application/json"}
             # response = requests.post(api_url, headers=headers, json=payload, timeout=300)
             # response = response.json()["response"]
-            print(prompt)
-            conversation = [{"role": "user", "content": prompt}]
-            output = llm.chat(conversation, params, reasoning_effort="high")
+            conversation = [{"role": "user", "content": prompt,  "chat_template_kwargs": {"reasoning_effort": "high"}}]
+            output = llm.chat(conversation, params)
             # output = llm.generate([prompt], params, extra_body)
             response = output[0].outputs[0].text
             print("Raw response:", response)
