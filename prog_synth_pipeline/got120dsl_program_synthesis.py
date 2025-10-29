@@ -499,7 +499,12 @@ def synthesis_llm():
             print("Raw response:", response)
             # response = response.text for gemini
             # b = response.strip('$ ')
-            b = re.search(r'\$(.*?)\$\s*', response)
+            marker_match = re.search(r'assistantfinal', response, re.IGNORECASE)
+            search_target = response
+            if marker_match:
+                # take the text after the "assistantfinal" marker
+                search_target = response[marker_match.end():]
+            b = re.search(r'\$(.*?)\$', search_target, re.DOTALL)
             os.makedirs("results/program_synthesis", exist_ok=True)
             print(b)
             if b:
