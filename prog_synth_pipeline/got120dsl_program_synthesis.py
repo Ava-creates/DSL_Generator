@@ -394,6 +394,15 @@ def synthesis_llm():
         recipes = f.read()
     extra_body={"reasoning_effort": "high"}
 #    client = genai.Client()
+    cfg_explanation = (
+        "The CFG defines the DSL for the Craft domain with three primary primitives: "
+        "MOVE_FUNC(direction), COLLECT_FUNC(item) and CRAFT_FUNC(item). "
+        "MOVE_FUNC moves the agent one cell in the given direction. "
+        "COLLECT_FUNC makes the agent pathfind to and pick up a primitive resource, using available tools "
+        "to overcome obstacles when necessary. "
+        "CRAFT_FUNC moves the agent to the required workshop and crafts the item if the needed ingredients "
+        "are present in the agent's inventory. "
+    )
     first_failing_funcs = []
     programs = []
     tasks = ["get[gem]"]
@@ -438,6 +447,8 @@ def synthesis_llm():
     Here is the context-free grammar (CFG) that defines the DSL. Strictly follow this CFG when synthesising programs :
 
     {cfg}
+
+    {cfg_explanation}
 
     ## Example Programs
     Here are examples of programs written in this DSL:
