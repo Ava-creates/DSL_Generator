@@ -576,18 +576,25 @@ def synthesis_llm():
 
     ---
 
+    ### Current CFG (Context-Free Grammar)
+    {cfg}
+
+    ---
+
     ### Context
 
     You are an expert in **DSL and program synthesis** for the **Craft** environment.
 
-    Each program was generated using the current CFG (context-free grammar) defined for this domain. However, none of them succeeded in completing the task.
+    Each program above was generated using the current CFG but failed to complete the task.  
+    Your task is to analyze these failures and propose **targeted improvements**.
 
     You need to:
-    1. Analyze why these programs might have failed — semantically or structurally.
-    2. Suggest improvements to the **CFG** so that future synthesis attempts (e.g., in FunSearch) are more effective.
-    3. Propose an **updated CFG** written in **BNF format**, ready to be plugged into our synthesis engine.
-    4. List any **new terminal functions** you propose, along with short, precise descriptions of what they do.
-    5. Optionally suggest high-level synthesis or reasoning strategies that could make the agent’s behavior more goal-directed.
+    1. Analyze **why** these programs might have failed — whether due to missing primitives, wrong action order, or limits of the grammar.  
+    2. Identify **gaps or weaknesses** in the current CFG.  
+    3. Suggest **specific modifications or additions** to the CFG that would enable better synthesis results.  
+    4. Output an **updated CFG** in **BNF format**, showing only changed or newly added rules (if possible).  
+    5. Propose any **new terminal functions**, with short, clear descriptions of their purpose and behavior.  
+    6. Provide **recommendations** for improving synthesis strategies (for instance, how FunSearch or the LLM should reason about next actions).
 
     ---
 
@@ -596,17 +603,15 @@ def synthesis_llm():
     Your response must strictly follow this structure:
 
     Failure Analysis
-    (bullet point explanations for why the previous programs failed)
+    (bullet point explanations for why previous programs failed)
 
-    Updated CFG (BNF)
-    <your new or revised CFG here>
+    CFG Changes (BNF)
+    <only include modified or newly added rules; restate unchanged ones if necessary>
+
     Terminal Functions
-    FUNCTION_NAME(args): description of purpose and behavior
+    FUNCTION_NAME(args): description of purpose and usage
 
-    Recommendations
-    (bullet points with insights for better program synthesis or reasoning)
-
-    If the current CFG is already sufficient, simply restate it under “Updated CFG (BNF)” and note that no changes are required.
+    If the current CFG is already sufficient, restate it under “CFG Changes (BNF)” and note that no changes are required.
 
     ---
     """
