@@ -7,7 +7,7 @@ import itertools
 import matplotlib.pyplot as plt
 from program_evaluator import ProgramEvaluator 
 import heapq
-import concurrent.futures
+# import concurrent.futures
 import time
 from multiprocessing import Pool, cpu_count
 from craft import env_factory
@@ -17,13 +17,14 @@ import sys
 import ast
 import re
 import requests
-from funsearch.implementation.funsearch import FunSearch
-from funsearch.implementation import config as config_lib
+# from funsearch.implementation.funsearch import FunSearch
+# from funsearch.implementation import config as config_lib
 import pandas as pd
 import os
 import random
 import subprocess
 from vllm import LLM, SamplingParams
+
 
 def eval(res):
     # with tempfile.TemporaryDirectory() as temp_dir:
@@ -120,7 +121,7 @@ print(evaluate())
         if os.path.exists(script_path):
             os.remove(script_path)
 
-def grid_to_markdown(grid, cookbook):
+def grid_to_markdown(grid, cookbook, agent_pos=None) -> str:
     width, height, n_kinds = grid.shape
     inv_index = cookbook.index.reverse_contents  # index -> item name
 
@@ -129,7 +130,11 @@ def grid_to_markdown(grid, cookbook):
         row = []
         for x in range(width):
             cell_items = [inv_index[k] for k in range(1, n_kinds) if grid[x, y, k] == 1]
-            row.append(",".join(cell_items) if cell_items else ".")
+            cell_repr = ",".join(cell_items) if cell_items else "."
+            # Mark the agent start location
+            if agent_pos and (x, y) == agent_pos:
+                cell_repr = f"Agent({cell_repr})" if cell_repr != "." else "Agent"
+            row.append(cell_repr)
         table.append(row)
 
     df = pd.DataFrame(table)
@@ -258,132 +263,6 @@ def eval_pll(programs, num_workers=None):
                     f.write(f"{task_name}: {prog}, solution: {s}, reward: {r}, evaluation_time: {eval_time:.4f}s\n")
     return results
 
-def find_bad_func(funcs, task):
-
-    first_failing_funcs = []
-    # print(funcs)
-    if funcs:
-            actions_up_to_failure = []
-            for i, (func_name, reward, func_actions) in enumerate(funcs):
-                if reward <= 0:
-                    # Collect actions from all functions up to this failing one
-                    for j in range(i):
-                        actions_up_to_failure.append(funcs[j][2])  
-                    first_failing_funcs.append((func_name, reward, actions_up_to_failure, task))
-                
-    # print(first_failing_funcs)
-    # Run FunSearch for each failing function
-
-def synthesis_baseline():
-    llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
-    params = SamplingParams(temperature=0.7, max_tokens=5000)
-    with open("cfg/cfg.txt") as f:
-        cfg = f.read()
-    with open("craft/resources/recipes.yaml") as f:
-        recipes = f.read()
-
-    # client = genai.Client()
-    first_failing_funcs = []
-    programs = []
-    tasks = ['make[stick]']
-    for task in tasks:
-        plot =[]
-        env = env_sampler.sample_environment(task_name=task)
-        markdown = grid_to_markdown(env._current_state.grid, env.world.cookbook)
-        with open("prompt_specifications/specification_with_updated_nld_baseline.txt", "r") as f1, open("function_specific_prompts/make_stick_base.txt", "r") as f2:
-            first_file_content = f1.read()
-            second_file_content = f2.read()
-        
-        prompt = (
-                f"{first_file_content}\n"
-                f"{second_file_content}\n"
-                + "\n\n"
-                "Your task:\n"
-                "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
-                "Formatting Requirements (do NOT ignore):\n"
-                "1. Your response MUST begin exactly like this:\n"
-                "   ```python\n"
-                "   def make_stick(env):\n"
-                "2. Only output the complete function implementation inside the code block.\n\n"
-                "Example of correct response format:\n"
-                "```python\n"
-                "def make_stick(env):\n"
-                "    # your implementation here\n"
-                "```\n"
-                "Now return only the correct implementation of `make_stick` following these rules."
-            )
-        data = []
-        data.append((0, 0))
-        failed_programs = []
-        for i in range(500):
-            # response = client.models.generate_content(
-            #                 model="gemini-2.5-pro", contents = prompt
-            #             )
-            # payload = {
-            #   "model": "gpt-oss:latest", 
-            #   "prompt": prompt, 
-            #   "template": "{{.Prompt}}",
-            #   "stream": False, 
-            #   "options": {
-            #     "num_ctx": 4096, 
-            #     # "stop": self.stop_tokens
-            #   }
-            # }
-            # api_url = "http://129.128.243.184:11434/api/generate"
-            # headers = {"Content-Type": "application/json"}
-
-            #vllm gpt 120b
-
-            output = llm.generate([prompt], params)
-            # print(output[0].outputs[0].text)
-            try:
-                # response = requests.post(api_url, headers=headers, json=payload, timeout=300)
-
-                # response = response.json()["response"]
-                response = output[0].outputs[0].text
-                # print(response)
-                response = response[response.index("```python")+len("```python"):]
-                response = response[:response.index("```")]
-                # print(response)
-            except:
-                continue 
-            a, b, c, d= eval(response)
-            print(a, b, c, d)
-            if a== -1 :
-                failed_programs.append(response + "\nError:\n"+ d)
-                continue
-            else:
-                data.append((c, a))
-            selected_failed_programs = random.sample(failed_programs, min(4, len(failed_programs)))
-            # prompt = (
-            #     f"{first_file_content}\n"
-            #     f"{second_file_content}\n"
-            #     "Previous Failed Programs:\n"
-            #     + "\n".join(selected_failed_programs)
-            #     + "\n\n"
-            #     "Your task:\n"
-            #     "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
-            #     "Formatting Requirements (do NOT ignore):\n"
-            #     "1. Your response MUST begin exactly like this:\n"
-            #     "   ```python\n"
-            #     "   def make_stick(env):\n"
-            #     "2. Only output the complete function implementation inside the code block.\n\n"
-            #     "Example of correct response format:\n"
-            #     "```python\n"
-            #     "def make_stick(env):\n"            #     "    # your implementation here\n"
-            #     "```\n"
-            #     "Now return only the correct implementation of `make_stick` following these rules."
-            # )
-        # Log data to a file
-        with open("results/plot/data_make_stick_baseline.txt", "a") as log_file:
-            for interactions, reward in data:
-                log_file.write(f"{interactions},{reward}\n")
-        plot_watermark(data, "make[stick]")
-        return 0
-
-
-
-
 
 def synthesis_llm():
     llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
@@ -409,20 +288,20 @@ def synthesis_llm():
     reasoning = {}
     for task in tasks:
         plot =[]
-        print(task)
+        # print(task)
         plot.append((0,0))
         env = env_sampler.sample_environment(task_name=task)
         inter, reward, = 0, 0 
         interactions = []
         rewards = []
-        markdown = grid_to_markdown(env._current_state.grid, env.world.cookbook)
-        # print(markdown)
+        markdown = grid_to_markdown(env._current_state.grid, env.world.cookbook, env._current_state.pos)
+        print(markdown)
         program = "MOVE_FUNC(UP) ;"
         # print(prompt)
         # break
         programs= []
         programs.append(program)
-        for i in range(10):
+        for i in range(30):
             programs_str = "\n".join(programs)  
             prompt = f"""
     You are a Domain Specific Language (DSL) program generator for the Craft domain. 
@@ -570,7 +449,7 @@ def synthesis_llm():
     conversation = [{
         "role": "user",
         "content": f"""
-    The following DSL programs failed to solve the task **{task}**:
+    The following DSL programs failed to solve the task **{task}** and this is the list of these programs and the reasoning traces from them:
 
     {programs}
 
@@ -616,7 +495,7 @@ def synthesis_llm():
     ---
     """
     }]
-    output = llm.chat(conversation, params)
+    # output = llm.chat(conversation, params)
     print(output[0].outputs[0].text)
     return programs
 
