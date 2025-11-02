@@ -567,7 +567,50 @@ def synthesis_llm():
 
     print("Failed to find a solution for task:", task)
     print(programs)
-    conversation = [{"role": "user", "content": f"Here are some programs that FAILED to solve the task {task}:\n{programs} \nPlease provide insights on why these programs might have failed and suggest improvements for future program synthesis attempts also if we should update the cfg somehow? Give me the updated CFG or final suggestions in bullet points and any terminal function added along with the description of its purpose."}]
+    conversation = [{
+        "role": "user",
+        "content": f"""
+    The following DSL programs failed to solve the task **{task}**:
+
+    {programs}
+
+    ---
+
+    ### Context
+
+    You are an expert in **DSL and program synthesis** for the **Craft** environment.
+
+    Each program was generated using the current CFG (context-free grammar) defined for this domain. However, none of them succeeded in completing the task.
+
+    You need to:
+    1. Analyze why these programs might have failed — semantically or structurally.
+    2. Suggest improvements to the **CFG** so that future synthesis attempts (e.g., in FunSearch) are more effective.
+    3. Propose an **updated CFG** written in **BNF format**, ready to be plugged into our synthesis engine.
+    4. List any **new terminal functions** you propose, along with short, precise descriptions of what they do.
+    5. Optionally suggest high-level synthesis or reasoning strategies that could make the agent’s behavior more goal-directed.
+
+    ---
+
+    ### Output Format
+
+    Your response must strictly follow this structure:
+
+    Failure Analysis
+    (bullet point explanations for why the previous programs failed)
+
+    Updated CFG (BNF)
+    <your new or revised CFG here>
+    Terminal Functions
+    FUNCTION_NAME(args): description of purpose and behavior
+
+    Recommendations
+    (bullet points with insights for better program synthesis or reasoning)
+
+    If the current CFG is already sufficient, simply restate it under “Updated CFG (BNF)” and note that no changes are required.
+
+    ---
+    """
+    }]
     output = llm.chat(conversation, params)
     print(output[0].outputs[0].text)
     return programs
