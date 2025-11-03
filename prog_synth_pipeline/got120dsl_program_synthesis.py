@@ -234,7 +234,7 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
         response = llm.chat(conversation, params)
         print(response[0].outputs[0].text)
 
-        cleaned = re.sub(r"```[a-zA-Z]*", "", llm_output)
+        cleaned = re.sub(r"```[a-zA-Z]*", "", response)
         cleaned = cleaned.replace("```", "").strip()
         
         # Find the section starting with 'def solve'
