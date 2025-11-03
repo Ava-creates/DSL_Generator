@@ -160,11 +160,14 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
         # sanitize function name for a valid Python identifier
         safe_name = re.sub(r'\W|^(?=\d)', '_', func_name.lower())
         args = func_args.strip() or "env"
+        with open("prompt_specifications/codebase.txt", "r") as f:
+            codebase = f.read()
         content = f'''"""
-    You are a Funsearch module generator.
-    Auto-generated FunSearch-compatible module for terminal function: {func_name}
-    Generated on {timestamp}
-    I want you to only fill in spaces where I have indicated using <TODO> tags.
+    You are a Funsearch module generator. You fill in the <TODO> tags in the template below.
+
+    ###Here is the Craft codebase you can use to help with your TODO tasks:
+    {codebase}
+
     Return the template exactly  as it is under this with the only changes in the <TODO></TODO> tags.
     """
     def solve(env, {args}):
@@ -182,7 +185,7 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
     return total_reward
 
     @funsearch.run
-    def evaluate_{safe_name}({args}):
+    def evaluate():
         \"\"\"Evaluates {func_name} behavior in a Craft sample environment.\"\"\"
         visualise = False
         recipes_path = "craft/resources/recipes.yaml"
