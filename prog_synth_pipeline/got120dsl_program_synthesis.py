@@ -266,7 +266,7 @@ def eval_pll(programs, num_workers=None):
 
 def synthesis_llm():
     llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
-    params = SamplingParams(temperature=0.8, max_tokens=5000)
+    params = SamplingParams(temperature=0.7, max_tokens=15000)
     with open("cfg/cfg.txt") as f:
         cfg = f.read()
     with open("craft/resources/recipes.yaml") as f:
@@ -302,7 +302,7 @@ def synthesis_llm():
         # break
         programs= []
         programs.append(program)
-        for i in range(30):
+        for i in range(10):
             programs_str = "\n".join(programs)  
             prompt = f"""
     You are a Domain Specific Language (DSL) program generator for the Craft domain. 
@@ -498,7 +498,7 @@ def synthesis_llm():
             ---
             """
             }]
-            # output = llm.chat(conversation, params)
+            output = llm.chat(conversation, params)
             print(output[0].outputs[0].text)
     return programs
 
