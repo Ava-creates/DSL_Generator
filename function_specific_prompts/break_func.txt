@@ -1,0 +1,19 @@
+def solve(env, dir):
+    """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
+    actions_to_take = break_func(env, dir)
+    <TODO>
+    #You can update the reward design here if needed as per the function you are implementing 
+    total_reward = 0.0
+
+    for t in range(len(actions_to_take)):
+        action = actions_to_take[t]
+        reward, done, observations = env.step(action)
+        total_reward += reward
+        if done:
+        break
+
+    return total_reward
+    </TODO>
+
+
+So inside <TODO> we need to include the code that currently is there? Actually the code after <TODO> includes comment, total_reward etc. Probably the TODO placeholder should be replaced with the code (the block). So we need to remove the <TODO> tags and keep the code. But the instruction: "Return the template exactly as it is under this with the only changes in the <TODO></TODO> tags." So we keep the rest unchanged, but replace the TODO tags with actual code. So we need to delete the <TODO> tags and include code inside. But also the <TODO> tags themselves need to be removed? The instruction says only changes in the <TODO></TODO> tags. So we need to replace the content between them with appropriate code, but keep the tags? Usually they want to replace the tags themselves with code, i.e., remove the tags. Not sure. Probably they expect we replace the entire <TODO>...</TODO> block with code, removing the tags.

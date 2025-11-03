@@ -1,7 +1,42 @@
-# New non‑terminal for obstacle types
-obstacle ::= STONE | WATER | TREE
+s ::= task SEMI s | task SEMI
 
-# New task for breaking an adjacent obstacle using a tool in the inventory
-task ::= break | move | craft | collect | ifhas do
-break ::= BREAK_FUNC LPAR dir RPAR
-break ::= BREAK_FUNC LPAR obstacle COMMA dir RPAR
+task ::= move
+       | craft
+       | collect
+       | break_obstacle
+       | ifhas do
+
+move ::= MOVE_FUNC LPAR dir RPAR
+
+dir ::= UP | DOWN | LEFT | RIGHT
+
+craft ::= CRAFT_FUNC LPAR item RPAR
+
+collect ::= COLLECT_FUNC LPAR primitive RPAR
+
+break_obstacle ::= BREAK_FUNC LPAR dir RPAR   // NEW: break an obstacle in a given direction using the appropriate tool
+
+ifhas ::= if HAS LPAR item RPAR
+
+do ::= then task
+
+item ::= PLANK 
+       | STICK 
+       | CLOTH 
+       | ROPE 
+       | BRIDGE 
+       | BUNDLE 
+       | HAMMER 
+       | KNIFE 
+       | BED 
+       | AXE 
+       | SHEARS 
+       | LADDER 
+       | SLINGSHOT 
+       | ARROW 
+       | BOW 
+       | BENCH 
+       | FLAG 
+       | GOLDARROW
+
+primitive ::= WOOD | IRON | GRASS | ROCK | GOLD | GEM
