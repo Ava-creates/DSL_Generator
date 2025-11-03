@@ -141,7 +141,6 @@ def grid_to_markdown(grid, cookbook, agent_pos=None) -> str:
     return df.to_markdown(index=False, headers=[])
 
 
-
 def generate_funsearch_function(term_text, func_dir="function_specific_prompts"):
     """
     Extract terminal functions from term_text and generate FunSearch-compatible files.
@@ -162,12 +161,16 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
         args = func_args.strip() or "env"
         with open("prompt_specifications/codebase.txt", "r") as f:
             codebase = f.read()
+        with open("craft/resources/recipes.yaml", "r") as f:
+            recipes = f.read()
         content = f'''"""
     You are a Funsearch module generator. You fill in the <TODO> tags in the template below.
 
     ###Here is the Craft codebase you can use to help with your TODO tasks:
     {codebase}
 
+    ### Recipes for the codebase:
+    {recipes}
     Return the template exactly  as it is under this with the only changes in the <TODO></TODO> tags.
     """
     def solve(env, {args}):
@@ -221,7 +224,6 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
 
         # print(f"✅ Generated FunSearch module for {func_name} → {func_file}")
 
-
 def extract_and_save_cfg(output_text, cfg_dir="cfg"):
     # Extract CFG and Terminal Functions sections
     cfg_match = re.search(r"\*\*CFG Changes \(BNF\)\*\*.*?```bnf(.*?)```", output_text, re.DOTALL)
@@ -258,7 +260,7 @@ def extract_and_save_cfg(output_text, cfg_dir="cfg"):
 # output = """ your assistant response here """
 # extract_and_save_cfg(output)
 llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
-params = SamplingParams(temperature=0.7, max_tokens=15000)
+params = SamplingParams(temperature=0.7, max_tokens=25000)
 final =[]
 evaluator = ProgramEvaluator()
 recipes_path = "craft/resources/recipes.yaml"
@@ -420,7 +422,7 @@ def synthesis_llm():
         # break
         programs= []
         programs.append(program)
-        for i in range(10):
+        for i in range(5):
             programs_str = "\n".join(programs)  
             prompt = f"""
     You are a Domain Specific Language (DSL) program generator for the Craft domain. 
