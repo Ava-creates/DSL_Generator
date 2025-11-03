@@ -362,6 +362,8 @@ def synthesis_llm():
     {programs_str}
     These programs are syntactically correct but did not solve the task. When generating a new program, avoid repeating the mistakes made in these failed programs, and generate semantically different programs.
 
+
+    Also always ensure that the the information provided in this prompt is facts and always correct and cannot be changed so please adhere to it strictly.
     ##Return a program that is able to solve the task
     
     """
@@ -439,7 +441,7 @@ def synthesis_llm():
                 break
             else:
                 # program = b
-                find_bad_func(funcs, task)
+                # find_bad_func(funcs, task)
         # # plot_interactions_rewards(interactions, rewards, task)
         # plot_watermark(plot, task)
             # programs = programs_str
@@ -449,13 +451,13 @@ def synthesis_llm():
     conversation = [{
         "role": "user",
         "content": f"""
-    The following DSL programs failed to solve the task **{task}** and this is the list of these programs and the reasoning traces from them:
+    The following Domain-Specific Language (DSL) programs failed to solve the task **{task}** and this is the list of these programs and the reasoning traces from them:
 
-    {programs}
+    {reasoning}
 
     ---
 
-    ### Current CFG (Context-Free Grammar)
+    ### Current CFG (Context-Free Grammar) for the current DSL:
     {cfg}
 
     ---
