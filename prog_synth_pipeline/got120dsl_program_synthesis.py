@@ -155,7 +155,7 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
 
     for func_name, func_args in funcs:
         func_file = os.path.join(func_dir, f"{func_name.lower()}.txt")
-        timestamp = date.now().strftime("%Y%m%d_%H%M")
+        timestamp = date.today().strftime("%Y%m%d_%H%M")
 
         # sanitize function name for a valid Python identifier
         safe_name = re.sub(r'\W|^(?=\d)', '_', func_name.lower())
@@ -165,6 +165,7 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
     Auto-generated FunSearch-compatible module for terminal function: {func_name}
     Generated on {timestamp}
     I want you to only fill in spaces where I have indicated using <TODO> tags.
+    Return the template exactly  as it is under this with the only changes in the <TODO></TODO> tags.
     """
     def solve(env, {args}):
     """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
@@ -198,19 +199,24 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
         # Example placeholder logic for evaluation — modify as needed.
         # For example, test whether the function correctly changes environment state.
         </TODO>
-        return 0.0  <TODO> # Replace with actual reward calculation </TODO>
+        <TODO
+        return 0.0 # Replace with actual reward calculation
+        </TODO>
 
     @funsearch.evolve
-
     def {safe_name}({args}):
         \"\"\"{term_text}\"\"\"
-        return 
+        return []
 
     '''
-        with open(func_file, "w") as f:
-            f.write(content.strip() + "\n")
+        
+        conversation  = [{"role": "user", "content": content,  "chat_template_kwargs": {"reasoning_effort": "high"}}]
+        response = llm.chat(conversation, params)
+        print(response[0].outputs[0].text)
+        # with open(func_file, "w") as f:
+        #     f.write(content.strip() + "\n")
 
-        print(f"✅ Generated FunSearch module for {func_name} → {func_file}")
+        # print(f"✅ Generated FunSearch module for {func_name} → {func_file}")
 
 
 def extract_and_save_cfg(output_text, cfg_dir="cfg"):
@@ -229,7 +235,7 @@ def extract_and_save_cfg(output_text, cfg_dir="cfg"):
     os.makedirs(cfg_dir, exist_ok=True)
 
     # Name file as cfg_YYYYMMDD_HHMM_updated.txt
-    timestamp = date.now().strftime("%Y%m%d_%H%M")
+    timestamp = date.today().strftime("%Y%m%d_%H%M")
     filename = f"cfg_{timestamp}_updated.txt"
     filepath = os.path.join(cfg_dir, filename)
 
@@ -248,7 +254,8 @@ def extract_and_save_cfg(output_text, cfg_dir="cfg"):
 # Example usage:
 # output = """ your assistant response here """
 # extract_and_save_cfg(output)
-
+llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
+params = SamplingParams(temperature=0.7, max_tokens=15000)
 final =[]
 evaluator = ProgramEvaluator()
 recipes_path = "craft/resources/recipes.yaml"
