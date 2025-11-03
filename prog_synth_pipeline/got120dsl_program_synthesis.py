@@ -147,9 +147,18 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
     """
     os.makedirs(func_dir, exist_ok=True)
     # print(term_text)
-    funcs = re.findall(r"\*\*(\w+)\((.*?)\)\*\*(?:\s*-\s*(.*?))(?:\n|$)", term_text, flags=re.DOTALL)
+    funcs = re.findall(
+        r"-\s*\*\*(\w+)\((.*?)\)\*\*\s*:?\s*(?:\n\s*)?(.*?)(?=\n-\s*\*\*|\Z)",
+        term_text,
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    # Normalize whitespace and strip each capture
+    funcs = [
+        (name.strip(), args.strip(), re.sub(r"\s+\n\s+", "\n", desc).strip())
+        for name, args, desc in funcs
+    ]
     if not funcs:
-        print("❌ No terminal functions detected.")
+        print("No terminal functions detected.")
         return
     print(funcs)
     for func_name, func_args, func_desc in funcs:
