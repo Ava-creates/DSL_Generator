@@ -236,22 +236,15 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
         response = response[0].outputs[0].text
         print(type(response))
         print(response)
-        cleaned = re.sub(r"```[a-zA-Z]*", "", response)
-        cleaned = cleaned.replace("```", "").strip()
-        
-        # Find the section starting with 'def solve'
-        match = re.search(r"def\s+solve\s*\(.*", cleaned, re.DOTALL)
-        if not match:
-            raise ValueError("No 'def solve' function found in the input text.")
-        
-        # Extract from def solve onward
-        code = cleaned[match.start():].strip()
-        
-        # Stop before any trailing text like "assistantfinal" or explanations
-        code = re.split(r"(assistantfinal|Thus final answer|###|---|\Z)", code)[0].strip()
+        marker_match = re.search(r'assistantfinal```python', response, re.IGNORECASE)
+        search_target = response
+        if marker_match:
+                # take the text after the "assistantfinal" marker
+            search_target = response[marker_match.end():]
 
-        # Dedent to normalize indentation
-        code = textwrap.dedent(code)
+        
+
+        code = textwrap.dedent(search_target)
         with open(func_file, "w") as f:
             f.write(code + "\n")
 
