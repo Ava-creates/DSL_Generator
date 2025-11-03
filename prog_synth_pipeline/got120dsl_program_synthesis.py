@@ -605,7 +605,7 @@ def synthesis_llm():
             (bullet point explanations for why previous programs failed)
 
             CFG Changes (BNF)
-            <only include modified or newly added rules; restate unchanged ones if necessary>
+            <only include modified or newly added rules; restate unchanged ones if necessary please adhere to a format I can parse though this re.findall(r"\*\*(\w+)\((.*?)\)\*\*"))>
 
             Terminal Functions
             FUNCTION_NAME(args): description of purpose and usage
