@@ -1,8 +1,7 @@
+
 def solve(env, dir):
     """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
     actions_to_take = break_func(env, dir)
-    <TODO>
-    #You can update the reward design here if needed as per the function you are implementing 
     total_reward = 0.0
 
     for t in range(len(actions_to_take)):
@@ -10,10 +9,32 @@ def solve(env, dir):
         reward, done, observations = env.step(action)
         total_reward += reward
         if done:
-        break
+            break
 
     return total_reward
-    </TODO>
 
+@funsearch.run
+def evaluate():
+    """Evaluates BREAK_FUNC behavior in a Craft sample environment."""
+    visualise = False
+    recipes_path = "craft/resources/recipes.yaml"
+    hints_path = "craft/resources/hints.yaml"
 
-So inside <TODO> we need to include the code that currently is there? Actually the code after <TODO> includes comment, total_reward etc. Probably the TODO placeholder should be replaced with the code (the block). So we need to remove the <TODO> tags and keep the code. But the instruction: "Return the template exactly as it is under this with the only changes in the <TODO></TODO> tags." So we keep the rest unchanged, but replace the TODO tags with actual code. So we need to delete the <TODO> tags and include code inside. But also the <TODO> tags themselves need to be removed? The instruction says only changes in the <TODO></TODO> tags. So we need to replace the content between them with appropriate code, but keep the tags? Usually they want to replace the tags themselves with code, i.e., remove the tags. Not sure. Probably they expect we replace the entire <TODO>...</TODO> block with code, removing the tags.
+    env_sampler = env_factory.EnvironmentFactory(
+        recipes_path, hints_path, max_steps=100, reuse_environments=False,
+        visualise=visualise
+    )
+
+    env = env_sampler.sample_environment(task_name='get[gem]')
+
+    # Example: use a default direction (e.g., 0 = UP)
+    direction = 0
+    total_reward = solve(env, direction)
+    return total_reward
+
+@funsearch.evolve
+def break_func(env, dir):
+    """Attempts to break the obstacle (e.g., stone, water, tree) that is located in the adjacent cell in the given `dir`. The break succeeds only if the agent’s inventory contains an appropriate tool (e.g., HAMMER for stone, AXE for wood, etc.). After a successful break, the obstacle cell becomes empty, allowing movement and collection through it.
+These additions give the language the ability to clear the stone barrier around the gem, enabling successful execution of `get[gem]` programs."""
+    return []
+```
