@@ -146,13 +146,13 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
     Extract terminal functions from term_text and generate FunSearch-compatible files.
     """
     os.makedirs(func_dir, exist_ok=True)
-    print(term_text)
-    funcs = re.findall(r"\*\*(\w+)\((.*?)\)\*\*", term_text)
+    # print(term_text)
+    funcs = re.findall(r"\*\*(\w+)\((.*?)\)\*\*(?:\s*-\s*(.*?))(?:\n|$)", term_text, flags=re.DOTALL)
     if not funcs:
         print("❌ No terminal functions detected.")
         return
-
-    for func_name, func_args in funcs:
+    print(funcs)
+    for func_name, func_args, func_desc in funcs:
         func_file = os.path.join(func_dir, f"{func_name.lower()}.txt")
         timestamp = date.today().strftime("%Y%m%d_%H%M")
 
@@ -176,6 +176,8 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
     def solve(env, {args}):
     """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
     actions_to_take = {safe_name}(env, {args})
+    <TODO>
+    #You can update the reward design here if needed
     total_reward = 0.0
 
     for t in range(len(actions_to_take)):
@@ -186,6 +188,7 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
         break
 
     return total_reward
+    </TODO>
 
     @funsearch.run
     def evaluate():
@@ -211,7 +214,7 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
 
     @funsearch.evolve
     def {safe_name}({args}):
-        \"\"\"{term_text}\"\"\"
+        \"\"\"{func_desc}\"\"\"
         return []
 
     '''
