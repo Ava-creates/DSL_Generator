@@ -611,7 +611,7 @@ def synthesis_llm():
             {cfg}
             ### Current CFG explanation:
             {cfg_explanation}
-            ### Here are the recipes for the domain(only these items can be used in the programs):
+            ### Here are the recipes for the domain, only these items can be used in the programs. You cannot propose any new items that are not in the recipes:
             {recipes}
 
             ---
