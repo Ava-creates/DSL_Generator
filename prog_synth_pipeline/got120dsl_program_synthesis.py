@@ -460,7 +460,8 @@ def synthesis_llm():
 
             ### Current CFG (Context-Free Grammar) for the current DSL:
             {cfg}
-
+            ### Current CFG explanation:
+            {cfg_explanation}
             ---
 
             ### Context
@@ -471,13 +472,11 @@ def synthesis_llm():
             Your task is to analyze these failures and propose **targeted improvements**.
 
             You need to:
-            1. Analyze **why** these programs might have failed — whether due to missing primitives, wrong action order, or limits of the grammar.  
+            1. Analyze **why** these programs might have failed.  
             2. Identify **gaps or weaknesses** in the current CFG.  
-            3. Suggest **specific modifications or additions** to the CFG that would enable better synthesis results.  
+            3. Suggest **specific additions or removal of terminal functions** to the CFG that would enable better synthesis results.  
             4. Output an **updated CFG** in **BNF format**, showing only changed or newly added rules (if possible).  
             5. Propose any **new terminal functions**, with short, clear descriptions of their purpose and behavior.  
-            6. Provide **recommendations** for improving synthesis strategies (for instance, how FunSearch or the LLM should reason about next actions).
-
             ---
 
             ### Output Format
