@@ -180,13 +180,14 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
 
     ### Recipes for the codebase:
     {recipes}
-    Return the template exactly  as it is under this with the only changes in the <TODO></TODO> tags.
+
+    Return the template exactly  as it is under this with the only changes in the <TODO></TODO> tags. Only have the template before in the final answer. 
     """
     def solve(env, {args}):
     """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
     actions_to_take = {safe_name}(env, {args})
     <TODO>
-    #You can update the reward design here if needed
+    #You can update the reward design here if needed as per the function you are implementing 
     total_reward = 0.0
 
     for t in range(len(actions_to_take)):
@@ -222,7 +223,7 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
         </TODO>
 
     @funsearch.evolve
-    def {safe_name}({args}):
+    def {safe_name}(env, {args}):
         \"\"\"{func_desc}\"\"\"
         return []
 
@@ -634,7 +635,7 @@ def synthesis_llm():
             }]
             output = llm.chat(conversation, params)
             output = output[0].outputs[0].text
-            # print(output[0].outputs[0].text)
+            print(output[0].outputs[0].text)
             cfg_path, cfg_text, term_text = extract_and_save_cfg(output)
             if term_text:
                 generate_funsearch_function(term_text)
