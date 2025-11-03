@@ -37,4 +37,4 @@ def break_func(env, dir):
     """Attempts to break the obstacle (e.g., stone, water, tree) that is located in the adjacent cell in the given `dir`. The break succeeds only if the agent’s inventory contains an appropriate tool (e.g., HAMMER for stone, AXE for wood, etc.). After a successful break, the obstacle cell becomes empty, allowing movement and collection through it.
 These additions give the language the ability to clear the stone barrier around the gem, enabling successful execution of `get[gem]` programs."""
     return []
-```
+
