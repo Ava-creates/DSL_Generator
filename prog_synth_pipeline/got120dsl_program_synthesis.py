@@ -277,7 +277,7 @@ def synthesis_llm():
         "The CFG defines the DSL for the Craft domain with three primary primitives: "
         "MOVE_FUNC(direction), COLLECT_FUNC(item) and CRAFT_FUNC(item). "
         "MOVE_FUNC moves the agent one cell in the given direction. "
-        "COLLECT_FUNC makes the agent pathfind to and pick up a primitive resource, using available tools "
+        "COLLECT_FUNC makes the agent pathfind to and pick up a primitive resource. If the resource is blocked and the tool that can get through the obstacle blocking the resource then collect will be able to get through the obstacle and collect the primitive."
         "to overcome obstacles when necessary. "
         "CRAFT_FUNC moves the agent to the required workshop and crafts the item if the needed ingredients "
         "are present in the agent's inventory. "
