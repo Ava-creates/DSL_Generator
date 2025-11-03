@@ -1,4 +1,5 @@
 from datetime import date
+import textwrap
 from typing import List
 from collections import deque
 from cfg_parser import CFGParser
@@ -232,10 +233,25 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
         conversation  = [{"role": "user", "content": content,  "chat_template_kwargs": {"reasoning_effort": "high"}}]
         response = llm.chat(conversation, params)
         print(response[0].outputs[0].text)
-        # with open(func_file, "w") as f:
-        #     f.write(content.strip() + "\n")
 
-        # print(f"✅ Generated FunSearch module for {func_name} → {func_file}")
+        cleaned = re.sub(r"```[a-zA-Z]*", "", llm_output)
+        cleaned = cleaned.replace("```", "").strip()
+        
+        # Find the section starting with 'def solve'
+        match = re.search(r"def\s+solve\s*\(.*", cleaned, re.DOTALL)
+        if not match:
+            raise ValueError("No 'def solve' function found in the input text.")
+        
+        # Extract from def solve onward
+        code = cleaned[match.start():].strip()
+        
+        # Stop before any trailing text like "assistantfinal" or explanations
+        code = re.split(r"(assistantfinal|Thus final answer|###|---|\Z)", code)[0].strip()
+
+        # Dedent to normalize indentation
+        code = textwrap.dedent(code)
+        with open(func_file, "w") as f:
+            f.write(code + "\n")
 
 def extract_and_save_cfg(output_text, cfg_dir="cfg"):
     # Extract CFG and Terminal Functions sections
