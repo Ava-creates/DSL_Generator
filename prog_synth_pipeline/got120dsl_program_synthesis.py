@@ -635,7 +635,7 @@ def synthesis_llm():
             }]
             output = llm.chat(conversation, params)
             output = output[0].outputs[0].text
-            print(output[0].outputs[0].text)
+            print(output)
             cfg_path, cfg_text, term_text = extract_and_save_cfg(output)
             if term_text:
                 generate_funsearch_function(term_text)
