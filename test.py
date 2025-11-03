@@ -1,20 +1,24 @@
+import numpy as np
+import time
+import collections
+from craft import env_factory, craft, env
+
 
 def solve(env, dir):
   """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
   actions_to_take = break_func(env, dir)
   total_reward = 0.0
 
-  total_reward = 0.0
-
   for t in range(len(actions_to_take)):
-    action = actions_to_take[t]
-    reward, done, observations = env.step(action)
-    total_reward += reward
-    if done:
-      break
-  return [total_reward, len(actions_to_take)]
+        action = actions_to_take[t]
+        reward, done, observations = env.step(action)
+        total_reward += reward
+        if done:
+            break
 
-@funsearch.run
+  return total_reward
+
+
 def evaluate():
   """Evaluates BREAK_FUNC behavior in a Craft sample environment."""
   visualise = False
@@ -27,13 +31,12 @@ def evaluate():
     )
 
   env = env_sampler.sample_environment(task_name='get[gem]')
-
     # Example: use a default direction (e.g., 0 = UP)
   direction = 0
   total_reward = solve(env, direction)
-  return reward
+  return total_reward
 
-@funsearch.evolve
+
 def break_func(env, dir):
   """  Attempts to break the obstacle (e.g., stone, water, tree) that is located
   in the adjacent cell in the given `dir`. The break succeeds only if the
@@ -44,4 +47,4 @@ def break_func(env, dir):
   These additions give the language the ability to clear the stone barrier
   around the gem, enabling successful execution of `get[gem]` programs.
   """
-
+  return []
