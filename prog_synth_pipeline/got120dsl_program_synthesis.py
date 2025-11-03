@@ -141,6 +141,114 @@ def grid_to_markdown(grid, cookbook, agent_pos=None) -> str:
     return df.to_markdown(index=False, headers=[])
 
 
+
+def generate_funsearch_function(term_text, func_dir="function_specific_prompts"):
+    """
+    Extract terminal functions from term_text and generate FunSearch-compatible files.
+    """
+    os.makedirs(func_dir, exist_ok=True)
+    print(term_text)
+    funcs = re.findall(r"\*\*(\w+)\((.*?)\)\*\*", term_text)
+    if not funcs:
+        print("❌ No terminal functions detected.")
+        return
+
+    for func_name, func_args in funcs:
+        func_file = os.path.join(func_dir, f"{func_name.lower()}.txt")
+        timestamp = date.now().strftime("%Y%m%d_%H%M")
+
+        # sanitize function name for a valid Python identifier
+        safe_name = re.sub(r'\W|^(?=\d)', '_', func_name.lower())
+        args = func_args.strip() or "env"
+        content = f'''"""
+    You are a Funsearch module generator.
+    Auto-generated FunSearch-compatible module for terminal function: {func_name}
+    Generated on {timestamp}
+    I want you to only fill in spaces where I have indicated using <TODO> tags.
+    """
+    def solve(env, {args}):
+    """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
+    actions_to_take = {safe_name}(env, {args})
+    total_reward = 0.0
+
+    for t in range(len(actions_to_take)):
+        action = actions_to_take[t]
+        reward, done, observations = env.step(action)
+        total_reward += reward
+        if done:
+        break
+
+    return total_reward
+
+    @funsearch.run
+    def evaluate_{safe_name}({args}):
+        \"\"\"Evaluates {func_name} behavior in a Craft sample environment.\"\"\"
+        visualise = False
+        recipes_path = "craft/resources/recipes.yaml"
+        hints_path = "craft/resources/hints.yaml"
+
+        env_sampler = env_factory.EnvironmentFactory(
+        recipes_path, hints_path, max_steps=100, reuse_environments=False,
+        visualise=visualise
+        )
+
+        env = env_sampler.sample_environment(task_name='get[gem]')
+
+        <TODO>
+        # Example placeholder logic for evaluation — modify as needed.
+        # For example, test whether the function correctly changes environment state.
+        </TODO>
+        return 0.0  <TODO> # Replace with actual reward calculation </TODO>
+
+    @funsearch.evolve
+
+    def {safe_name}({args}):
+        \"\"\"{term_text}\"\"\"
+        return 
+
+    '''
+        with open(func_file, "w") as f:
+            f.write(content.strip() + "\n")
+
+        print(f"✅ Generated FunSearch module for {func_name} → {func_file}")
+
+
+def extract_and_save_cfg(output_text, cfg_dir="cfg"):
+    # Extract CFG and Terminal Functions sections
+    cfg_match = re.search(r"\*\*CFG Changes \(BNF\)\*\*.*?```bnf(.*?)```", output_text, re.DOTALL)
+    term_match = re.search(r"\*\*Terminal Functions\*\*(.*?)(?:\n---|\Z)", output_text, re.DOTALL)
+
+    if not cfg_match:
+        print("No CFG block found.")
+        return None
+
+    cfg_text = cfg_match.group(1).strip()
+    term_text = term_match.group(1).strip() if term_match else ""
+
+    # Create cfg directory if missing
+    os.makedirs(cfg_dir, exist_ok=True)
+
+    # Name file as cfg_YYYYMMDD_HHMM_updated.txt
+    timestamp = date.now().strftime("%Y%m%d_%H%M")
+    filename = f"cfg_{timestamp}_updated.txt"
+    filepath = os.path.join(cfg_dir, filename)
+
+    # Write to file
+    with open(filepath, "w") as f:
+        f.write(cfg_text)
+
+    if term_text:
+        print("\nExtracted Terminal Functions:\n")
+        print(term_text)
+        ##call funsearch with new terminal function to do that we will first need to create a file in functions_generated foder with name of the new terminal function -> with def solve def evaluate, def terminal_function 
+
+    return filepath, cfg_text, term_text
+
+
+# Example usage:
+# output = """ your assistant response here """
+# extract_and_save_cfg(output)
+
 final =[]
 evaluator = ProgramEvaluator()
 recipes_path = "craft/resources/recipes.yaml"
@@ -498,7 +606,11 @@ def synthesis_llm():
             """
             }]
             output = llm.chat(conversation, params)
-            print(output[0].outputs[0].text)
+            output = output[0].outputs[0].text
+            # print(output[0].outputs[0].text)
+            cfg_path, cfg_text, term_text = extract_and_save_cfg(output)
+            if term_text:
+                generate_funsearch_function(term_text)
     return programs
 
 
