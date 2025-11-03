@@ -1,17 +1,17 @@
 
 def solve(env, dir):
-    """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
-    actions_to_take = break_func(env, dir)
-    total_reward = 0.0
+  """Runs the environment with a collect function that returns list of actions to take and returns total reward."""
+  actions_to_take = break_func(env, dir)
+  total_reward = 0.0
 
-    for t in range(len(actions_to_take)):
+  for t in range(len(actions_to_take)):
         action = actions_to_take[t]
         reward, done, observations = env.step(action)
         total_reward += reward
         if done:
             break
 
-    return total_reward
+  return total_reward
 
 @funsearch.run
 def evaluate():
