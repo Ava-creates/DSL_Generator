@@ -296,6 +296,7 @@ def synthesis_llm():
         rewards = []
         markdown = grid_to_markdown(env._current_state.grid, env.world.cookbook, env._current_state.pos)
         print(markdown)
+        s = False
         program = "MOVE_FUNC(UP) ;"
         # print(prompt)
         # break
@@ -440,65 +441,65 @@ def synthesis_llm():
             if s :
                 break
             else:
-                # program = b
+                program = b
                 # find_bad_func(funcs, task)
         # # plot_interactions_rewards(interactions, rewards, task)
         # plot_watermark(plot, task)
             # programs = programs_str
+        if not s:
+            print("Failed to find a solution for task:", task)
+            print(programs)
+            conversation = [{
+                "role": "user",
+                "content": f"""
+            The following Domain-Specific Language (DSL) programs failed to solve the task **{task}** and this is the list of these programs and the reasoning traces from them:
 
-    print("Failed to find a solution for task:", task)
-    print(programs)
-    conversation = [{
-        "role": "user",
-        "content": f"""
-    The following Domain-Specific Language (DSL) programs failed to solve the task **{task}** and this is the list of these programs and the reasoning traces from them:
+            {reasoning}
 
-    {reasoning}
+            ---
 
-    ---
+            ### Current CFG (Context-Free Grammar) for the current DSL:
+            {cfg}
 
-    ### Current CFG (Context-Free Grammar) for the current DSL:
-    {cfg}
+            ---
 
-    ---
+            ### Context
 
-    ### Context
+            You are an expert in **DSL and program synthesis** for the **Craft** environment.
 
-    You are an expert in **DSL and program synthesis** for the **Craft** environment.
+            Each program above was generated using the current CFG but failed to complete the task.  
+            Your task is to analyze these failures and propose **targeted improvements**.
 
-    Each program above was generated using the current CFG but failed to complete the task.  
-    Your task is to analyze these failures and propose **targeted improvements**.
+            You need to:
+            1. Analyze **why** these programs might have failed — whether due to missing primitives, wrong action order, or limits of the grammar.  
+            2. Identify **gaps or weaknesses** in the current CFG.  
+            3. Suggest **specific modifications or additions** to the CFG that would enable better synthesis results.  
+            4. Output an **updated CFG** in **BNF format**, showing only changed or newly added rules (if possible).  
+            5. Propose any **new terminal functions**, with short, clear descriptions of their purpose and behavior.  
+            6. Provide **recommendations** for improving synthesis strategies (for instance, how FunSearch or the LLM should reason about next actions).
 
-    You need to:
-    1. Analyze **why** these programs might have failed — whether due to missing primitives, wrong action order, or limits of the grammar.  
-    2. Identify **gaps or weaknesses** in the current CFG.  
-    3. Suggest **specific modifications or additions** to the CFG that would enable better synthesis results.  
-    4. Output an **updated CFG** in **BNF format**, showing only changed or newly added rules (if possible).  
-    5. Propose any **new terminal functions**, with short, clear descriptions of their purpose and behavior.  
-    6. Provide **recommendations** for improving synthesis strategies (for instance, how FunSearch or the LLM should reason about next actions).
+            ---
 
-    ---
+            ### Output Format
 
-    ### Output Format
+            Your response must strictly follow this structure:
 
-    Your response must strictly follow this structure:
+            Failure Analysis
+            (bullet point explanations for why previous programs failed)
 
-    Failure Analysis
-    (bullet point explanations for why previous programs failed)
+            CFG Changes (BNF)
+            <only include modified or newly added rules; restate unchanged ones if necessary>
 
-    CFG Changes (BNF)
-    <only include modified or newly added rules; restate unchanged ones if necessary>
+            Terminal Functions
+            FUNCTION_NAME(args): description of purpose and usage
 
-    Terminal Functions
-    FUNCTION_NAME(args): description of purpose and usage
+            If the current CFG is already sufficient, restate it under “CFG Changes (BNF)” and note that no changes are required.
 
-    If the current CFG is already sufficient, restate it under “CFG Changes (BNF)” and note that no changes are required.
-
-    ---
-    """
-    }]
-    # output = llm.chat(conversation, params)
-    print(output[0].outputs[0].text)
+            ---
+            """
+            }]
+            # output = llm.chat(conversation, params)
+            print(output[0].outputs[0].text)
     return programs
 
 
