@@ -1,0 +1,7 @@
+# New non‑terminal for obstacle types
+obstacle ::= STONE | WATER | TREE
+
+# New task for breaking an adjacent obstacle using a tool in the inventory
+task ::= break | move | craft | collect | ifhas do
+break ::= BREAK_FUNC LPAR dir RPAR
+break ::= BREAK_FUNC LPAR obstacle COMMA dir RPAR
