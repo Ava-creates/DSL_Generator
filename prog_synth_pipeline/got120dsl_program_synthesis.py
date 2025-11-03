@@ -234,6 +234,8 @@ def generate_funsearch_function(term_text, func_dir="function_specific_prompts")
         response = llm.chat(conversation, params)
         # print(response[0].outputs[0].text)
         response = response[0].outputs[0].text
+        print(type(response))
+        print(response)
         cleaned = re.sub(r"```[a-zA-Z]*", "", response)
         cleaned = cleaned.replace("```", "").strip()
         
