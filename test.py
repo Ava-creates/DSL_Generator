@@ -47,4 +47,7 @@ def break_func(env, dir):
   These additions give the language the ability to clear the stone barrier
   around the gem, enabling successful execution of `get[gem]` programs.
   """
-  return []
+  return [0,1,2]
+
+
+evaluate()

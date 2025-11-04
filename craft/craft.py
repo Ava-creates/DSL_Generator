@@ -520,6 +520,7 @@ class CraftState(object):
     n_grid = self.grid
 
     reward = 0.0
+    f = 0 
     # print(x, y)
     # move actions
     if action == DOWN:
@@ -599,6 +600,7 @@ class CraftState(object):
         elif thing == self.world.stone_index:
           if n_inventory[cookbook.index["axe"]] > 0:
             n_grid[nx, ny, self.world.stone_index] = 0
+            f=1
 
         break
 
@@ -612,6 +614,8 @@ class CraftState(object):
 
     new_state = CraftState(self.scenario, n_grid, (n_x, n_y), n_dir,
                            n_inventory)
+    if f==1:
+      reward+=1.0
     return reward, new_state
 
   def next_to(self, i_kind):

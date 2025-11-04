@@ -12,6 +12,7 @@ from PIL import ImageDraw
 from PIL import ImageFont
 import seaborn as sns
 import time
+# import cookbook
 
 Task = collections.namedtuple("Task", ["goal", "steps"])
 
@@ -167,11 +168,14 @@ class CraftLab(object):
     
   def _get_reward(self):
     goal_name, goal_arg = self.task.goal
-
-    # Get all items needed in the recipe for the goal
+    # print(goal_name, goal_arg)
     needed_items = self.world.cookbook.primitives_for_reward(goal_arg)
+    # print(needed_items)
+    if goal_arg == 12:
+      needed_items = {9: 1, 7: 1, 23: 1, self.world.cookbook.index["axe"]:1}
+    # Get all items needed in the recipe for the goal
 
-    
+    # print(needed_items)
     # Calculate reward based on new pickups of needed items
     reward = 0.0
     
