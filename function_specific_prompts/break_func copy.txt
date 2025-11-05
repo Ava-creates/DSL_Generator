@@ -29,19 +29,21 @@ def evaluate():
   env = env_sampler.sample_environment(task_name='get[gem]')
 
     # Example: use a default direction (e.g., 0 = UP)
-  direction = 0
+  obstacle = "gem"
   total_reward = solve(env, direction)
   return total_reward
 
+
 @funsearch.evolve
-def break_func(env, obstacle):
+def break_func(env, dir):
   """
-  Attempts to break the obstacle (e.g., stone, water, tree). It indentifies and crafts appropriate tool to break through the obstacle. After a successful break, the obstacle cell becomes
+  Attempts to break the obstacle (e.g., stone, water, tree) that is located
+  in the adjacent cell in the given `dir`. You need to identify and craft appropriate tool to break through the obstacle. After a successful break, the obstacle cell becomes
   empty, allowing movement and collection through it. 
 
   Args:
       env: The environment instance.
-      obstacle: string
+      dir(int): Direction of the obstacle.
 
   Returns:
       List[int]: A list of action indices the agent can execute to break the obstacle.
