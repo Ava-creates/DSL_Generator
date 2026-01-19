@@ -21,34 +21,37 @@ def run_loop(env, n_steps, visualise=False):
   # actions=[3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 4]
   # actions =[3, 4, 1, 1, 2, 4, 0, 2, 2, 2, 2, 4, 2, 4, 0, 0, 0, 0, 3, 4 , 1, 1, 2, 2, 2, 4]
   # actions= [3,4,0,0,4,0,2,2,4,0,0,3,4,0,3,0,3,0,0,2,2,4]
-  actions = [1,4,1,4]
+
+  actions =  [2, 4, 2, 2, 4, 1, 2, 4, 1, 3, 3, 4, 1, 1, 1, 2, 4, 1, 3, 3, 4, 1, 1, 1, 2, 4, 0, 0, 0, 2, 2, 2, 2, 2, 4, 0, 2, 4, 2, 4, 0, 4, 0, 3, 4, 0, 4, 0, 2, 4, 1, 1, 3, 3, 3, 4, 1, 1, 4, 1, 1, 1, 2, 2, 2, 4, 3, 0, 1, 1, 1, 1, 0, 3, 3, 2, 2, 2, 4, 2, 2, 2, 4, 1, 2, 4, 0, 2, 4, 2, 4, 0, 4, 0, 3, 4, 0, 4, 0, 2, 4, 1, 1, 3, 3, 3, 4, 0, 0, 3, 3, 4, 0, 3, 4, 3, 3, 4, 1, 1, 2, 4, 1, 1, 1, 1, 1, 1, 1, 4, 0, 2, 2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 0, 1, 0, 0, 3, 0, 3, 0, 0, 3, 1, 0, 0], 'steps': 156, 'evaluation_time': 0.01316690444946289, 'error': None}
+
+  # actions = [1,4,1,4]
   time.sleep(4)
-  if False:
-      env.step(0)
-      env.step(2)
-      env.step(2)
-      env.step(4)
-      env.step(0)
-      env.step(0)
-      env.step(0)
-      env.step(0)
-      env.step(0)
-      env.step(0)
-      env.step(2)
-      env.step(4)
-      env.step(2)
-      env.step(2)
-      env.step(2)
-      env.step(2)
-      env.step(2)
-      env.step(2)
-      env.step(2)
-      env.step(4)
-      env.step(1)
-      env.step(1)
-      env.step(4)  
-  a = {tuple(pos) for pos in np.argwhere(env._current_state.grid[:,:,4])}
-  print(a)
+  # if False:
+  #     env.step(0)
+  #     env.step(2)
+  #     env.step(2)
+  #     env.step(4)
+  #     env.step(0)
+  #     env.step(0)
+  #     env.step(0)
+  #     env.step(0)
+  #     env.step(0)
+  #     env.step(0)
+  #     env.step(2)
+  #     env.step(4)
+  #     env.step(2)
+  #     env.step(2)
+  #     env.step(2)
+  #     env.step(2)
+  #     env.step(2)
+  #     env.step(2)
+  #     env.step(2)
+  #     env.step(4)
+  #     env.step(1)
+  #     env.step(1)
+  #     env.step(4)  
+  # a = {tuple(pos) for pos in np.argwhere(env._current_state.grid[:,:,4])}
+  # print(a)
   for t in range(len(actions)):
     # Random action
     # print("hehe")
@@ -91,7 +94,7 @@ def main():
   # env=env_sampler.sample_environment(task_name='make[goldarrow]')
 
   env_sampler = env_factory.EnvironmentFactory(
-  recipes_path, hints_path, 0, max_steps=100, reuse_environments=False,
+  recipes_path, hints_path, 0, max_steps=300, reuse_environments=False,
             visualise=visualise)
 
   env = env_sampler.sample_environment(task_name= 'make[stick]')

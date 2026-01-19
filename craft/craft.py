@@ -614,8 +614,8 @@ class CraftState(object):
 
     new_state = CraftState(self.scenario, n_grid, (n_x, n_y), n_dir,
                            n_inventory)
-    if f==1:
-      reward+=1.0
+    # if f==1:
+    #   reward+=1.0
     return reward, new_state
 
   def next_to(self, i_kind):

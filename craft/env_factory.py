@@ -20,7 +20,7 @@ class EnvironmentFactory(object):
                recipes_path,
                hints_path,
                env_type,
-               max_steps=100,
+               max_steps=300,
                seed=0,
                visualise=False,
                reuse_environments=False):

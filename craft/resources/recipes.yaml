@@ -15,6 +15,14 @@ primitives:
   - gem
 
 recipes:
+  stick:
+    wood: 1
+    _at: workshop2
+
+  axe:
+    wood: 1
+    iron: 1
+    _at: workshop0
 
   slingshot:
     rope: 1
@@ -57,10 +65,6 @@ recipes:
     grass: 1
     _at: workshop1
 
-  axe:
-    stick: 1
-    iron: 1
-    _at: workshop0
 
   shears:
     stick: 1
@@ -92,10 +96,6 @@ recipes:
   plank:
     wood: 1
     _at: workshop0 
-
-  stick:
-    wood: 1
-    _at: workshop2
 
   cloth:
     grass: 1

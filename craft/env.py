@@ -24,7 +24,7 @@ class CraftLab(object):
                scenario,
                task_name,
                task,
-               max_steps=100,
+               max_steps=300,
                visualise=False,
                render_scale=10,
                extra_pickup_penalty=0.3):
@@ -150,7 +150,10 @@ class CraftLab(object):
     self.steps += 1
 
     done = self._is_done()
-    reward = np.float32(self._get_reward() + state_reward)
+    goal_name, goal_arg = self.task.goal
+
+    a = 10 if self._current_state.satisfies(goal_name, goal_arg) else 0
+    reward = np.float32(self._get_reward() + state_reward + a)
 
     if done:
       self.reset()
@@ -171,8 +174,8 @@ class CraftLab(object):
     # print(goal_name, goal_arg)
     needed_items = self.world.cookbook.primitives_for_reward(goal_arg)
     # print(needed_items)
-    if goal_arg == 12:
-      needed_items = {9: 1, 7: 1, 23: 1, self.world.cookbook.index["axe"]:1}
+    # if goal_arg == 12:
+    #   needed_items = {9: 1, 7: 1, 23: 1, self.world.cookbook.index["axe"]:1}
     # Get all items needed in the recipe for the goal
 
     # print(needed_items)
