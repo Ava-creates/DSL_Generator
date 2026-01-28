@@ -1,7 +1,7 @@
 #stuff i added
 keys.txt
 hello.sh
-
+experiments_*/*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

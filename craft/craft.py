@@ -433,16 +433,75 @@ class CraftWorld(object):
     curses.wrapper(_visualize)
 
 
+def _build_grid_from_spec(spec, world):
+  """Build a grid from a spec dict.
+
+  Supported spec formats:
+    - {"grid": [[cell, ...], ...], "init_pos": [x, y], "init_dir": 0}
+      where cell is ""/None or an item name (e.g., "wood", "workshop0").
+    - {"cells": [{"x": 1, "y": 2, "item": "wood"}, ...], ...}
+
+  Optional keys:
+    - "width", "height" (must match WIDTH/HEIGHT if provided)
+    - "include_boundary": bool (default True)
+  """
+  width = spec.get("width", WIDTH)
+  height = spec.get("height", HEIGHT)
+  if width != WIDTH or height != HEIGHT:
+    raise ValueError(f"Grid spec size {width}x{height} must match {WIDTH}x{HEIGHT}")
+
+  grid = np.zeros((WIDTH, HEIGHT, world.cookbook.n_kinds))
+  if spec.get("include_boundary", True):
+    i_bd = world.cookbook.index["boundary"]
+    grid[0, :, i_bd] = 1
+    grid[WIDTH - 1:, :, i_bd] = 1
+    grid[:, 0, i_bd] = 1
+    grid[:, HEIGHT - 1:, i_bd] = 1
+
+  if "grid" in spec:
+    rows = spec["grid"]
+    if len(rows) != HEIGHT:
+      raise ValueError(f"grid rows must be {HEIGHT} but got {len(rows)}")
+    for y, row in enumerate(rows):
+      if len(row) != WIDTH:
+        raise ValueError(f"grid row {y} must be {WIDTH} but got {len(row)}")
+      for x, cell in enumerate(row):
+        if cell is None or cell == "":
+          continue
+        name = str(cell).lower()
+        if name not in world.cookbook.index:
+          raise ValueError(f"Unknown item '{cell}' at ({x}, {y})")
+        grid[x, y, world.cookbook.index[name]] = 1
+  elif "cells" in spec:
+    for cell in spec["cells"]:
+      x = int(cell["x"])
+      y = int(cell["y"])
+      name = str(cell["item"]).lower()
+      if name not in world.cookbook.index:
+        raise ValueError(f"Unknown item '{cell['item']}' at ({x}, {y})")
+      grid[x, y, world.cookbook.index[name]] = 1
+
+  return grid
+
+
+def scenario_from_spec(spec, world):
+  """Create a CraftScenario from a JSON-like spec."""
+  grid = _build_grid_from_spec(spec, world)
+  init_pos = tuple(spec.get("init_pos", random_free(grid, world.random)))
+  init_dir = int(spec.get("init_dir", 0))
+  return CraftScenario(grid, init_pos, world, init_dir=init_dir)
+
+
 class CraftScenario(object):
-  def __init__(self, grid, init_pos, world):
+  def __init__(self, grid, init_pos, world, init_dir=0):
     self.init_grid = grid
     self.init_pos = init_pos
-    self.init_dir = 0
+    self.init_dir = init_dir
     self.world = world
 
   def init(self):
     inventory = np.zeros(self.world.cookbook.n_kinds)
-    state = CraftState(self, self.init_grid, self.init_pos, self.init_dir,
+    state = CraftState(self, self.init_grid.copy(), self.init_pos, self.init_dir,
                        inventory)
     return state
 

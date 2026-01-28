@@ -1,0 +1,57 @@
+#!/bin/bash
+# Helper script to load configuration from YAML file and export to environment
+# This is sourced by SLURM scripts to set environment variables
+
+# Get the config file path from environment or use default
+CONFIG_FILE="${EXPERIMENT_CONFIG:-config/experiment_config.yaml}"
+
+# If config file exists, load it and export to environment
+if [ -f "$CONFIG_FILE" ]; then
+    # Use Python to load config and export to environment
+    # This script is sourced, so exports will be available to the calling script
+    eval "$(python3 << EOF
+import sys
+import os
+sys.path.insert(0, '/home/avani/projects/aip-lelis/avani/DSL_Generator')
+from src.utils.config_loader import load_config, export_config_to_env
+
+config = load_config('$CONFIG_FILE')
+export_config_to_env(config)
+
+# Print export statements for bash to evaluate
+for key, value in config.items():
+    if key == 'tasks' and isinstance(value, list):
+        # Export as space-separated string
+        tasks_str = ' '.join(str(t) for t in value)
+        print(f"export TASKS=\"{tasks_str}\"")
+    elif key == 'skip_cfg_generation':
+        print(f"export SKIP_CFG_GENERATION=\"{'true' if value else 'false'}\"")
+    elif value is not None:
+        # Escape quotes in values
+        value_str = str(value).replace('"', '\\"')
+        env_var = key.upper()
+        # Map config keys to environment variable names
+        env_mapping = {
+            'experiment_dir': 'EXPERIMENT_DIR',
+            'spec_file': 'SPEC_FILE',
+            'max_dsl_evolutions': 'MAX_DSL_EVOLUTIONS',
+            'max_function_evolutions': 'MAX_FUNCTION_EVOLUTIONS',
+            'total_samples': 'TOTAL_SAMPLES',
+            'num_explicit_feedback_iterations': 'NUM_EXPLICIT_FEEDBACK_ITERATIONS',
+            'max_attempts': 'MAX_ATTEMPTS',
+            'model_type': 'MODEL_TYPE',
+            'recipes_path': 'RECIPES_PATH',
+            'hints_path': 'HINTS_PATH',
+            'cfg_output_file': 'CFG_OUTPUT_FILE',
+            'max_cfg_retries': 'MAX_CFG_RETRIES',
+        }
+        if key in env_mapping:
+            env_var = env_mapping[key]
+            print(f"export {env_var}=\"{value_str}\"")
+EOF
+)" 2>&1
+    echo "Loaded configuration from: $CONFIG_FILE"
+else
+    echo "Config file not found: $CONFIG_FILE (using environment variables or defaults)"
+fi
+

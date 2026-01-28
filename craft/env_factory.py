@@ -4,6 +4,7 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
+import json
 import numpy as np
 import yaml
 
@@ -23,7 +24,8 @@ class EnvironmentFactory(object):
                max_steps=300,
                seed=0,
                visualise=False,
-               reuse_environments=False):
+               reuse_environments=False,
+               custom_grid_path=None):
     self.subtask_index = util.Index()
     self.task_index = util.Index()
     self._max_steps = max_steps
@@ -37,6 +39,12 @@ class EnvironmentFactory(object):
 
     # create World
     self.world = craft.CraftWorld(recipes_path, env_type, seed)
+
+    # Optional: load a custom grid spec for deterministic scenarios
+    self._custom_grid_spec = None
+    if custom_grid_path:
+      with open(custom_grid_path, "r", encoding="utf-8") as f:
+        self._custom_grid_spec = json.load(f)
 
     # Load the tasks with sub-steps (== hints)
     with open(hints_path) as hints_f:
@@ -78,8 +86,11 @@ class EnvironmentFactory(object):
     # print(self.tasks, "printing out th etasks")
     goal_arg = task.goal[1]
 
-    # Sample a world (== scenario for them...)
-    scenario = self.world.sample_scenario_with_goal(goal_arg)
+    # Sample a world (== scenario for them...) or use a custom scenario
+    if self._custom_grid_spec is not None:
+      scenario = craft.scenario_from_spec(self._custom_grid_spec, self.world)
+    else:
+      scenario = self.world.sample_scenario_with_goal(goal_arg)
 
     # Wrap it into an environment and return
     return env.CraftLab(

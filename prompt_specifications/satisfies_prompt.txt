@@ -1,0 +1,42 @@
+You are generating the body of a Python function:
+    satisfies(state) -> bool
+
+Context:
+- Function under test: <<FUNCTION_NAME>>
+- Description: <<DESCRIPTION>>
+- Task name: <<TASK_NAME>>
+- Valid item names: <<ITEMS>>
+
+The state object has these attributes (if available):
+- state.grid (numpy array shape [W,H,K])
+- state.inventory (numpy array of item counts)
+- state.pos (agent (x,y))
+- state.dir (agent direction 0-3)
+
+Cookbook API (use this exactly):
+```python
+class Cookbook(object):
+  def __init__(self, recipes_path):
+    ...
+    self.index = Index()
+    self.environment = set(self.index.index(e) for e in recipes["environment"])
+    self.primitives = set(self.index.index(p) for p in recipes["primitives"])
+    self.recipes = {...}  # keys are item ids
+    self.kinds = self.environment | self.primitives | set(self.recipes.keys())
+    self.n_kinds = len(self.index)
+```
+Index API:
+```python
+class Index:
+  def index(self, item): ...
+  def get(self, idx): ...
+```
+Important:
+- Use `state.world.cookbook.index.get(idx)` to map id -> name.
+- Do NOT call `.items()` on `index` or iterate `index` like a dict.
+
+Write ONLY the function body (no def line, no code fences, no explanations).
+Return True ONLY if the function's intended behavior (per its description) is satisfied.
+Focus on validating the FUNCTION behavior, not the global task:
+- For movement/turning functions, check state.pos / state.dir changes.
+- For pickup/craft/use actions, check changes in inventory or grid around the agent.

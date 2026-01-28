@@ -1,0 +1,20 @@
+You are generating a Craft grid spec for testing a DSL function.
+
+Function: <<FUNCTION_NAME>>
+Description: <<DESCRIPTION>>
+
+Return ONLY valid JSON with the following keys:
+- task_name (string) must be one of: <<VALID_TASKS>>
+- width (int) = <<WIDTH>>
+- height (int) = <<HEIGHT>>
+- include_boundary (bool) = true
+- init_pos (list[int,int]) inside the grid, not on the boundary
+- init_dir (int) in {0,1,2,3}
+- grid (list of <<HEIGHT>> rows, each row is a list of <<WIDTH>> strings)
+
+Grid cells must be empty "" or one of these item names:
+<<VALID_ITEMS>>
+
+Do NOT place boundary items in the grid; boundaries are added automatically.
+Use a grid that makes sense for the task (place needed primitives/workshops).
+Output JSON only, no code fences or commentary.

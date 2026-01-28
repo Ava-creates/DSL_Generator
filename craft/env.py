@@ -151,12 +151,12 @@ class CraftLab(object):
 
     done = self._is_done()
     goal_name, goal_arg = self.task.goal
-
     a = 10 if self._current_state.satisfies(goal_name, goal_arg) else 0
+    if a ==10:
+        print("goal_name", goal_name, "goal_arg", goal_arg, "satisfies", self._current_state.satisfies(goal_name, goal_arg))
+
     reward = np.float32(self._get_reward() + state_reward + a)
 
-    if done:
-      self.reset()
     observations = self.observations()
     return reward, done, observations
 

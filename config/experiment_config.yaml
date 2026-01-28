@@ -1,0 +1,17 @@
+experiment_dir: experiments/experiment_20260127_154125
+spec_file: prompt_specifications/specification_with_updated_nld.txt
+tasks:
+  - get[gem]
+  - make[goldarrow]
+  - make[stick]
+max_dsl_evolutions: 2
+max_function_evolutions: 1
+total_samples: 1000
+num_explicit_feedback_iterations: 30
+max_attempts: 30
+model_type: huggingface
+recipes_path: craft/resources/recipes.yaml
+hints_path: craft/resources/hints.yaml
+skip_cfg_generation: false
+cfg_output_file:
+max_cfg_retries: 10

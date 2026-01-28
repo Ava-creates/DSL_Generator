@@ -331,14 +331,33 @@ Data Attributes
 The following language is the domain-specific language that we designed to solve **any** task in this game. 
 """
 s ::= task SEMI s | task SEMI
-task ::= move | craft | collect | ifhas do
+task ::= move | craft | collect | break | ifhas do 
 move ::= MOVE_FUNC LPAR dir RPAR
 dir ::= UP | DOWN | LEFT | RIGHT
 craft ::= CRAFT_FUNC LPAR item RPAR
+break ::= BREAK_FUNC LPAR obstacle RPAR
 collect ::= COLLECT_FUNC LPAR primitive RPAR
-item ::= PLANK | STICK | CLOTH | ROPE | BRIDGE | BUNDLE | HAMMER | KNIFE | BED | AXE | SHEARS | LADDER | SLINGSHOT | ARROW | BOW | BENCH | FLAG | GOLDARROW
+item ::= PLANK 
+        | STICK 
+        | CLOTH 
+        | ROPE 
+        | BRIDGE 
+        | BUNDLE 
+        | HAMMER 
+        | KNIFE 
+        | BED 
+        | AXE 
+        | SHEARS 
+        | LADDER 
+        | SLINGSHOT 
+        | ARROW 
+        | BOW 
+        | BENCH 
+        | FLAG 
+        | GOLDARROW
+obstacle ::= STONE | WATER
 ifhas ::= if HAS LPAR item RPAR
-primitive ::= BOUNDARY | WATER | STONE | WORKSHOP0 | WORKSHOP1 | WORKSHOP2 | WOOD | IRON | GRASS | ROCK | GOLD | GEM
+primitive ::= WOOD | IRON | GRASS | ROCK | GOLD | GEM
 do ::= then task
 """
 
@@ -360,3 +379,4 @@ import numpy as np
 import time
 import collections
 from craft import craft, env, env_factory
+import pandas as pd
