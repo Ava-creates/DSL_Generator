@@ -3,4 +3,4 @@ In this project, we are working on general DSL generator pipeline that can be us
 
 Use this to run pipeline on vulcan -> scripts/submit_with_config.sh
 
-PLease update the config script before runnign the above to adjust the hyperparameters. 
+PLease update the config script before running the above to adjust the hyperparameters. 
