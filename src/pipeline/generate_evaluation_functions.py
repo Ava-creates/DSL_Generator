@@ -5,9 +5,13 @@ This allows function-specific evaluation logic that doesn't rely solely on envir
 NOTE: evaluate() function is generated separately by the caller using templates.
 """
 
+import ast
 import os
 import re
+import textwrap
 from typing import Optional, Tuple, Dict
+
+from src.pipeline.domain_templates import craft_solve_template_for_prompt
 
 try:
     from vllm import LLM as vLLM, SamplingParams
@@ -15,154 +19,6 @@ except ImportError:
     vLLM = None
     SamplingParams = None
 
-
-def _generate_solve_template_for_prompt(
-    func_name: str,
-    args: str
-) -> str:
-    """Generate the full solve() template with insertion point marked for LLM prompt.
-    
-    Args:
-        func_name: Name of the function
-        args: Function arguments as comma-separated string
-        
-    Returns:
-        Full solve() template with insertion marker
-    """
-    # Build function parameters
-    if args:
-        func_params = f"env, {args}, visualise=False"
-        func_call_args = f"env, {args}"
-    else:
-        func_params = "env, visualise=False"
-        func_call_args = "env"
-    
-    # Get safe function name
-    safe_name = func_name.lower().replace('-', '_')
-    
-    # Generate full template with insertion marker
-    template = f'''def solve({func_params}):
-  """Runs the environment with a {safe_name} function that returns list of actions to take and returns total reward."""
-  # Capture grid state before function execution (with agent position)
-  grid_before = None
-  try:
-    if hasattr(env, '_current_state') and hasattr(env._current_state, 'grid'):
-      try:
-        from test import grid_to_markdown
-        # Get agent position for grid representation - ensure it's a tuple
-        agent_pos = None
-        if hasattr(env._current_state, 'pos'):
-          pos = env._current_state.pos
-          # Convert to tuple if it's a numpy array or list
-          if hasattr(pos, '__iter__') and not isinstance(pos, str):
-            agent_pos = tuple(pos) if len(pos) == 2 else None
-          elif isinstance(pos, tuple):
-            agent_pos = pos
-        grid_before = grid_to_markdown(env._current_state.grid, env.world.cookbook, agent_pos)
-      except (ImportError, AttributeError) as e:
-        agent_pos = None
-        if hasattr(env._current_state, 'pos'):
-          pos = env._current_state.pos
-          if hasattr(pos, '__iter__') and not isinstance(pos, str):
-            agent_pos = tuple(pos) if len(pos) == 2 else None
-        grid_before = f"Grid shape: {{env._current_state.grid.shape if hasattr(env._current_state.grid, 'shape') else 'N/A'}}\\nAgent position: {{agent_pos}}"
-  except Exception as e:
-    pass
-  
-  # Capture state before (for reward computation)
-  state_before = {{}}
-  if hasattr(env, '_current_state'):
-    state = env._current_state
-    if hasattr(state, 'pos'):
-      state_before['pos'] = tuple(state.pos) if hasattr(state.pos, '__iter__') and not isinstance(state.pos, str) else state.pos
-    if hasattr(state, 'inventory'):
-      state_before['inventory'] = state.inventory.copy() if hasattr(state.inventory, 'copy') else state.inventory
-    if hasattr(state, 'dir'):
-      state_before['dir'] = state.dir
-    # Also store individual variables for convenience
-    pos_before = state_before.get('pos')
-    inventory_before = state_before.get('inventory')
-    dir_before = state_before.get('dir')
-  else:
-    pos_before = None
-    inventory_before = None
-    dir_before = None
-  
-  # Call function to get actions
-  actions_to_take = {safe_name}({func_call_args})
-  if actions_to_take is None:
-    actions_to_take = []
-  
-  # Execute actions and accumulate environment rewards
-  actions_count = 0
-  total_reward = 0.0
-  for action in actions_to_take:
-    reward, done, obs = env.step(action)
-    total_reward += reward
-    actions_count += 1
-    if done:
-      break
-  
-  # Capture state after (for reward computation)
-  state_after = {{}}
-  if hasattr(env, '_current_state'):
-    state = env._current_state
-    if hasattr(state, 'pos'):
-      state_after['pos'] = tuple(state.pos) if hasattr(state.pos, '__iter__') and not isinstance(state.pos, str) else state.pos
-    if hasattr(state, 'inventory'):
-      state_after['inventory'] = state.inventory.copy() if hasattr(state.inventory, 'copy') else state.inventory
-    if hasattr(state, 'dir'):
-      state_after['dir'] = state.dir
-    # Also store individual variables for convenience
-    pos_after = state_after.get('pos')
-    inventory_after = state_after.get('inventory')
-    dir_after = state_after.get('dir')
-  else:
-    pos_after = None
-    inventory_after = None
-    dir_after = None
-  
-  # Capture grid state after function execution (with agent position)
-  grid_after = None
-  try:
-    if hasattr(env, '_current_state') and hasattr(env._current_state, 'grid'):
-      try:
-        from test import grid_to_markdown
-        # Get agent position for grid representation - ensure it's a tuple
-        agent_pos = None
-        if hasattr(env._current_state, 'pos'):
-          pos = env._current_state.pos
-          # Convert to tuple if it's a numpy array or list
-          if hasattr(pos, '__iter__') and not isinstance(pos, str):
-            agent_pos = tuple(pos) if len(pos) == 2 else None
-          elif isinstance(pos, tuple):
-            agent_pos = pos
-        grid_after = grid_to_markdown(env._current_state.grid, env.world.cookbook, agent_pos)
-      except (ImportError, AttributeError) as e:
-        agent_pos = None
-        if hasattr(env._current_state, 'pos'):
-          pos = env._current_state.pos
-          if hasattr(pos, '__iter__') and not isinstance(pos, str):
-            agent_pos = tuple(pos) if len(pos) == 2 else None
-        grid_after = f"Grid shape: {{env._current_state.grid.shape if hasattr(env._current_state.grid, 'shape') else 'N/A'}}\\nAgent position: {{agent_pos}}"
-  except Exception as e:
-    pass
-
-  # Compute additional reward based on whether function worked correctly (LLM-generated logic)
-  new_reward = 0.0
-  try:
-    # <--- YOUR new_reward LOGIC GOES HERE --->
-    # Generate code that updates new_reward based on whether the function worked correctly
-    # Use pos_before/after, inventory_before/after, dir_before/after to check if function achieved its intended effect
-    pass
-  except Exception as e:
-    pass
-  total_reward += new_reward
-
-  # Return [total_reward, actions_count, grid_before, grid_after]
-  return [total_reward, actions_count, grid_before, grid_after]'''
-    
-    return template
 
 
 def generate_custom_evaluation_functions(
@@ -237,7 +93,7 @@ def generate_custom_evaluation_functions(
 """
     
     # Generate the full solve template for the prompt
-    solve_template = _generate_solve_template_for_prompt(func_name, args)
+    solve_template = craft_solve_template_for_prompt(func_name, args)
     
     prompt += f"""
 
@@ -399,11 +255,10 @@ $$$
     core_eval_logic = _extract_core_evaluation_logic(response, func_name, args)
     
     # Generate solve() function from template with grid capture, inserting LLM-generated reward logic
-    solve_func = _generate_solve_template(
+    solve_func =_generate_solve_template (
         func_name=func_name,
         args=args,
         return_type=return_type,
-        core_eval_logic=core_eval_logic
     )
     
     return solve_func
@@ -556,8 +411,9 @@ def _generate_solve_template(
     # Get safe function name
     safe_name = func_name.lower().replace('-', '_')
     
-    # Generate solve function with template grid capture and LLM-generated reward logic
-    solve_func = f'''def solve({func_params}):
+    def _build_solve_func(core_logic: str) -> str:
+        # Generate solve function with template grid capture and reward logic
+        return f'''def solve({func_params}):
   """Runs the environment with a {safe_name} function that returns list of actions to take and returns total reward."""
   # Capture grid state before function execution (with agent position)
   grid_before = None
@@ -666,28 +522,41 @@ def _generate_solve_template(
 
   # Compute additional reward based on whether function worked correctly (LLM-generated logic)
   new_reward = 0.0
-  try:
-    # LLM-generated reward logic inserted here
-{_indent_code(core_eval_logic, 4)}
-  except Exception as e:
-    pass
+  
   total_reward += new_reward
 
   # Return [total_reward, actions_count, grid_before, grid_after]
   return [total_reward, actions_count, grid_before, grid_after]
 '''
-    
-    return solve_func
+
+    def _fallback_core_eval_logic() -> str:
+        return '''# Fallback reward logic (LLM output failed to parse)
+if pos_before is not None and pos_after is not None and pos_before != pos_after:
+  new_reward = 0.5
+elif inventory_before is not None and inventory_after is not None and inventory_before != inventory_after:
+  new_reward = 0.5'''
+
+    solve_func = _build_solve_func(core_eval_logic)
+    try:
+        ast.parse(solve_func)
+        return solve_func
+    except SyntaxError:
+        fallback_logic = _fallback_core_eval_logic()
+        solve_func = _build_solve_func(fallback_logic)
+        try:
+            ast.parse(solve_func)
+        except SyntaxError:
+            # Last resort: keep template valid with no-op logic
+            solve_func = _build_solve_func("pass")
+        return solve_func
 
 
 def _indent_code(code: str, indent_level: int) -> str:
     """Indent code by a given number of spaces.
     
-    Normalizes indentation by:
-    1. Finding the minimum indentation level in the code
-    2. Calculating relative indentation for each line
-    3. Adding the desired base indentation while preserving relative structure
-    4. If all lines have same indentation, try to infer structure from Python keywords
+    Preserves the code's relative indentation by:
+    1. Dedenting to the minimum common indentation
+    2. Applying the requested base indentation
     
     Args:
         code: Code to indent
@@ -699,81 +568,17 @@ def _indent_code(code: str, indent_level: int) -> str:
     if not code:
         return " " * indent_level + "# No evaluation logic generated"
     
-    lines = code.split('\n')
-    if not lines:
+    dedented = textwrap.dedent(code).split('\n')
+    if not dedented:
         return ""
     
-    # Find minimum indentation (excluding empty lines)
-    min_indent = None
-    indent_levels = []
-    for line in lines:
-        if line.strip():  # Only consider non-empty lines
-            current_indent = len(line) - len(line.lstrip())
-            indent_levels.append(current_indent)
-            if min_indent is None or current_indent < min_indent:
-                min_indent = current_indent
-    
-    if min_indent is None:
-        min_indent = 0
-    
-    # Check if all non-empty lines have the same indentation
-    unique_indents = set(indent_levels) if indent_levels else {0}
-    all_same_indent = len(unique_indents) == 1
-    
-    # If all lines have same indentation, try to infer structure from Python keywords
-    if all_same_indent and len([l for l in lines if l.strip()]) > 1:
-        # Try to fix indentation based on Python control flow keywords
-        import re
-        fixed_lines = []
-        indent_stack = [0]  # Track indentation levels
-        
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if not stripped:
-                fixed_lines.append("")
-                continue
-            
-            # Determine if this line should be indented based on previous line
-            if i > 0:
-                prev_stripped = lines[i-1].strip() if i > 0 else ""
-                # If previous line ends with ':', increase indent
-                if prev_stripped and prev_stripped.endswith(':'):
-                    indent_stack.append(indent_stack[-1] + 4)
-                # If this line is 'else', 'elif', 'except', 'finally', decrease indent
-                elif re.match(r'^(else|elif|except|finally):', stripped):
-                    if len(indent_stack) > 1:
-                        indent_stack.pop()
-            
-            # Use current indent level from stack
-            current_base_indent = indent_stack[-1]
-            fixed_lines.append((" " * (indent_level + current_base_indent)) + stripped)
-            
-            # If this line doesn't end with ':', decrease indent for next iteration
-            if not stripped.endswith(':'):
-                # Check if we should pop (but keep at least one level)
-                if len(indent_stack) > 1 and i < len(lines) - 1:
-                    next_stripped = lines[i+1].strip() if i+1 < len(lines) else ""
-                    # If next line is not a continuation (else/elif/except), we might need to pop
-                    if next_stripped and not re.match(r'^(else|elif|except|finally)', next_stripped):
-                        # Only pop if next line is at same or lower logical level
-                        pass  # Keep current level for now
-        
-        return '\n'.join(fixed_lines)
-    
-    # Normal case: preserve relative indentation
-    base_indent = " " * indent_level
+    base = " " * indent_level
     indented_lines = []
-    for line in lines:
-        if line.strip():  # Non-empty line
-            # Calculate current indent and relative indent
-            current_indent = len(line) - len(line.lstrip())
-            relative_indent = current_indent - min_indent
-            stripped_line = line.lstrip()
-            # Add base indent + preserve relative indent
-            indented_lines.append(base_indent + (' ' * relative_indent) + stripped_line)
-        else:
+    for line in dedented:
+        if not line.strip():
             indented_lines.append("")
-    
+        else:
+            indented_lines.append(base + line)
     return '\n'.join(indented_lines)
 
 

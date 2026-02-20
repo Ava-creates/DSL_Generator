@@ -1074,18 +1074,12 @@ def evolve_functions_with_failing_tasks(
     func_evolution_round: Optional[int] = None,
     total_samples: int = 1000
 ) -> bool:
-    """Evolve functions by reusing the first round's domain-template prompt and seeding
-    funsearch with the final function from the previous round.
-    
-    Instead of modifying evaluate() to test on failing tasks, this simply:
-    1. Reuses the first round's prompt file (e.g., craft_dsl0_func0.txt) which already
-       has the domain template with grid specs and pass_checks
-    2. Updates the func_init file with the body from the last round's final function
-    3. Runs funsearch + explicit feedback with this combination
+    """Evolve functions by regenerating prompts using domain templates (same as file generation)
+    and seeding funsearch with the final function from the previous round.
     
     Args:
         experiment_dir: Path to experiment directory
-        failing_tasks: List of task names that failed (kept for API compat, logged but not used)
+        failing_tasks: List of task names that failed (kept for API compat, not used for evaluate)
         terminals: Dictionary of terminal functions
         specification: Specification string for funsearch
         cfg: CFG string
@@ -1105,7 +1099,7 @@ def evolve_functions_with_failing_tasks(
     
     # Import necessary functions from cfg_to_funsearch_pipeline
     from src.pipeline.cfg_to_funsearch_pipeline import (
-        generate_func_init, determine_inputs,
+        generate_function_prompt, generate_func_init, determine_inputs,
         run_explicit_feedback_generation, sanitize_function_name, parse_function_name_and_args,
         extract_function_args
     )
@@ -1113,51 +1107,36 @@ def evolve_functions_with_failing_tasks(
     from funsearch.implementation import config as config_lib
     
     func_prompts_dir = os.path.join(experiment_dir, "function_specific_prompts")
-    if not os.path.exists(func_prompts_dir):
-        print("  ✗ Function prompts directory not found")
-        return False
+    os.makedirs(func_prompts_dir, exist_ok=True)
     
-    # Step 1: Reuse the first round's prompt file (domain template with grid specs)
-    print(f"\n  [Step 1] Locating first round prompt files to reuse...")
+    # Step 1: Regenerate function prompts using generate_function_prompt (domain template)
+    # This is the same as file generation — uses grid specs + domain templates
+    print(f"\n  [Step 1] Regenerating function prompts using domain templates...")
     updated_prompts = []
     func_files = {}
     func_init_files = {}
     
     for func_name, description in terminals.items():
         safe_name = sanitize_function_name(func_name)
+        print(f"\n  Regenerating prompt for {func_name}...")
         
-        # Find the first round's prompt file (func0)
-        prompt_file = None
-        if dsl_round is not None:
-            # Try func0 first (the initial domain-template-based prompt)
-            func0_file = os.path.join(func_prompts_dir, f"{safe_name}_dsl{dsl_round}_func0.txt")
-            if os.path.exists(func0_file):
-                prompt_file = func0_file
-            else:
-                # Try without func suffix
-                dsl_only = os.path.join(func_prompts_dir, f"{safe_name}_dsl{dsl_round}.txt")
-                if os.path.exists(dsl_only):
-                    prompt_file = dsl_only
-        
-        # Fallback to old naming
-        if prompt_file is None:
-            old_name = os.path.join(func_prompts_dir, f"{safe_name}.txt")
-            if os.path.exists(old_name):
-                prompt_file = old_name
-        
-        if prompt_file is None:
-            print(f"    ✗ No prompt file found for {func_name}, skipping")
-            continue
-        
-        func_files[func_name] = prompt_file
+        func_file, func_signature = generate_function_prompt(
+            func_name, description, cfg, specification,
+            experiment_dir=experiment_dir,
+            dsl_round=dsl_round,
+            func_evolution_round=func_evolution_round,
+            use_llm_evaluation=False,
+            shared_vllm=shared_vllm
+        )
+        func_files[func_name] = func_file
         updated_prompts.append(func_name)
-        print(f"    ✓ Reusing prompt: {os.path.basename(prompt_file)}")
+        print(f"    ✓ Regenerated prompt: {os.path.basename(func_file)}")
     
     if not updated_prompts:
-        print("  ✗ No prompt files found")
+        print("  ✗ No prompts were generated")
         return False
     
-    print(f"\n  ✓ Found {len(updated_prompts)} prompt files to reuse")
+    print(f"\n  ✓ Regenerated {len(updated_prompts)} function prompts")
     
     # Step 2: Load final functions from previous round to use as func_init seed
     print(f"\n  [Step 2] Loading final functions from previous round as seed...")
@@ -1250,7 +1229,7 @@ def evolve_functions_with_failing_tasks(
                     body_lines = skip_docstring(body_lines)
                     if not body_lines:
                         body_lines = ["  pass"]
-                    body_str = normalize_to_two_spaces(body_lines)
+                    body_lines = normalize_to_two_spaces(body_lines)
                     
                     # Read existing func_init to preserve signature
                     existing_init = None
@@ -1265,9 +1244,9 @@ def evolve_functions_with_failing_tasks(
                     
                     if existing_init:
                         first_line = existing_init[0]
-                        updated_content = first_line + '\n' + body_str
+                        updated_content = first_line + '\n' + '\n'.join(body_lines)
                     else:
-                        updated_content = func_lines[func_start_idx] + '\n' + body_str
+                        updated_content = func_lines[func_start_idx] + '\n' + '\n'.join(body_lines)
                     
                     os.makedirs(os.path.dirname(func_init_file), exist_ok=True)
                     with open(func_init_file, 'w', encoding='utf-8') as f:
@@ -1339,9 +1318,39 @@ def evolve_functions_with_failing_tasks(
     elif "look" in updated_prompts:
         updated_prompts.remove("look")
     
-    # (func_init files already prepared in Step 3 above - old duplicate block removed)
-    _skip_old_block = True
-    for func_name in []:  # OLD LOOP - SKIP
+    # Helper function to run FunSearch for a single function (used for parallelization)
+    def run_funsearch_for_function_evolution(func_name, func_file, func_init_file, inputs, specification, spec_file):
+        """Run FunSearch for a single function during evolution (used for parallelization)."""
+        try:
+            print(f"    [{func_name}] Starting FunSearch evolution...")
+            # Create a new FunSearch instance for this function (shares vLLM)
+            funsearch = FunSearch(model_type="huggingface", shared_vllm=shared_vllm)
+            
+            funsearch.run(
+                specification=specification,
+                inputs=inputs,
+                config=config,
+                function_to_implement=func_file,
+                function_init=func_init_file,
+                spec_file=spec_file,
+                experiment_dir=results_dir
+            )
+            print(f"    [{func_name}] ✓ Completed FunSearch evolution")
+            return func_name, "success", None
+        except Exception as e:
+            error_msg = str(e)
+            print(f"    [{func_name}] ✗ Error: {error_msg}", file=sys.stderr)
+            return func_name, "error", error_msg
+    
+    # Prepare all function data for parallel execution
+    func_tasks = []
+    for func_name in updated_prompts:
+
+        print(f"\n    --- Re-running funsearch for {func_name} ---")
+        func_file = func_files[func_name]
+        
+        # Update func_init file with current implementation from final_functions
+        # Use same naming scheme as prompt files
         safe_name = sanitize_function_name(func_name)
         if dsl_round is not None:
             if func_evolution_round is not None:
@@ -1559,10 +1568,10 @@ def evolve_functions_with_failing_tasks(
         
         func_init_files[func_name] = func_init_file
     
-    # Run FunSearch in parallel for all functions
-    print(f"\n  [Step 4.1] Running FunSearch in parallel for {len(updated_prompts)} functions...")
-    max_workers = min(len(updated_prompts), 16)
-    print(f"    Using {max_workers} parallel workers")
+    # Now run FunSearch in parallel for all functions
+    print(f"\n  [Step 3.1] Running FunSearch in parallel for {len(updated_prompts)} functions...")
+    max_workers = min(len(updated_prompts), 16)  # Increased from 8 to 16 for better parallelization
+    print(f"    Using {max_workers} parallel workers (each with 4 samplers + 4 evaluators)")
     
     # Helper function to run FunSearch for a single function
     def run_funsearch_for_function_evolution(func_name, func_file, func_init_file):
@@ -1640,7 +1649,7 @@ def evolve_functions_with_failing_tasks(
             print(f"  ⚠ Warning: Error cleaning up FunSearch instance: {cleanup_error}")
     
     # Re-run explicit feedback generation for successfully updated functions (30 iterations)
-    print(f"\n  [Step 4.2] Re-running explicit feedback generation (30 iterations)...")
+    print(f"\n  [Step 3.2] Re-running explicit feedback generation (30 iterations)...")
     
     explicit_feedback_dir = os.path.join(experiment_dir, "explicit_feedback")
     os.makedirs(explicit_feedback_dir, exist_ok=True)
@@ -1690,7 +1699,7 @@ def evolve_functions_with_failing_tasks(
                 
                 try:
                     final_func = run_explicit_feedback_generation(
-                        func_name, results_dir, func_file, experiment_dir, explicit_feedback_dir,
+                        func_name, results_dir, tmp_file_path, experiment_dir, explicit_feedback_dir,
                         specification, k=5, shared_vllm=shared_vllm, 
                         func_signature=func_signatures.get(func_name, ""),
                         dsl_round=dsl_round, func_evolution_round=func_evolution_round
@@ -1727,7 +1736,7 @@ def evolve_functions_with_failing_tasks(
     
     # Save updated final functions with versioning
     if final_functions:
-        print(f"\n  [Step 4.3] Saving {len(final_functions)} updated final functions...")
+        print(f"\n  [Step 3.3] Saving {len(final_functions)} updated final functions...")
         final_functions_dir = os.path.join(experiment_dir, "final_functions")
         os.makedirs(final_functions_dir, exist_ok=True)
         

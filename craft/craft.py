@@ -484,23 +484,136 @@ def _build_grid_from_spec(spec, world):
   return grid
 
 
+def _inventory_from_spec(spec, world):
+  """Parse optional inventory from spec."""
+  inventory = np.zeros(world.cookbook.n_kinds)
+  raw = spec.get("inventory")
+  if isinstance(raw, dict):
+    for name, count in raw.items():
+      if name is None:
+        continue
+      item = str(name).lower().strip()
+      if item not in world.cookbook.index:
+        continue
+      try:
+        count_val = int(count)
+      except Exception:
+        continue
+      if count_val > 0:
+        inventory[world.cookbook.index[item]] = count_val
+  return inventory
+
+
+def _count_item_in_spec_grid(spec_grid, item_name):
+  if not isinstance(spec_grid, list):
+    return 0
+  target = str(item_name).strip().lower()
+  count = 0
+  for row in spec_grid:
+    if not isinstance(row, list):
+      continue
+    for cell in row:
+      if cell is None or cell == "":
+        continue
+      if str(cell).strip().lower() == target:
+        count += 1
+  return count
+
+
+def validate_grid_spec(spec, cookbook):
+  """Validate that a grid spec can satisfy its task via grid+inventory."""
+  if not isinstance(spec, dict):
+    return False, "spec is not a dict"
+  task_name = str(spec.get("task_name", "")).strip()
+  if not task_name or "[" not in task_name or not task_name.endswith("]"):
+    return False, "missing or invalid task_name"
+  action, item = task_name.split("[", 1)
+  action = action.strip().lower()
+  item = item[:-1].strip().lower()
+  if item not in cookbook.index:
+    return False, f"unknown task item '{item}'"
+
+  grid = spec.get("grid", [])
+  inventory = spec.get("inventory", {}) if isinstance(spec.get("inventory", {}), dict) else {}
+  inv_count = inventory.get(item, 0)
+  try:
+    inv_count = int(inv_count)
+  except Exception:
+    inv_count = 0
+
+  if action == "get":
+    grid_count = _count_item_in_spec_grid(grid, item)
+    if grid_count < 1:
+      return False, f"missing '{item}' on grid"
+    return True, ""
+
+  if action == "make":
+    goal_idx = cookbook.index[item]
+    recipe = cookbook.recipes.get(goal_idx)
+    if recipe is None:
+      # Treat as a primitive-like task.
+      grid_count = _count_item_in_spec_grid(grid, item)
+      if grid_count + max(inv_count, 0) < 1:
+        return False, f"missing '{item}' in grid/inventory"
+      return True, ""
+
+    workshop = recipe.get("_at")
+    if workshop:
+      wk_count = _count_item_in_spec_grid(grid, workshop)
+      if wk_count < 1:
+        return False, f"missing required workshop '{workshop}'"
+
+    required = cookbook.primitives_for(goal_idx)
+    for idx, needed in required.items():
+      name = cookbook.index.get(idx)
+      if not name:
+        continue
+      grid_count = _count_item_in_spec_grid(grid, name)
+      inv_val = inventory.get(name, 0)
+      try:
+        inv_val = int(inv_val)
+      except Exception:
+        inv_val = 0
+      if grid_count + max(inv_val, 0) < int(needed):
+        return False, f"missing '{name}' (need {needed})"
+    # Ensure init_pos is on an empty cell
+    try:
+      init_pos = spec.get("init_pos", [1, 1])
+      if isinstance(init_pos, (list, tuple)) and len(init_pos) == 2:
+        x, y = int(init_pos[0]), int(init_pos[1])
+        if isinstance(grid, list) and 0 <= y < len(grid) and isinstance(grid[y], list) and 0 <= x < len(grid[y]):
+          if str(grid[y][x]).strip():
+            return False, "init_pos is occupied; must be empty"
+    except Exception:
+      pass
+    return True, ""
+
+  return False, f"unsupported task action '{action}'"
+
+
 def scenario_from_spec(spec, world):
   """Create a CraftScenario from a JSON-like spec."""
   grid = _build_grid_from_spec(spec, world)
   init_pos = tuple(spec.get("init_pos", random_free(grid, world.random)))
   init_dir = int(spec.get("init_dir", 0))
-  return CraftScenario(grid, init_pos, world, init_dir=init_dir)
+  inventory = _inventory_from_spec(spec, world)
+  scenario = CraftScenario(grid, init_pos, world, init_dir=init_dir, inventory=inventory)
+  scenario.spec = spec
+  return scenario
 
 
 class CraftScenario(object):
-  def __init__(self, grid, init_pos, world, init_dir=0):
+  def __init__(self, grid, init_pos, world, init_dir=0, inventory=None):
     self.init_grid = grid
     self.init_pos = init_pos
     self.init_dir = init_dir
     self.world = world
+    self.init_inventory = inventory
 
   def init(self):
-    inventory = np.zeros(self.world.cookbook.n_kinds)
+    inventory = self.init_inventory
+    if inventory is None:
+      inventory = np.zeros(self.world.cookbook.n_kinds)
     state = CraftState(self, self.init_grid.copy(), self.init_pos, self.init_dir,
                        inventory)
     return state

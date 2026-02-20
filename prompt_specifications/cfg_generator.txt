@@ -1,0 +1,101 @@
+'''
+You are a context-free grammar (CFG) designer. Given the domain specified below in natural language, return a CFG in BNF format that can be used to solve this domain.
+
+Only include terminal functions that can be implemented as a pure action-sequence generator: a function that returns a list of primitive actions (0-4). Do NOT include terminals that require external memory, cross-function state sharing, or knowledge accumulation . If a function cannot be expressed as a list of primitive actions without side effects, omit it from the CFG.
+
+## CRITICAL RULES - Follow Exactly:
+
+1. **ALL SYMBOLS MUST BE UPPERCASE**: Use UPPERCASE for ALL terminal functions, terminal symbols, and non-terminals. NEVER use lowercase or mixed case.
+
+2. **Terminal Functions**:
+   - Terminal functions are actions that appear directly in productions (e.g., ACTION1, ACTION2, ACTION3)
+   - Use UPPERCASE names for all terminal functions
+   - If a function takes no arguments, use it directly: `statement ::= ACTION1`
+   - If a function takes arguments, use: `statement ::= ACTION1 LPAR PARAM RPAR`
+   - NEVER create rules like `ACTION1 ::= 'action1'` or `ACTION1 ::= 'ACTION1'` - terminal functions appear directly in productions, not as separate rules
+
+3. **Function Arguments Format**:
+   - Use space-separated format: `FUNC LPAR ARG RPAR`
+   - Example: `ACTION1 LPAR PARAM RPAR` (correct)
+   - Example: `ACTION2 LPAR PARAM1 COMMA PARAM2 RPAR` (correct for multiple args)
+   - NEVER use literal parentheses like `ACTION1(PARAM)` - always use `ACTION1 LPAR PARAM RPAR`
+
+4. **Special Symbols** (single characters only):
+   - Define punctuation as: `SYMBOL ::= 'char'` (single character in single quotes)
+   - Examples: `SEMICOLON ::= ';'`, `LPAR ::= '('`, `RPAR ::= ')'`, `COMMA ::= ','`
+   - These are the ONLY terminals that should have quoted character definitions
+
+5. **Enumeration Rules** (for parameter values):
+   - Use: `PARAM ::= VALUE1 | VALUE2 | VALUE3`
+   - Example: `PARAM ::= OPTION1 | OPTION2 | OPTION3 | OPTION4`
+   - DO NOT create individual rules like `VALUE1 ::= 'VALUE1'` - the enumeration is sufficient
+   - All values in enumerations must be UPPERCASE
+
+6. **Start Symbol**: Use lowercase `program` as the top-level non-terminal
+
+7. **Rule Format**: One rule per line, use `|` for alternatives:
+```
+program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= ACTION1 LPAR PARAM RPAR
+                |  ACTION2 LPAR PARAM RPAR
+                |  ACTION3
+                |  ACTION4 LPAR PARAM1 COMMA PARAM2 RPAR
+
+PARAM          ::= VALUE1 | VALUE2 | VALUE3 | VALUE4
+PARAM1         ::= OPTION1 | OPTION2
+PARAM2         ::= CHOICE1 | CHOICE2
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+```
+
+8. **What NOT to do**:
+   -  NEVER create `ACTION1 ::= 'action1'` or any lowercase definitions
+   -  NEVER create `ACTION1 ::= 'ACTION1'` - terminal functions appear directly in productions
+   -  NEVER use lowercase terminal function names
+   -  NEVER use literal parentheses in productions (always use LPAR/RPAR)
+   -  NEVER create circular rules like `X ::= X`
+   -  NEVER create redundant rules for enumeration values
+
+## Output Format:
+
+Return three fenced code blocks:
+
+1. **BNF block** (labeled `bnf` or `grammar`):
+```bnf
+[Your CFG here]
+```
+
+2. **JSON block** (labeled `json`):
+```json
+{{"ACTION1": "Description of what ACTION1 does", "ACTION2": "Description of what ACTION2 does", ...}}
+```
+**CRITICAL**: You MUST include ALL terminal functions that appear in your CFG productions. Every function name that appears at the start of a statement production (e.g., ACTION1, ACTION2, ACTION3 in `statement ::= ACTION1 LPAR PARAM RPAR | ACTION2 LPAR PARAM RPAR | ACTION3`) MUST have an entry in this JSON dictionary with a clear, descriptive explanation of what it does. Do not omit any terminal functions - completeness is essential.
+
+3. **DSL example block** (labeled `dsl` or `example`):
+```dsl
+ACTION1(VALUE1); ACTION2(VALUE2); ACTION3
+```
+Use actual terminal function names and values from your CFG.
+
+## Natural Language Description of Domain:
+{domain_description}
+
+## Recipes for the domain:
+{recipes}
+
+## Domain semantics guidance (soft, not rigid):
+- Use the recipe file to infer meaningful value categories.
+- Distinguish raw resources (primitives) from crafted outputs (recipe keys), even if both appear as ITEM-like tokens.
+- Prefer argument/value sets that respect gameplay semantics: pickup/get usually targets raw resources, while craft targets recipe-defined outputs.
+- Avoid suggesting that primitives are crafted unless the recipe data explicitly supports that.
+- It is fine to keep the grammar compact, but preserve semantic clarity in symbol naming and function argument choices.
+
+Return the CFG, terminal functions dictionary, and example program as specified above. Use ONLY UPPERCASE for all terminal functions and symbols. Choose meaningful UPPERCASE names for terminal functions based on the domain.
+'''

@@ -22,6 +22,22 @@ if [ -n "${EXPERIMENT_CONFIG:-}" ] || [ -f "config/experiment_config.yaml" ]; th
     source scripts/load_config.sh
 fi
 
+# Ensure experiment directory is set for this job
+if [ -z "${EXPERIMENT_DIR:-}" ]; then
+    timestamp=$(date +%Y%m%d_%H%M%S)
+    EXPERIMENT_DIR="experiments/experiment_${timestamp}_${SLURM_JOB_ID:-$$}"
+    export EXPERIMENT_DIR
+    echo "EXPERIMENT_DIR not set, using: $EXPERIMENT_DIR"
+fi
+
+# Ensure experiment directory is set for this job
+if [ -z "${EXPERIMENT_DIR:-}" ]; then
+    timestamp=$(date +%Y%m%d_%H%M%S)
+    EXPERIMENT_DIR="experiments/experiment_${timestamp}_${SLURM_JOB_ID:-$$}"
+    export EXPERIMENT_DIR
+    echo "EXPERIMENT_DIR not set, using: $EXPERIMENT_DIR"
+fi
+
 # Run the stage script
 if [ "${SKIP_CFG_GENERATION:-false}" = "true" ]; then
     SKIP_FLAG="--skip_cfg_generation"

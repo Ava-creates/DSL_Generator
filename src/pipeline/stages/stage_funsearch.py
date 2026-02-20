@@ -33,6 +33,12 @@ def main():
     parser.add_argument('--model_type', type=str, default='huggingface', choices=['huggingface', 'ollama', 'gemini'])
     parser.add_argument('--dsl_round', type=int, default=0, help='DSL evolution round number')
     parser.add_argument('--func_evolution_round', type=int, default=None, help='Function evolution round number')
+    parser.add_argument(
+        '--grid_regeneration_attempts',
+        type=int,
+        default=int(os.environ.get("GRID_REGENERATION_ATTEMPTS", 5)),
+        help='Attempts to regenerate grids when initial pass_check fails'
+    )
     
     args = parser.parse_args()
     
@@ -92,7 +98,8 @@ def main():
         num_evaluators=2,
         samples_per_prompt=2,
         total_samples=100,
-        programs_database=config_lib.ProgramsDatabaseConfig()
+        programs_database=config_lib.ProgramsDatabaseConfig(),
+        grid_regeneration_attempts=args.grid_regeneration_attempts,
     )
     
     # Results directory

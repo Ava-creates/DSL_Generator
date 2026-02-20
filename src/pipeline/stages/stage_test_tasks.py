@@ -14,7 +14,8 @@ from typing import Dict, List
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, _project_root)
 
-from src.pipeline.integrated_pipeline import test_cfg_on_tasks, ensure_terminals_match_cfg
+from src.pipeline.integrated_pipeline import test_cfg_on_tasks, ensure_terminals_match_cfg, check_final_functions_exist
+from src.pipeline.cfg_to_funsearch_pipeline import sanitize_function_name
 from src.utils.results_tracker import ResultsTracker
 from src.utils.pipeline_state import update_state, read_state
 
@@ -86,6 +87,29 @@ def main():
     if not terminals:
         print("✗ No terminal functions found in CFG", file=sys.stderr)
         return 1
+    
+    # Guard: Check that final functions exist for this exact round
+    # If func_evolution_round > 0, we must have func{N} files — don't silently fall back to func0
+    if args.func_evolution_round is not None and args.func_evolution_round > 0:
+        final_functions_dir = os.path.join(args.experiment_dir, "final_functions")
+        missing_for_round = []
+        for func_name in terminals:
+            safe_name = sanitize_function_name(func_name)
+            expected_file = os.path.join(
+                final_functions_dir,
+                f"{safe_name}_dsl{args.dsl_round}_func{args.func_evolution_round}.py"
+            )
+            if not os.path.exists(expected_file):
+                missing_for_round.append(f"{safe_name}_dsl{args.dsl_round}_func{args.func_evolution_round}.py")
+        
+        if missing_for_round:
+            print(f"\n✗ ERROR: test_tasks called for func_evolution_round={args.func_evolution_round} "
+                  f"but the following final function files are missing:", file=sys.stderr)
+            for m in missing_for_round:
+                print(f"  - {m}", file=sys.stderr)
+            print(f"\n  The evolve stage must produce these files before test_tasks can run.", file=sys.stderr)
+            print(f"  Skipping test_tasks for this round.", file=sys.stderr)
+            return 1
     
     # Create shared vLLM instance
     shared_vllm = None

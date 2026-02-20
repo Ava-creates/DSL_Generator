@@ -4,7 +4,7 @@
 #SBATCH --mail-user=avani4@ualberta.ca
 #SBATCH --output=scripts/log/stage_file_generation_%j.out
 #SBATCH --error=scripts/log/stage_file_generation_%j.err
-#SBATCH --time=1:00:00
+#SBATCH --time=2:00:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
 #SBATCH --gres=gpu:4
@@ -15,6 +15,9 @@ source new_dsl_env/bin/activate
 
 # Set working directory to project root
 cd /home/avani/projects/aip-lelis/avani/DSL_Generator
+
+# Load config (exports USE_EXISTING_GRID_SPECS, GRID_SPEC_DIR, etc.)
+source scripts/load_config.sh
 
 # Run the stage script
 if [ -n "${FUNC_EVOLUTION_ROUND:-}" ]; then

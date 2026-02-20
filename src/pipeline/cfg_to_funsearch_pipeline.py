@@ -19,7 +19,13 @@ import threading
 from funsearch.implementation.funsearch import FunSearch
 from funsearch.implementation import config as config_lib
 from src.utils.file_utils import version_file
-from src.pipeline.grid_generation import ensure_function_grid_spec, build_env_setup
+from src.pipeline.grid_generation import ensure_function_grid_spec
+from src.pipeline.domain_templates import (
+    craft_solve_template_basic,
+    craft_evaluate_template,
+    craft_env_setup,
+    craft_env_setup_from_var,
+)
 
 # Import vLLM for shared instance
 try:
@@ -217,6 +223,7 @@ def extract_function_args(func_name: str, cfg: str) -> str:
     """
     # First, try to parse arguments directly from the function name
     # (e.g., "TURN(DIR)" or "USE(TOOL, OBSTACLE)")
+    
     base_name, args_from_name = parse_function_name_and_args(func_name)
     
     if args_from_name:
@@ -225,6 +232,8 @@ def extract_function_args(func_name: str, cfg: str) -> str:
     
     # If no args in function name, try to extract from CFG
     if not cfg:
+        print(f"No CFG found for {func_name}")
+        sys.exit(1)
         return "arg"
     
     # Use base_name for CFG search (without parentheses)
@@ -321,61 +330,45 @@ def infer_argument_type(arg_name: str, cfg: str, description: str = "") -> str:
     arg_name_lower = arg_name.lower()
     desc_lower = description.lower() if description else ""
     
-    # Check CFG for enumeration rules (likely strings)
+    # Parse CFG rule first; this is the most reliable source of argument type.
+    # We only collect the target rule's RHS and its direct continuation lines.
     if cfg:
-        # Look for enumeration rule: ARG_TYPE ::= VALUE1 | VALUE2 | VALUE3
-        rule_pattern = rf"{re.escape(arg_name)}\s*::=\s*([^|]+(?:\s*\|\s*[^|]+)*)"
-        rule_match = re.search(rule_pattern, cfg, re.IGNORECASE | re.MULTILINE)
-        if rule_match:
-            # If it's an enumeration with multiple string values, it's likely a string
-            values_str = rule_match.group(1)
-            values = [v.strip() for v in values_str.split('|')]
-            # Check if values look like strings (uppercase identifiers, not numbers)
+        rule_head_pattern = rf"^\s*{re.escape(arg_name)}\s*::=\s*(.*)$"
+        head_match = re.search(rule_head_pattern, cfg, re.IGNORECASE | re.MULTILINE)
+        if head_match:
+            rhs_parts = [head_match.group(1).strip()]
+            remaining_lines = cfg[head_match.end():].splitlines()
+            for line in remaining_lines:
+                if re.match(r"^\s*\|", line):
+                    rhs_parts.append(re.sub(r"^\s*\|\s*", "", line))
+                else:
+                    break
+
+            raw_values = []
+            for rhs in rhs_parts:
+                raw_values.extend(v.strip() for v in rhs.split("|") if v.strip())
+
+            values = [v.strip().strip('"').strip("'") for v in raw_values if v.strip()]
             if values:
-                # If all values are uppercase identifiers (not numeric), it's a string
-                all_string_like = all(
-                    re.match(r'^[A-Z_][A-Z0-9_]*$', v.strip().strip('"').strip("'")) 
-                    for v in values if v.strip()
-                )
-                if all_string_like:
-                    return "str"
+                value_types = set()
+                for v in values:
+                    if re.fullmatch(r"-?\d+", v):
+                        value_types.add("int")
+                    elif re.fullmatch(r"-?(?:\d+\.\d*|\d*\.\d+)", v):
+                        value_types.add("float")
+                    else:
+                        # Grammar symbols/tokens/literals are treated as strings.
+                        value_types.add("str")
+
+                if value_types == {"int"}:
+                    return "int"
+                if value_types == {"float"}:
+                    return "float"
+                if value_types <= {"int", "float"}:
+                    # Mixed numeric domains default to float.
+                    return "float"
+                return "str"
     
-    # Check description for type hints
-    if description:
-        # Look for numeric indicators
-        if any(phrase in desc_lower for phrase in [
-            "integer", "int", "whole number", "count", "number of", 
-            "index", "position", "coordinate", "distance"
-        ]):
-            return "int"
-        
-        # Look for float indicators
-        if any(phrase in desc_lower for phrase in [
-            "float", "decimal", "real number", "percentage", "ratio", 
-            "probability", "weight", "score"
-        ]):
-            return "float"
-        
-        # Look for string indicators
-        if any(phrase in desc_lower for phrase in [
-            "string", "text", "name", "label", "identifier", "direction",
-            "direction", "item", "type", "category", "option"
-        ]):
-            return "str"
-    
-    # Check argument name for common patterns
-    if any(pattern in arg_name_lower for pattern in [
-        "dir", "direction", "item", "type", "name", "label", "id", 
-        "option", "choice", "category", "kind", "mode"
-    ]):
-        return "str"
-    
-    if any(pattern in arg_name_lower for pattern in [
-        "count", "num", "index", "pos", "x", "y", "z", "width", "height",
-        "size", "length", "distance", "step", "level"
-    ]):
-        # Could be int or float, default to int
-        return "int"
     
     # Default to string (most common for DSL arguments)
     return "str"
@@ -453,7 +446,7 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
                              experiment_dir: Optional[str] = None,
                              dsl_round: Optional[int] = None,
                              func_evolution_round: Optional[int] = None,
-                             use_llm_evaluation: bool = True,
+                             use_llm_evaluation: bool = False,
                              shared_vllm=None) -> tuple[str, str]:
     """Generate a function-specific prompt file for funsearch.
     
@@ -478,15 +471,30 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
     # Parse function name to get base name and arguments
     base_name, args_list = parse_function_name_and_args(func_name)
     
+    print(args_list)
     # Get sanitized name for file naming
     safe_name = sanitize_function_name(func_name)
     
     # Extract argument name(s) - prefer from function name, fallback to CFG
     args = extract_function_args(func_name, cfg)
-    
+    print(f"[debug args] func_name={func_name} base_name={base_name} args_list={args_list} extracted_args={args} cfg_len={len(cfg) if cfg else 0}")
+    if args_list:
+        args = ", ".join([a.strip().lower() for a in args_list if a.strip()])
+        print(f"[debug args] using args_list override -> {args}")
+    print(f"[debug args] final args: {args}")
+    if args == "arg" or not args:
+            from src.pipeline.cfg_parser import CFGParser
+            parser = CFGParser(cfg)
+            for fname, fargs in parser.get_terminal_functions():
+                if fname.strip().lower() == base_name.strip().lower():
+                    if fargs:
+                        args_list = [a.strip().lower() for a in fargs if a.strip()]
+                        args = ", ".join(args_list)
+                    break
+
     # Check if function has arguments (check args_list first, then args)
     # args is now a comma-separated string like "tool, item" or just "tool"
-    has_args = len(args_list) > 0 or (args and args != "arg" and args.strip())
+    has_args = bool(args and args != "arg" and args.strip())
     
     # For display purposes, use the base function name
     display_name = base_name
@@ -506,10 +514,19 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
     # Infer return type from description
     return_type, default_return = infer_return_type(description)
     
-    # Infer argument type if function has arguments
+    # Infer argument types if function has arguments
     arg_type = "str"  # default
+    typed_args = args if args else ""
+    arg_list = []
     if has_args:
-        arg_type = infer_argument_type(args, cfg, description)
+        arg_list = [a.strip() for a in args.split(',') if a.strip()]
+        inferred_types = []
+        for a in arg_list:
+            inferred_types.append(infer_argument_type(a, cfg, description))
+        if inferred_types:
+            typed_args = ", ".join([f"{n}:{t}" for n, t in zip(arg_list, inferred_types)])
+        # fallback single type for docstring
+        arg_type = inferred_types[0] if inferred_types else arg_type
     
     # Build function signature parts
     if has_args:
@@ -521,20 +538,75 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
         func_call_args = "env"
         args_docstring = ""
 
-    default_task_name = "make[goldarrow]"
+    default_task_name = None
     recipes_path = "craft/resources/recipes.yaml"
     hints_path = "craft/resources/hints.yaml"
     grid_prompt_path = "prompt_specifications/grid_prompt.txt"
-    grid_dir = os.path.join(experiment_dir, "grids") if experiment_dir else "grids"
+    # Load env description (absolute path to avoid cwd issues)
+    env_description = ""
+    _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    nld_path = os.path.join(_repo_root, "..", "prompt_specifications", "nld.txt")
+    try:
+        with open(nld_path, "r", encoding="utf-8") as f:
+            env_description = f.read().strip()
+    except Exception as e:
+        print(f"  Warning: could not read env description ({nld_path}): {e}")
+        env_description = ""
+    recipes_text = ""
+    try:
+        with open(recipes_path, "r", encoding="utf-8") as f:
+            recipes_text = f.read().strip()
+    except Exception:
+        recipes_text = ""
+    grid_dir_override = os.environ.get("GRID_SPEC_DIR")
+    grid_dir = grid_dir_override if grid_dir_override else (os.path.join(experiment_dir, "grids") if experiment_dir else "grids")
     os.makedirs(grid_dir, exist_ok=True)
-    if dsl_round is not None:
-        grid_filename = f"{safe_name}_dsl{dsl_round}.json"
-    else:
-        grid_filename = f"{safe_name}.json"
-    grid_spec_path = os.path.join(grid_dir, grid_filename)
+    num_grid_tests = 10
+    total_grid_generation_attempts = 200
+    grid_spec_paths = []
     grid_spec = None
-    if shared_vllm is not None:
-        try:
+
+    # Optional: reuse pre-generated grid specs via env vars.
+    use_existing_grids = str(os.environ.get("USE_EXISTING_GRID_SPECS", "")).lower() in {"1", "true", "yes"}
+    if use_existing_grids:
+        # Only scan grid_dir; prefer exact function/dsl matches, then fall back to any JSONs.
+        if os.path.isdir(grid_dir):
+            def _match(fname: str) -> bool:
+                if not fname.lower().endswith(".json"):
+                    return False
+                if dsl_round is not None:
+                    return f"{safe_name}_dsl{dsl_round}_" in fname
+                return f"{safe_name}_" in fname
+
+            for fname in sorted(os.listdir(grid_dir)):
+                if _match(fname):
+                    grid_spec_paths.append(os.path.join(grid_dir, fname))
+            if not grid_spec_paths:
+                # Fallback: match by function name alone (any dsl round)
+                for fname in sorted(os.listdir(grid_dir)):
+                    if fname.lower().endswith(".json") and f"{safe_name}_" in fname:
+                        grid_spec_paths.append(os.path.join(grid_dir, fname))
+            if not grid_spec_paths:
+                for fname in sorted(os.listdir(grid_dir)):
+                    if fname.lower().endswith(".json"):
+                        grid_spec_paths.append(os.path.join(grid_dir, fname))
+        if grid_spec_paths:
+            try:
+                with open(grid_spec_paths[0], "r", encoding="utf-8") as f:
+                    grid_spec = json.load(f)
+            except Exception as e:
+                print(f"  Warning: could not load first grid spec {grid_spec_paths[0]}: {e}")
+
+    if not grid_spec_paths and shared_vllm is not None:
+        generated_cases = []
+        attempts_for_case = max(1, total_grid_generation_attempts // max(1, num_grid_tests))
+        while len(generated_cases) < num_grid_tests:
+            generated_count = len(generated_cases)
+            if dsl_round is not None:
+                grid_filename = f"{safe_name}_dsl{dsl_round}_case{generated_count}.json"
+            else:
+                grid_filename = f"{safe_name}_case{generated_count}.json"
+            grid_spec_path = os.path.join(grid_dir, grid_filename)
             grid_spec = ensure_function_grid_spec(
                 func_name=func_name,
                 description=description,
@@ -543,154 +615,92 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
                 shared_vllm=shared_vllm,
                 default_task_name=default_task_name,
                 prompt_path=grid_prompt_path,
+                func_args=typed_args if has_args else "None",
+                env_description=env_description,
+                recipes_text=recipes_text,
+                attempts=attempts_for_case,
+                existing_cases=generated_cases if generated_cases else None,
+                cfg_text=cfg,
             )
-        except Exception as e:
-            print(f"  Warning: Grid generation failed for {func_name}: {e}")
-    if grid_spec is None and os.path.exists(grid_spec_path):
-        try:
-            with open(grid_spec_path, "r", encoding="utf-8") as f:
-                grid_spec = json.load(f)
-        except Exception:
-            grid_spec = None
-    task_name_for_env = default_task_name
+            if isinstance(grid_spec, dict):
+                generated_cases.append(grid_spec)
+                grid_spec_paths.append(grid_spec_path)
+
+    if not grid_spec_paths:
+        raise ValueError(
+            f"No grid specs available for {func_name}; shared_vllm unavailable and no reusable specs found."
+        )
+
+    grid_spec_path = grid_spec_paths[0]
+    task_name_for_env = None
     if isinstance(grid_spec, dict):
-        task_name_for_env = grid_spec.get("task_name", default_task_name) or default_task_name
+        task_name_for_env = grid_spec.get("task_name") or None
+    if not task_name_for_env:
+        raise ValueError(f"Missing task_name in grid spec for {func_name}; LLM must supply a valid task.")
 
     
     # Try to use LLM to generate custom solve/evaluate functions if enabled
     solve_func_custom = None
     evaluate_func_custom = None
+    use_llm_evaluation = False
+    # if use_llm_evaluation:
+    #     try:
+    #         from src.pipeline.generate_evaluation_functions import generate_custom_evaluation_functions
+            
+    #         # Prepare environment setup code
+    #         env_setup = craft_env_setup_from_var(
+    #             recipes_path=recipes_path,
+    #             hints_path=hints_path,
+    #             task_name=task_name_for_env,
+    #             grid_spec_path_var="grid_spec_path",
+    #         )
+            
+    #         # Try to load recipes for better argument selection
+    #         recipes = None
+    #         task_name = task_name_for_env
+    #         try:
+    #             from src.pipeline.evaluation_helpers import load_recipes
+    #             recipes = load_recipes(recipes_path)
+    #         except Exception as e:
+    #             print(f"  Note: Could not load recipes: {e}")
+            
+    #         print(f"  [LLM] Generating custom solve() function for {func_name}...")
+    #         solve_func_custom = generate_custom_evaluation_functions(
+    #             func_name=display_name,
+    #             description=description,
+    #             func_signature=f"def {safe_name}({func_params})",
+    #             return_type=return_type,
+    #             args=args if has_args else "",
+    #             cfg=cfg,
+    #             specification=specification,
+    #             shared_vllm=shared_vllm,
+    #             recipes=recipes,
+    #             task_name=task_name
+    #         )
+    #         print(f"  [LLM] ✓ Generated custom solve() function for {func_name}")
+    #         # evaluate_func_custom will be generated separately using template below
+    #         evaluate_func_custom = None
+    #     except Exception as e:
+    #         print(f"  [LLM] ⚠ Failed to generate custom evaluation functions: {e}")
+    #         import traceback
+    #         traceback.print_exc()
+    #         print(f"  [LLM] Falling back to template-based evaluation")
+    #         solve_func_custom = None
+    #         evaluate_func_custom = None
     
-    if use_llm_evaluation and shared_vllm is not None:
-        try:
-            from src.pipeline.generate_evaluation_functions import generate_custom_evaluation_functions
-            
-            # Prepare environment setup code
-            env_setup = build_env_setup(
-                recipes_path=recipes_path,
-                hints_path=hints_path,
-                task_name=task_name_for_env,
-                grid_spec_path=grid_spec_path,
-            )
-            
-            # Try to load recipes for better argument selection
-            recipes = None
-            task_name = task_name_for_env
-            try:
-                from src.pipeline.evaluation_helpers import load_recipes
-                recipes = load_recipes(recipes_path)
-            except Exception as e:
-                print(f"  Note: Could not load recipes: {e}")
-            
-            print(f"  [LLM] Generating custom solve() function for {func_name}...")
-            solve_func_custom = generate_custom_evaluation_functions(
-                func_name=display_name,
-                description=description,
-                func_signature=f"def {safe_name}({func_params})",
-                return_type=return_type,
-                args=args if has_args else "",
-                cfg=cfg,
-                specification=specification,
-                shared_vllm=shared_vllm,
-                recipes=recipes,
-                task_name=task_name
-            )
-            print(f"  [LLM] ✓ Generated custom solve() function for {func_name}")
-            # evaluate_func_custom will be generated separately using template below
-            evaluate_func_custom = None
-        except Exception as e:
-            print(f"  [LLM] ⚠ Failed to generate custom evaluation functions: {e}")
-            import traceback
-            traceback.print_exc()
-            print(f"  [LLM] Falling back to template-based evaluation")
-            solve_func_custom = None
-            evaluate_func_custom = None
-    
 
-       
-    solve_func = f'''def solve({func_params}, visualise=False):
-  """Runs the environment with a {safe_name} function that returns list of actions to take and returns total reward."""
-  # Capture grid state before function execution (with agent position)
-  grid_before = None
-  try:
-    if hasattr(env, '_current_state') and hasattr(env._current_state, 'grid'):
-      try:
-        from test import grid_to_markdown
-        # Get agent position for grid representation - ensure it's a tuple
-        agent_pos = None
-        if hasattr(env._current_state, 'pos'):
-          pos = env._current_state.pos
-          # Convert to tuple if it's a numpy array or list
-          if hasattr(pos, '__iter__') and not isinstance(pos, str):
-            agent_pos = tuple(pos) if len(pos) == 2 else None
-          elif isinstance(pos, tuple):
-            agent_pos = pos
-        grid_before = grid_to_markdown(env._current_state.grid, env.world.cookbook, agent_pos)
-      except (ImportError, AttributeError) as e:
-        agent_pos = None
-        if hasattr(env._current_state, 'pos'):
-          pos = env._current_state.pos
-          if hasattr(pos, '__iter__') and not isinstance(pos, str):
-            agent_pos = tuple(pos) if len(pos) == 2 else None
-        grid_before = f"Grid shape: {{env._current_state.grid.shape if hasattr(env._current_state.grid, 'shape') else 'N/A'}}\\nAgent position: {{agent_pos}}"
-  except Exception as e:
-    pass
-  
-  # Execute function to get actions using a deepcopy
-  env_for_func = env
-  try:
-    import copy
-    env_for_func = copy.deepcopy(env)
-  except Exception:
-    pass
-  actions_to_take = {safe_name}({func_call_args.replace("env", "env_for_func", 1)})
-  # Ensure actions_to_take is a list (handle None case)
-  if actions_to_take is None:
-    actions_to_take = []
-  total_reward = 0.0
-  actions_count = len(actions_to_take)
-
-  # Execute actions
-  for t in range(len(actions_to_take)):
-    action = actions_to_take[t]
-    reward, done, observations = env.step(action)
-    total_reward += reward
-    if done:
-      break
-
-  # Capture grid state after function execution (with agent position)
-  grid_after = None
-  try:
-    if hasattr(env, '_current_state') and hasattr(env._current_state, 'grid'):
-      try:
-        from test import grid_to_markdown
-        # Get agent position for grid representation - ensure it's a tuple
-        agent_pos = None
-        if hasattr(env._current_state, 'pos'):
-          pos = env._current_state.pos
-          # Convert to tuple if it's a numpy array or list
-          if hasattr(pos, '__iter__') and not isinstance(pos, str):
-            agent_pos = tuple(pos) if len(pos) == 2 else None
-          elif isinstance(pos, tuple):
-            agent_pos = pos
-        grid_after = grid_to_markdown(env._current_state.grid, env.world.cookbook, agent_pos)
-      except (ImportError, AttributeError) as e:
-        agent_pos = None
-        if hasattr(env._current_state, 'pos'):
-          pos = env._current_state.pos
-          if hasattr(pos, '__iter__') and not isinstance(pos, str):
-            agent_pos = tuple(pos) if len(pos) == 2 else None
-        grid_after = f"Grid shape: {{env._current_state.grid.shape if hasattr(env._current_state.grid, 'shape') else 'N/A'}}\\nAgent position: {{agent_pos}}"
-  except Exception as e:
-    pass
-
-  # Return [total_reward, actions_count, grid_before, grid_after]
-  return [total_reward, actions_count, grid_before, grid_after]
-'''
+   
+    solve_func_basic = craft_solve_template_basic(
+        func_name=func_name,
+        func_params=func_params,
+        func_call_args=func_call_args,
+    )
+    solve_func = solve_func_basic
 
     seed_body = _load_seed_body(experiment_dir, safe_name, dsl_round, func_evolution_round)
     if seed_body:
         seed_body = "\n".join([f"  {line}" if line.strip() else "" for line in seed_body.splitlines()])
+    evolve_body = seed_body 
     evolve_func = f'''@funsearch.evolve
 def {safe_name}({func_params}):
   """
@@ -698,22 +708,18 @@ def {safe_name}({func_params}):
   
   Args:
       env: The current environment instance.
-{args_docstring}  Returns:
-      List[int]: A sequence of encoded actions the agent should execute.
+  {args_docstring}  
+      Returns: List[int]: A sequence of encoded actions the agent should execute.
   """
-{seed_body}
 '''
     
-    # Generate solve() function - use LLM-generated only (no fallback)
+    # Generate solve() function - prefer LLM-generated if available, otherwise keep basic template
     if solve_func_custom:
         solve_func = solve_func_custom
-    else:
-        # No fallback - if LLM generation fails, solve_func will be None
-        solve_func = None
     
     # Generate evaluate() function - always use template (never generated by LLM)
     # Prepare environment setup code
-    env_setup = build_env_setup(
+    env_setup = craft_env_setup(
         recipes_path=recipes_path,
         hints_path=hints_path,
         task_name=task_name_for_env,
@@ -759,6 +765,7 @@ def {safe_name}({func_params}):
                 recipes = None
             
             args_def_lines = []
+            args_def_lines.append('  arg_values = grid_spec.get("arg_values", {}) if isinstance(grid_spec, dict) else {}')
             if has_args:  # Only process args if we have them
                 for arg_name in arg_list:
                     if not arg_name:
@@ -770,7 +777,11 @@ def {safe_name}({func_params}):
                         arg_value, explanation = get_valid_test_argument(
                             arg_name, arg_type, cfg, recipes, test_env, task_name
                         )
-                        args_def_lines.append(f'  {arg_name} = {arg_value}  {explanation}')
+                        # Ensure string literals are quoted
+                        if isinstance(arg_value, str):
+                            if not (arg_value.startswith('"') and arg_value.endswith('"')):
+                                arg_value = f'"{arg_value}"'
+                        args_def_lines.append(f'  {arg_name} = arg_values.get("{arg_name}", {arg_value})  {explanation}')
                     except Exception as e:
                         # Fallback to old logic if helper fails
                         print(f"  Warning: Could not use grid-aware argument selection: {e}")
@@ -805,20 +816,17 @@ def {safe_name}({func_params}):
                                     except ValueError:
                                         arg_value = f'"{arg_value}"'
                         
-                        args_def_lines.append(f'  {arg_name} = {arg_value}  # Argument value from CFG')
+                        args_def_lines.append(f'  {arg_name} = arg_values.get("{arg_name}", {arg_value})  # Argument value from CFG')
         
             args_definitions = '\n'.join(args_def_lines) + '\n' if args_def_lines else ''
         
-        eval_func = f'''@funsearch.run
-def evaluate():
-  """Evaluates {display_name} behavior in a sample environment."""
-  visualise = False
-  {env_setup}
-  env.reset()
-{args_definitions}  result = solve({func_call_args}, visualise=visualise)
-  # Return as list: [total_reward, actions_count, grid_before, grid_after]
-  return result
-'''
+        eval_func = craft_evaluate_template(
+            display_name=display_name,
+            env_setup=env_setup,
+            args_definitions=args_definitions,
+            func_call_args=func_call_args,
+            grid_spec_paths_var=repr(grid_spec_paths),
+        )
     else:
         # Generic template - user should customize based on their domain
         # Define function arguments before calling solve - extract from CFG
@@ -875,22 +883,18 @@ def evaluate():
             
             args_definitions = '\n'.join(args_def_lines) + '\n' if args_def_lines else ''
         
-        eval_func = f'''@funsearch.run
-def evaluate():
-  """Evaluates {display_name} behavior in a sample environment."""
-  visualise = False
-  {env_setup}
-  env.reset()
-{args_definitions}  result = solve({func_call_args}, visualise=visualise)
-  # Return as list: [total_reward, actions_count, grid_before, grid_after]
-  return result
-'''
+        eval_func = craft_evaluate_template(
+            display_name=display_name,
+            env_setup=env_setup,
+            args_definitions=args_definitions,
+            func_call_args=func_call_args,
+        )
     
     # Combine all functions (solve, evaluate, and evolve)
     if solve_func is None:
         raise ValueError(f"LLM generation failed for {func_name}. solve_func is None. Check LLM generation logs for errors.")
     prompt_content = solve_func + "\n" + eval_func + "\n" + evolve_func
-    print(prompt_content)
+    # print(prompt_content)
     with open(func_file, 'w', encoding='utf-8') as f:
         f.write(prompt_content)
     
@@ -1509,12 +1513,14 @@ def implement_cfg(
     # Configure FunSearch with parallelization
     # Match evaluators to samples_per_prompt for clean parallelization
     # Set total_samples=1000 to ensure we get exactly 1000 samples total
+    regen_attempts = int(os.environ.get("GRID_REGENERATION_ATTEMPTS", 5))
     config = config_lib.Config(
         num_samplers=1,  # Single sampler - generates samples_per_prompt samples per iteration
         num_evaluators=2,  # Match samples_per_prompt - each evaluator handles one sample
         samples_per_prompt=2,  # 2 samples per prompt
         total_samples=1000,  # Target 1000 total samples across all iterations
-        programs_database=config_lib.ProgramsDatabaseConfig()
+        programs_database=config_lib.ProgramsDatabaseConfig(),
+        grid_regeneration_attempts=regen_attempts,
     )
     
     # Results directory within experiment directory

@@ -152,6 +152,32 @@ if mark_test_tasks_submitted("$EXPERIMENT_DIR"):
     if func_evolution_round is None or func_evolution_round == "":
         func_evolution_round = str(state.get("func_evolution_round", 0))
     
+    # Guard: Check final functions exist for this round before submitting
+    func_round_int = int(func_evolution_round) if func_evolution_round else 0
+    dsl_round_int = int(dsl_round)
+    if func_round_int > 0:
+        cfg_path = os.path.join("$EXPERIMENT_DIR", "cfg", "cfg_output.json")
+        if os.path.exists(cfg_path):
+            with open(cfg_path, 'r') as f:
+                cfg_check = json.load(f)
+            terminals_check = cfg_check.get("terminals", {})
+            sys.path.insert(0, '/home/avani/projects/aip-lelis/avani/DSL_Generator')
+            from src.pipeline.cfg_to_funsearch_pipeline import sanitize_function_name
+            final_functions_dir = os.path.join("$EXPERIMENT_DIR", "final_functions")
+            missing = []
+            for fn in terminals_check:
+                safe = sanitize_function_name(fn)
+                expected = os.path.join(final_functions_dir, f"{safe}_dsl{dsl_round_int}_func{func_round_int}.py")
+                if not os.path.exists(expected):
+                    missing.append(os.path.basename(expected))
+            if missing:
+                print(f"ERROR: Cannot submit test_tasks for func_evolution_round={func_round_int}: "
+                      f"missing final function files: {missing}")
+                print("Skipping test_tasks submission.")
+                # Reset the mark so it can be submitted later
+                update_state("$EXPERIMENT_DIR", test_tasks_submitted=0)
+                sys.exit(0)
+    
     # Check if already completed for this round
     status_file = f"$EXPERIMENT_DIR/stage_test_tasks_status.json"
     if os.path.exists(status_file):

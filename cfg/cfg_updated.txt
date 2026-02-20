@@ -1,0 +1,733 @@
+program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE    LPAR DIRECTION RPAR
+                |  TURN    LPAR DIRECTION RPAR
+                |  COLLECT LPAR ITEM      RPAR
+                |  CRAFT   LPAR ITEM COMMA WORKSHOP RPAR
+                |  TRAVEL  LPAR WORKSHOP RPAR
+                |  WAIT
+
+DIRECTION      ::= NORTH | SOUTH | EAST | WEST
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                | STICK | AXE | SLINGSHOT | ARROW | GOLDARROW
+                | BRIDGE | BUNDLE | HAMMER | KNIFE | BED
+                | SHEARS | LADDER | BOW | BENCH | FLAG
+                | PLANK | CLOTH | ROPE
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a simple scripting language for an agent that can move, turn, collect primitive resources, craft items at specific workshops, travel directly to a workshop, and wait.  
+
+- **program** is the start symbol and consists of one or more **statement_seq** entries separated by semicolons.  
+- **statement_seq** allows a single **statement** or a chain of statements linked by the `;` token.  
+- **statement** enumerates all executable actions (terminal functions). Each action follows a strict parenthesised argument list:  
+  * **MOVE** and **TURN** take a **DIRECTION** (`NORTH`, `SOUTH`, `EAST`, `WEST`).  
+  * **COLLECT** takes an **ITEM** that is a primitive resource (e.g., `GEM`, `GOLD`).  
+  * **CRAFT** takes an **ITEM** to be produced and the **WORKSHOP** where the recipe must be applied.  
+  * **TRAVEL** moves the agent directly to a specified **WORKSHOP** (`WORKSHOP0`, `WORKSHOP1`, `WORKSHOP2`). This action enables the planner to reach the appropriate workshop before crafting.  
+  * **WAIT** performs a no‑op, useful for timing or placeholder steps.  
+- **ITEM** enumerates every object that can appear in the world, matching the domain’s primitive resources and all craftable products.  
+- **WORKSHOP** enumerates the three workshop locations defined in the environment.  
+- The punctuation symbols `SEMICOLON`, `LPAR`, `RPAR`, and `COMMA` are defined as single‑character terminals, satisfying the required BNF format.
+
+Together, these rules give the synthesiser the expressive power to generate programs such as:
+```
+COLLECT(GEM);
+TRAVEL(WORKSHOP0);
+CRAFT(GOLDARROW, WORKSHOP0);
+TRAVEL(WORKSHOP2);
+CRAFT(STICK, WORKSHOP2);
+```
+which satisfy the tasks *get[gem]*, *make[goldarrow]*, and *make[stick]*.
+
+**Changes in CFG**
+- Added the **TRAVEL** action to allow explicit movement to a workshop location.
+- Retained all original actions (MOVE, TURN, COLLECT, CRAFT, WAIT) and their parameter structures.
+- Explicitly enumerated **WORKSHOP** as a separate non‑terminal for clarity.
+- No other structural changes; the grammar remains strictly BNF‑compliant.
+
+**Terminal Functions**
+- **MOVE**(DIRECTION): Moves the agent one step in the specified cardinal direction.  
+- **TURN**(DIRECTION): Rotates the agent to face the given direction without changing position.  
+- **COLLECT**(ITEM): Picks up a primitive resource (e.g., `GEM`, `GOLD`, `WOOD`) from the current location.  
+- **CRAFT**(ITEM, WORKSHOP): Creates the specified item at the indicated workshop, assuming required ingredients are available.  
+- **TRAVEL**(WORKSHOP): Instantly moves the agent to the named workshop location, enabling subsequent crafting actions.  
+- **WAIT**: Performs a no‑operation step, useful for synchronization or placeholder purposes.- **MOVE**(DIRECTION): Moves the agent one step in the specified cardinal direction.  
+- **TURN**(DIRECTION): Rotates the agent to face the given direction without changing position.  
+- **COLLECT**(ITEM): Picks up a primitive resource (e.g., `GEM`, `GOLD`, `WOOD`) from the current location.  
+- **CRAFT**(ITEM, WORKSHOP): Creates the specified item at the indicated workshop, assuming required ingredients are available.  
+- **TRAVEL**(WORKSHOP): Instantly moves the agent to the named workshop location, enabling subsequent crafting actions.  
+- **WAIT**: Performs a no‑operation step, useful for synchronization or placeholder purposes.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                |  TURN LPAR DIRECTION RPAR
+                |  COLLECT LPAR ITEM RPAR
+                |  CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                |  USE_TOOL LPAR TOOL COMMA OBSTACLE RPAR
+                |  GO_TO LPAR LOCATION RPAR
+                |  WAIT
+
+DIRECTION      ::= NORTH | SOUTH | EAST | WEST
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                |  STICK | AXE | SLINGSHOT | ARROW | GOLDARROW
+                |  BRIDGE | BUNDLE | HAMMER | KNIFE | BED
+                |  SHEARS | LADDER | BOW | BENCH | FLAG
+                |  PLANK | CLOTH | ROPE
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+TOOL           ::= AXE | HAMMER | KNIFE | BOW | SHEARS | LADDER
+                |  BENCH | FLAG | SLINGSHOT | ARROW | GOLDARROW
+                |  BRIDGE | BUNDLE | BED | PLANK | CLOTH | ROPE | STICK
+
+OBSTACLE       ::= OBSTACLE1 | OBSTACLE2 | OBSTACLE3
+
+LOCATION       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+                |  WATER | BOUNDARY | STONE
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a simple imperative DSL for navigating a grid‑world, gathering raw materials, and constructing items at designated workshops.
+
+* **program** is the entry point and consists of one or more statements separated by semicolons.  
+* **statement_seq** recursively builds a list of statements, allowing any length program.  
+* **statement** enumerates all executable actions (the *terminal functions*). Each action follows the required syntactic form: the function name, an opening parenthesis (`LPAR`), its arguments (chosen from the appropriate enumeration), commas where needed, and a closing parenthesis (`RPAR`). The actions are:  
+
+  * **MOVE** – move one step in a cardinal **DIRECTION** (NORTH, SOUTH, EAST, WEST).  
+  * **TURN** – rotate the agent to face a new **DIRECTION**.  
+  * **COLLECT** – pick up a primitive **ITEM** that exists in the current cell (e.g., GOLD, GEM, WOOD).  
+  * **CRAFT** – combine previously collected ingredients to create a composite **ITEM** at a specific **WORKSHOP** (WORKSHOP0‑2). The recipe constraints are enforced by the domain model, not by the grammar.  
+  * **USE_TOOL** – employ a **TOOL** on a particular **OBSTACLE**; this can be useful for clearing paths.  
+  * **GO_TO** – teleport the agent (or issue a high‑level navigation command) to a named **LOCATION**. Locations include the three workshops and environmental landmarks such as WATER, BOUNDARY, or STONE. This action resolves the earlier inability to reach the required workshop before crafting.  
+  * **WAIT** – a no‑op that can be used to satisfy timing or planning constraints.
+
+* The enumerations (**DIRECTION**, **ITEM**, **WORKSHOP**, **TOOL**, **OBSTACLE**, **LOCATION**) list all admissible concrete values for each argument. They are defined as simple alternatives, keeping the grammar context‑free and fully compliant with the required BNF style.
+
+* The punctuation symbols (**SEMICOLON**, **LPAR**, **RPAR**, **COMMA**) are defined as single‑character terminals, as stipulated.
+
+Overall, the grammar provides every syntactic building block the planner needs to compose programs that can move to the appropriate workshop, collect raw primitives (including *gem* and *gold*), and invoke **CRAFT** to produce *stick*, *goldarrow*, and any other recipe‑defined item.- **MOVE(LPAR DIRECTION RPAR)**: Moves the agent one cell in the specified cardinal direction.  
+- **TURN(LPAR DIRECTION RPAR)**: Rotates the agent to face the given direction without changing position.  
+- **COLLECT(LPAR ITEM RPAR)**: Picks up a primitive item present in the current cell and adds it to the inventory.  
+- **CRAFT(LPAR ITEM COMMA WORKSHOP RPAR)**: Uses the ingredients in inventory to create the specified composite item at the indicated workshop, following the domain’s recipes.  
+- **USE_TOOL(LPAR TOOL COMMA OBSTACLE RPAR)**: Applies a tool to an obstacle, potentially clearing or modifying the environment.  
+- **GO_TO(LPAR LOCATION RPAR)**: Sends the agent to a named location (e.g., a workshop) so that subsequent actions such as **CRAFT** can be performed there.  
+- **WAIT**: Performs no operation; useful for timing or placeholder statements.program        ::= statement_seq
+
+statement_seq  ::= statement
+                | statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                | TURN LPAR DIRECTION RPAR
+                | COLLECT LPAR PRIMITIVE RPAR
+                | CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                | USE_TOOL LPAR TOOL COMMA OBSTACLE RPAR
+                | OBSERVE
+
+DIRECTION      ::= NORTH | SOUTH | EAST | WEST
+
+PRIMITIVE      ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+
+ITEM           ::= STICK | AXE | SLINGSHOT | ARROW | GOLDARROW | BRIDGE
+                | BUNDLE | HAMMER | KNIFE | BED | SHEARS | LADDER
+                | BOW | BENCH | FLAG | PLANK | CLOTH | ROPE
+                | IRON | GRASS | WOOD | ROCK | GOLD | GEM
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+TOOL           ::= AXE | HAMMER | KNIFE
+
+OBSTACLE       ::= STONE | WATER | BOUNDARY
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a `program` as a sequence of one or more `statement`s optionally separated by semicolons.  
+
+A `statement` can be one of six executable actions:
+
+* `MOVE(direction)` – move the agent one step toward the given cardinal `DIRECTION`.  
+* `TURN(direction)` – rotate the agent to face the specified `DIRECTION`.  
+* `COLLECT(item)` – gather a **primitive** resource (`IRON`, `GRASS`, `WOOD`, `ROCK`, `GOLD`, or `GEM`) from the environment.  
+* `CRAFT(item, workshop)` – create a composite `ITEM` using the recipe associated with the specified `WORKSHOP` (`WORKSHOP0`, `WORKSHOP1`, or `WORKSHOP2`).  
+* `USE_TOOL(tool, obstacle)` – apply a `TOOL` (`AXE`, `HAMMER`, or `KNIFE`) to overcome an `OBSTACLE` (`STONE`, `WATER`, or `BOUNDARY`).  
+* `OBSERVE` – sense the surrounding environment (no arguments).
+
+`DIRECTION` enumerates the four cardinal directions.  
+
+`PRIMITIVE` lists the raw resources that can be directly collected; these are the leaves of all crafting recipes.  
+
+`ITEM` enumerates every object that may appear as a craftable product or as a primitive that can also be collected. This includes all intermediate components (e.g., `STICK`, `PLANK`, `ROPE`) and final goals (e.g., `BRIDGE`, `GOLDARROW`).  
+
+`WORKSHOP`, `TOOL`, and `OBSTACLE` enumerate their respective domains.  
+
+The punctuation symbols `SEMICOLON`, `LPAR`, `RPAR`, and `COMMA` are defined as single‑character terminals to support the required syntactic structure.
+
+**Changes in CFG**
+
+* Added a dedicated `PRIMITIVE` non‑terminal to restrict `COLLECT` to raw resources.
+* Expanded `ITEM` to include **all** objects that appear in the recipe list and task list, ensuring every craftable product can be referenced in a `CRAFT` statement.
+* Kept existing movement, turning, tool‑use, and observation actions unchanged.
+* Retained the original punctuation terminal definitions.
+
+**Terminal Functions**
+
+* **MOVE**(direction): Moves the agent one cell toward the specified cardinal direction.  
+* **TURN**(direction): Rotates the agent to face the specified cardinal direction.  
+* **COLLECT**(primitive): Gathers a primitive resource (iron, grass, wood, rock, gold, or gem) from the current location.  
+* **CRAFT**(item, workshop): Crafts the given item at the indicated workshop using the predefined recipe.  
+* **USE_TOOL**(tool, obstacle): Applies the specified tool to remove or bypass the given obstacle.  
+* **OBSERVE**: Performs a perception action to reveal surrounding tiles; takes no arguments.* **MOVE**(direction): Moves the agent one cell toward the specified cardinal direction.  
+* **TURN**(direction): Rotates the agent to face the specified cardinal direction.  
+* **COLLECT**(primitive): Gathers a primitive resource (iron, grass, wood, rock, gold, or gem) from the current location.  
+* **CRAFT**(item, workshop): Crafts the given item at the indicated workshop using the predefined recipe.  
+* **USE_TOOL**(tool, obstacle): Applies the specified tool to remove or bypass the given obstacle.  
+* **OBSERVE**: Performs a perception action to reveal surrounding tiles; takes no arguments.program        ::= statement_seq
+
+statement_seq  ::= statement
+                | statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                | TURN LPAR DIRECTION RPAR
+                | COLLECT LPAR PRIMITIVE RPAR
+                | GET LPAR PRIMITIVE RPAR
+                | CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                | MAKE LPAR ITEM COMMA WORKSHOP RPAR
+                | USE_TOOL LPAR TOOL COMMA OBSTACLE RPAR
+                | OBSERVE
+
+DIRECTION      ::= NORTH | SOUTH | EAST | WEST
+
+PRIMITIVE      ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+
+ITEM           ::= STICK | AXE | SLINGSHOT | ARROW | GOLDARROW | BRIDGE
+                | BUNDLE | HAMMER | KNIFE | BED | SHEARS | LADDER
+                | BOW | BENCH | FLAG | PLANK | CLOTH | ROPE
+                | IRON | GRASS | WOOD | ROCK | GOLD | GEM
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+TOOL           ::= AXE | HAMMER | KNIFE
+
+OBSTACLE       ::= STONE | WATER | BOUNDARY
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a *program* as a sequence of *statements* separated by semicolons.  
+A **statement** can be one of the following actions:
+
+* **MOVE** – turn the agent to a cardinal direction.  
+* **TURN** – rotate the agent without moving, also by a cardinal direction.  
+* **COLLECT** – pick up a primitive resource (iron, grass, wood, rock, gold, gem) from the current tile.  
+* **GET** – synonym for **COLLECT**, introduced to directly match the task notation `get[resource]`.  
+* **CRAFT** – combine items at a specific workshop to produce a new item.  
+* **MAKE** – synonym for **CRAFT**, allowing more natural phrasing (`make[item]`).  
+* **USE_TOOL** – apply a tool (axe, hammer, knife) against an obstacle (stone, water, boundary).  
+* **OBSERVE** – sense the environment without changing state.
+
+Each action follows a strict syntactic shape: the function name, an opening parenthesis (`LPAR`), its arguments, and a closing parenthesis (`RPAR`). Arguments are drawn from enumerated sets:
+
+* **DIRECTION** – the four compass points.  
+* **PRIMITIVE** – the six raw resources available in the world.  
+* **ITEM** – every craftable object plus the raw resources (so that a primitive can be passed where an item is expected).  
+* **WORKSHOP** – the three workshop locations where recipes may be executed.  
+* **TOOL** – the three usable tools.  
+* **OBSTACLE** – environmental hindrances.
+
+The punctuation symbols (`SEMICOLON`, `LPAR`, `RPAR`, `COMMA`) are defined as single‑character terminals, satisfying the required format.
+
+By providing both **COLLECT/GET** and **CRAFT/MAKE**, the grammar now covers the full set of tasks listed (resource acquisition and item creation) while keeping the language concise and unambiguous for the planner.- **MOVE** `( DIRECTION )` – Move the agent one step toward the specified cardinal direction.  
+- **TURN** `( DIRECTION )` – Rotate the agent to face the specified direction without moving.  
+- **COLLECT** `( PRIMITIVE )` – Pick up a raw resource from the current location.  
+- **GET** `( PRIMITIVE )` – Synonym for `COLLECT`; used to match task notation `get[resource]`.  
+- **CRAFT** `( ITEM , WORKSHOP )` – Combine required ingredients at the given workshop to produce the specified item.  
+- **MAKE** `( ITEM , WORKSHOP )` – Synonym for `CRAFT`; matches task notation `make[item]`.  
+- **USE_TOOL** `( TOOL , OBSTACLE )` – Apply a tool to an obstacle (e.g., break stone with a hammer).  
+- **OBSERVE** – Sense the surrounding environment; no arguments.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                |  TURN LPAR DIRECTION RPAR
+                |  PICKUP LPAR ITEM RPAR
+                |  USE LPAR ITEM RPAR
+                |  CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                |  MAKE  LPAR ITEM COMMA WORKSHOP RPAR
+                |  GET   LPAR ITEM RPAR
+
+DIRECTION      ::= UP | DOWN | LEFT | RIGHT
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                |  STICK | AXE | SLINGSHOT | ARROW | GOLDARROW
+                |  BRIDGE | BUNDLE | HAMMER | KNIFE | BED
+                |  SHEARS | LADDER | BOW | BENCH | FLAG
+                |  PLANK | CLOTH | ROPE
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a `program` as a sequence of one or more `statement`s, optionally separated by semicolons.  
+Each `statement` is an executable action of the DSL and must begin with a **terminal function** followed by its required arguments in a parenthesised, comma‑separated form.
+
+The available terminal functions are:
+
+* **MOVE** – moves the agent one cell in the specified `DIRECTION`.  
+* **TURN** – rotates the agent to face the given `DIRECTION`.  
+* **PICKUP** – picks up a primitive resource or an already‑crafted item identified by `ITEM`.  
+* **USE** – uses an item (e.g., a tool) that the agent currently holds.  
+* **CRAFT** – creates a new item at a specific workshop; the first argument is the target `ITEM`, the second is the `WORKSHOP` where the recipe must be executed.  
+* **MAKE** – synonym for `CRAFT`; provided to match task descriptions that use the verb “make”.  
+* **GET** – directly gathers a primitive resource from the environment (e.g., `GET(IRON)`), covering the missing primitive actions identified in the failure analysis.
+
+`DIRECTION`, `ITEM`, and `WORKSHOP` are enumerations that constrain the allowable arguments for the actions. The punctuation symbols `SEMICOLON`, `LPAR`, `RPAR`, and `COMMA` are defined as single‑character terminals to keep the grammar strictly BNF‑compliant.
+
+With these productions, a synthesiser can generate programs that collect basic resources, move around the world, and craft any of the listed items at the appropriate workshop, thereby addressing the earlier failures caused by absent primitive actions and insufficient crafting entry points.
+
+**Changes in CFG**
+- Added the **GET** terminal function to support primitive resource gathering (`GET LPAR ITEM RPAR`).  
+- Added the **MAKE** terminal function as an alias for `CRAFT` to align with task wording that uses “make”.  
+- No other structural changes; all existing productions remain unchanged, preserving compatibility with earlier specifications.
+
+**Terminal Functions**  
+- **MOVE**(DIRECTION): Move the agent one step in the given direction.  
+- **TURN**(DIRECTION): Change the agent’s facing direction.  
+- **PICKUP**(ITEM): Pick up a resource or item that is currently on the agent’s tile.  
+- **USE**(ITEM): Use a held item (e.g., a tool) on the current tile.  
+- **CRAFT**(ITEM, WORKSHOP): Craft the specified ITEM at the indicated WORKSHOP according to the recipe list.  
+- **MAKE**(ITEM, WORKSHOP): Synonym for CRAFT; provided for natural‑language task statements that say “make”.  
+- **GET**(ITEM): Directly obtain a primitive resource (iron, wood, gold, etc.) from the environment, covering missing primitive actions such as mining or chopping.- **MOVE**(DIRECTION): Move the agent one step in the given direction.  
+- **TURN**(DIRECTION): Change the agent’s facing direction.  
+- **PICKUP**(ITEM): Pick up a resource or item that is currently on the agent’s tile.  
+- **USE**(ITEM): Use a held item (e.g., a tool) on the current tile.  
+- **CRAFT**(ITEM, WORKSHOP): Craft the specified ITEM at the indicated WORKSHOP according to the recipe list.  
+- **MAKE**(ITEM, WORKSHOP): Synonym for CRAFT; provided for natural‑language task statements that say “make”.  
+- **GET**(ITEM): Directly obtain a primitive resource (iron, wood, gold, etc.) from the environment, covering missing primitive actions such as mining or chopping.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                |  TURN LPAR DIRECTION RPAR
+                |  GET  LPAR ITEM RPAR
+                |  MAKE LPAR ITEM COMMA WORKSHOP RPAR
+                |  WAIT
+
+DIRECTION      ::= UP | DOWN | LEFT | RIGHT
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                |  STICK | AXE | SLINGSHOT | ARROW | GOLDARROW
+                |  BRIDGE | BUNDLE | HAMMER | KNIFE | BED
+                |  SHEARS | LADDER | BOW | BENCH | FLAG
+                |  PLANK | CLOTH | ROPE
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a simple DSL for a robot that can move in four cardinal directions, turn, wait, collect primitive resources, and craft higher‑level items at specific workshops.
+
+* **program** is the start symbol and consists of a sequence of statements.  
+* **statement_seq** allows one or more statements separated by semicolons.  
+* **statement** lists all possible actions the robot can perform:  
+  * `MOVE(direction)` – step one cell in the given direction.  
+  * `TURN(direction)` – rotate to face the given direction without moving.  
+  * `GET(item)` – pick up a primitive resource (e.g., `GET(GEM)`).  
+  * `MAKE(item, workshop)` – craft an intermediate or final product at the indicated workshop (e.g., `MAKE(PLANK, WORKSHOP0)`).  
+  * `WAIT` – do nothing for one time step.  
+
+* **DIRECTION** enumerates the four movement directions.  
+* **ITEM** enumerates every object that can appear in the domain, covering all primitives and all craftable objects required by the task list and the provided recipes.  
+* **WORKSHOP** enumerates the three workshop locations where crafting may occur.  
+
+The punctuation symbols `SEMICOLON`, `LPAR`, `RPAR`, and `COMMA` are defined as single‑character terminals, satisfying the required BNF format.
+
+**Changes in CFG**
+- Added **GET** and **MAKE** terminal functions to directly express primitive gathering and crafting actions required by the task list.
+- Extended **ITEM** enumeration to include all items appearing in the recipes and tasks (e.g., `GEM`, `GOLDARROW`, `FLAG`, etc.).
+- Modified **statement** rule to incorporate the new `GET` and `MAKE` actions with appropriate parameter structures.
+- Retained existing movement (`MOVE`, `TURN`) and control (`WAIT`) actions for completeness.
+- Kept punctuation and direction definitions unchanged.
+
+**Terminal Functions**
+- **MOVE** (LPAR DIRECTION RPAR): Move the agent one cell in the specified direction.  
+- **TURN** (LPAR DIRECTION RPAR): Rotate the agent to face the specified direction without moving.  
+- **GET** (LPAR ITEM RPAR): Collect a primitive resource from the environment (e.g., iron, gold, gem).  
+- **MAKE** (LPAR ITEM COMMA WORKSHOP RPAR): Craft a specified item at the indicated workshop, using the recipe definitions.  
+- **WAIT**: Perform a no‑op for one time step.- **MOVE** (LPAR DIRECTION RPAR): Move the agent one cell in the specified direction.  
+- **TURN** (LPAR DIRECTION RPAR): Rotate the agent to face the specified direction without moving.  
+- **GET** (LPAR ITEM RPAR): Collect a primitive resource from the environment (e.g., iron, gold, gem).  
+- **MAKE** (LPAR ITEM COMMA WORKSHOP RPAR): Craft a specified item at the indicated workshop, using the recipe definitions.  
+- **WAIT**: Perform a no‑op for one time step.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= GET LPAR ITEM RPAR
+                |  MAKE LPAR ITEM COMMA WORKSHOP RPAR
+                |  MOVE LPAR DIRECTION RPAR
+                |  TURN LPAR DIRECTION RPAR
+                |  WAIT
+
+DIRECTION      ::= UP | DOWN | LEFT | RIGHT
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                |  STICK | AXE | SLINGSHOT | ARROW | GOLDARROW
+                |  BRIDGE | BUNDLE | HAMMER | KNIFE | BED
+                |  SHEARS | LADDER | BOW | BENCH | FLAG
+                |  PLANK | CLOTH | ROPE
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a simple DSL for navigating an environment, acquiring raw resources, and crafting items at designated workshops.
+
+* **program** – the start symbol; a program is a sequence of one or more statements.  
+* **statement_seq** – allows statements to be chained with a semicolon (`;`).  
+* **statement** – the core actions that can appear in a program:  
+  * **GET** `( ITEM )` – pick up a primitive resource (e.g., `GET( GEM )`).  
+  * **MAKE** `( ITEM , WORKSHOP )` – craft a composite item using the recipe that requires the specified workshop (e.g., `MAKE( PLANK , WORKSHOP0 )`).  
+  * **MOVE** `( DIRECTION )` – move the agent one step in the given cardinal direction.  
+  * **TURN** `( DIRECTION )` – rotate the agent to face a new direction.  
+  * **WAIT** – consume a time step without changing state.  
+
+* **DIRECTION** enumerates the four possible movement orientations.  
+* **ITEM** enumerates every primitive and craftable object referenced in the domain’s recipe list, ensuring that any required `get` or `make` task can be expressed.  
+* **WORKSHOP** enumerates the three workshop locations where crafting can occur.  
+* The punctuation symbols (`SEMICOLON`, `LPAR`, `RPAR`, `COMMA`) are defined as single‑character terminals, as required by the format rules.
+
+Together, these productions allow a planner to generate programs that satisfy the full task list (retrieving all primitives and constructing every composite item) while respecting location constraints imposed by the recipes.- **GET** `( ITEM )` : Acquire a primitive resource from the environment (e.g., iron, gem).  
+- **MAKE** `( ITEM , WORKSHOP )` : Craft a composite item using the recipe that must be performed at the specified workshop.  
+- **MOVE** `( DIRECTION )` : Move the agent one cell in the given direction (UP, DOWN, LEFT, RIGHT).  
+- **TURN** `( DIRECTION )` : Change the agent’s facing direction without moving.  
+- **WAIT** : Perform a no‑op action, consuming a time step.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                |  TURN LPAR DIRECTION RPAR
+                |  PICKUP LPAR ITEM RPAR
+                |  CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                |  GET LPAR ITEM RPAR
+                |  MAKE LPAR ITEM COMMA WORKSHOP RPAR
+                |  WAIT
+
+DIRECTION      ::= UP | DOWN | LEFT | RIGHT
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                | STICK | AXE | SLINGSHOT | ARROW | GOLDARROW
+                | BRIDGE | BUNDLE | HAMMER | KNIFE | BED
+                | SHEARS | LADDER | BOW | BENCH | FLAG
+                | PLANK | CLOTH | ROPE
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar describes a simple procedural language for an agent that can move, turn, interact with items, and craft new objects in a world containing three workshops.
+
+* **program** is the entry point and consists of one or more **statement_seq** separated by semicolons.  
+* **statement_seq** allows a single **statement** or a chain of statements linked by the **SEMICOLON** token.  
+* **statement** enumerates all executable actions (terminal functions) the agent can perform:  
+
+  * **MOVE**, **TURN** – navigation actions that require a **DIRECTION** argument.  
+  * **PICKUP** – picks up a primitive or already‑crafted **ITEM** from the ground.  
+  * **CRAFT** – the original crafting primitive that explicitly names the workshop where the recipe is executed.  
+  * **GET** – a higher‑level action used in task specifications; it signals the intention to obtain a primitive **ITEM** (e.g., `get[iron]`). The synthesiser will translate this into a sequence of moves, pickups, or waits that result in possession of the item.  
+  * **MAKE** – mirrors the task “make[…]” commands. It takes an **ITEM** to be produced and the **WORKSHOP** where the recipe is available. This makes the intent of the synthesis problem explicit, allowing the planner to insert the necessary prerequisite actions (e.g., acquiring required resources).  
+  * **WAIT** – a no‑op placeholder useful for timing or filler statements.  
+
+* **DIRECTION**, **ITEM**, and **WORKSHOP** are enumerations that restrict arguments to the values defined by the domain. All possible primitives (`IRON`, `GRASS`, `WOOD`, `ROCK`, `GOLD`, `GEM`) and every craftable object listed in the recipes are included in **ITEM**, ensuring that the planner can reference any required material.  
+* **WORKSHOP** lists the three available crafting stations (`WORKSHOP0`, `WORKSHOP1`, `WORKSHOP2`).  
+* The punctuation symbols **SEMICOLON**, **LPAR**, **RPAR**, and **COMMA** are defined as single‑character terminals, complying with the required BNF style.
+
+With the added **GET** and **MAKE** terminal functions, the grammar can directly express the tasks given (e.g., `GET(IRON)`, `MAKE(PLANK,WORKSHOP0)`), eliminating the previous mismatch where only `CRAFT` existed. This resolves missing action definitions, clarifies preconditions for each craftable item, and provides the synthesis engine with enough expressive power to construct dependency‑aware programs.- **MOVE**(DIRECTION): Move the agent one cell in the specified direction.  
+- **TURN**(DIRECTION): Rotate the agent to face the given direction without changing position.  
+- **PICKUP**(ITEM): Collect the specified item from the current cell (used for primitives and already‑crafted objects).  
+- **CRAFT**(ITEM, WORKSHOP): Directly invoke the low‑level crafting operation at the indicated workshop.  
+- **GET**(ITEM): High‑level request to obtain a primitive resource; the planner expands this into moves, pickups, and waits as needed.  
+- **MAKE**(ITEM, WORKSHOP): High‑level request to produce a craftable item at the appropriate workshop; the planner ensures all ingredient resources are available before invoking the underlying craft.  
+- **WAIT**: Perform no action for one time step (useful for timing or placeholder statements).program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                |  TURN LPAR DIRECTION RPAR
+                |  GET LPAR ITEM RPAR
+                |  MAKE LPAR ITEM COMMA WORKSHOP RPAR
+                |  WAIT
+
+DIRECTION      ::= UP | DOWN | LEFT | RIGHT
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                |  STICK | AXE | SLINGSHOT | ARROW | GOLDARROW
+                |  BRIDGE | BUNDLE | HAMMER | KNIFE | BED
+                |  SHEARS | LADDER | BOW | BENCH | FLAG
+                |  PLANK | CLOTH | ROPE
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a simple domain‑specific language for navigating an environment, acquiring primitive resources, and crafting complex items.
+
+* **program** is the entry point and consists of a sequence of statements.  
+* **statement_seq** allows one or more statements separated by a semicolon (`;`).  
+* **statement** enumerates the actions the agent can perform:  
+  * `MOVE` and `TURN` change the agent’s position or orientation; they each take a single `DIRECTION` argument (`UP`, `DOWN`, `LEFT`, `RIGHT`).  
+  * `GET` obtains a primitive resource from the world; it takes an `ITEM` argument that must be one of the primitive types (`IRON`, `GRASS`, `WOOD`, `ROCK`, `GOLD`, `GEM`).  
+  * `MAKE` crafts a new item at a specific workshop; it takes an `ITEM` to be produced and a `WORKSHOP` identifier (`WORKSHOP0`, `WORKSHOP1`, `WORKSHOP2`). The recipes supplied in the domain description dictate which combinations of resources and workshops are valid, but the grammar itself only enforces syntactic correctness.  
+  * `WAIT` is a no‑op placeholder that can be used when a pause is needed.  
+
+* **DIRECTION**, **ITEM**, and **WORKSHOP** are enumerations that list all admissible values for their respective parameters.  
+* The punctuation symbols `SEMICOLON`, `LPAR`, `RPAR`, and `COMMA` are defined as single‑character terminals to keep the grammar strictly BNF‑compliant.
+
+With these productions, a planner can generate programs such as `GET(WOOD); MAKE(PLANK,WORKSHOP0); GET(GEM); MAKE(GOLDARROW,WORKSHOP0)`, satisfying the task list that requires both primitive acquisition (`get[...]`) and item construction (`make[...]`).
+
+**Changes in CFG**
+- Added the **GET** terminal function to express primitive acquisition (`get[...]` tasks).  
+- Added the **MAKE** terminal function to express crafting operations with an explicit workshop argument (`make[...]` tasks).  
+- Expanded the **ITEM** enumeration to include every item referenced in the recipe list, ensuring that both primitives and craftable products are syntactically valid.  
+- Retained movement (`MOVE`, `TURN`) and control (`WAIT`) actions for completeness.  
+- Kept the original punctuation terminal definitions and sequence handling (`SEMICOLON`, `LPAR`, `RPAR`, `COMMA`).  
+
+**Terminal Functions**  
+- **MOVE**(DIRECTION): Moves the agent one step in the specified cardinal direction.  
+- **TURN**(DIRECTION): Rotates the agent to face the specified direction without changing its position.  
+- **GET**(ITEM): Collects a primitive resource (e.g., `WOOD`, `GEM`) from the current location.  
+- **MAKE**(ITEM, WORKSHOP): Crafts the specified item at the given workshop, consuming the required ingredients as defined by the domain recipes.  
+- **WAIT**: Performs no action; useful for synchronization or placeholder statements.- **MOVE**(DIRECTION): Moves the agent one step in the specified cardinal direction.  
+- **TURN**(DIRECTION): Rotates the agent to face the specified direction without changing its position.  
+- **GET**(ITEM): Collects a primitive resource (e.g., `WOOD`, `GEM`) from the current location.  
+- **MAKE**(ITEM, WORKSHOP): Crafts the specified item at the given workshop, consuming the required ingredients as defined by the domain recipes.  
+- **WAIT**: Performs no action; useful for synchronization or placeholder statements.program        ::= statement_seq
+
+statement_seq  ::= statement
+                | statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                | TURN LPAR DIRECTION RPAR
+                | COLLECT LPAR ITEM RPAR
+                | GET LPAR ITEM RPAR
+                | CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                | MAKE LPAR ITEM COMMA WORKSHOP RPAR
+                | WAIT
+
+DIRECTION      ::= UP | DOWN | LEFT | RIGHT
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                | STICK | AXE | SLINGSHOT | ARROW | GOLDARROW
+                | BRIDGE | BUNDLE | HAMMER | KNIFE | BED
+                | SHEARS | LADDER | BOW | BENCH | FLAG
+                | PLANK | CLOTH | ROPE
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a simple command language for an agent that can move, turn, collect raw resources, and craft items at designated workshops.  
+
+- **program** is the entry point and consists of a sequence of one or more **statement**s.  
+- **statement_seq** allows statements to be chained together using a semicolon (`;`).  
+- **statement** enumerates all possible actions the agent may perform:  
+  * `MOVE` and `TURN` each take a single **DIRECTION** argument (`UP`, `DOWN`, `LEFT`, `RIGHT`).  
+  * `COLLECT` (and its synonym `GET`) take an **ITEM** argument, enabling the agent to pick up any primitive resource present in the environment (e.g., `WOOD`, `GEM`, `GOLD`).  
+  * `CRAFT` and its synonym `MAKE` take an **ITEM** to be produced together with a **WORKSHOP** identifier (`WORKSHOP0`, `WORKSHOP1`, `WORKSHOP2`). This directly maps to the provided recipe table, where each craftable item has a required workshop.  
+  * `WAIT` represents a no‑op action, useful for timing or placeholder steps.  
+- **DIRECTION**, **ITEM**, and **WORKSHOP** are enumerations that list every valid token the corresponding parameters can take. The **ITEM** enumeration contains all objects that appear in the task list and in the recipe definitions, ensuring the planner can refer to any needed resource or product.  
+- The punctuation symbols `SEMICOLON`, `LPAR`, `RPAR`, and `COMMA` are defined as single‑character terminals to keep the grammar strictly BNF‑compliant.  
+
+With these productions, a synthesiser can generate programs such as `COLLECT(WOOD); CRAFT(PLANK,WORKSHOP0); CRAFT(BED,WORKSHOP1)`, satisfying the full set of goals that require gathering primitives and assembling complex items.- **MOVE(args)**: Moves the agent one step in the specified `DIRECTION`.  
+- **TURN(args)**: Rotates the agent to face the specified `DIRECTION`.  
+- **COLLECT(args)**: Picks up a primitive `ITEM` (e.g., `WOOD`, `GEM`) from the current location.  
+- **GET(args)**: Synonym for `COLLECT`; used when the task description uses “get”.  
+- **CRAFT(args)**: Produces the specified `ITEM` at the given `WORKSHOP`, consuming required ingredients according to the recipe table.  
+- **MAKE(args)**: Synonym for `CRAFT`; used when the task description uses “make”.  
+- **WAIT(args)**: Performs no operation for one time step; useful for synchronization or placeholder actions.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE    LPAR DIRECTION RPAR
+                |  TURN    LPAR DIRECTION RPAR
+                |  PICKUP  LPAR ITEM      RPAR
+                |  GATHER  LPAR ITEM      RPAR
+                |  GO      LPAR LOCATION  RPAR
+                |  USE_TOOL LPAR ITEM     RPAR
+                |  CRAFT   LPAR ITEM      RPAR
+
+DIRECTION      ::= UP | DOWN | LEFT | RIGHT
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                |  AXE | SLINGSHOT | ARROW | GOLDARROW | BRIDGE
+                |  BUNDLE | HAMMER | KNIFE | BED | SHEARS
+                |  LADDER | BOW | BENCH | FLAG | PLANK
+                |  CLOTH | ROPE | STICK
+
+LOCATION       ::= BOUNDARY | WORKSHOP0 | WORKSHOP1 | WORKSHOP2 | WATER | STONE
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+The grammar defines a simple, action‑oriented DSL for a world where an agent can move, turn, collect raw resources, travel to specific locations, use tools, and craft items.  
+
+- **program** is the entry point and consists of a sequence of statements separated by semicolons.  
+- **statement_seq** allows one or more statements, supporting recursion to handle any length of program.  
+- **statement** enumerates all executable actions (terminal functions). Each action follows the pattern `ACTION LPAR ARG RPAR` (or just `ACTION LPAR DIRECTION RPAR` for movement commands). The actions are:  
+  * `MOVE` – move one step in a cardinal direction.  
+  * `TURN` – rotate the agent to face a cardinal direction.  
+  * `PICKUP` – pick up an item that already exists in the environment (e.g., a scattered gem).  
+  * `GATHER` – acquire a primitive resource such as wood, iron, gold, etc. This addresses missing primitive actions identified in the failure analysis.  
+  * `GO` – travel directly to a named location (boundary, workshops, water, stone). This enables the planner to position the agent at the required workshop before crafting, satisfying location‑specific constraints.  
+  * `USE_TOOL` – employ a held tool on a target item (e.g., using an axe to cut wood).  
+  * `CRAFT` – combine items according to the defined recipes to produce a new item.  
+
+- **DIRECTION**, **ITEM**, and **LOCATION** are enumerations that list all permissible values for their respective arguments, ensuring the planner can only refer to valid directions, resources, and environment sites.  
+
+- The punctuation symbols **SEMICOLON**, **LPAR**, and **RPAR** are defined as single‑character terminals, complying with the required special‑symbol format.
+
+Together, these rules give the synthesis engine a complete set of low‑level actions and location handling needed to resolve dependencies, respect workshop constraints, and generate successful programs for all listed tasks.
+
+**Changes in CFG**
+- Added the `GATHER` action to provide explicit primitive‑resource acquisition.
+- Added the `GO` action with a `LOCATION` parameter to allow moving to specific workshop or environment locations.
+- Introduced a `LOCATION` enumeration covering all relevant sites (`BOUNDARY`, `WORKSHOP0/1/2`, `WATER`, `STONE`).
+- Retained existing actions (`MOVE`, `TURN`, `PICKUP`, `USE_TOOL`, `CRAFT`) and integrated them with the new actions in the `statement` rule.
+- Updated the `statement` production to include the new actions.
+- Kept punctuation definitions unchanged but ensured they follow the required format.
+
+**Terminal Functions**
+- **MOVE**(DIRECTION): Move the agent one cell in the specified cardinal direction.  
+- **TURN**(DIRECTION): Change the agent’s facing direction to the specified cardinal direction.  
+- **PICKUP**(ITEM): Pick up an already‑present item (e.g., a loose gem) from the current cell.  
+- **GATHER**(ITEM): Collect a primitive resource (iron, wood, gold, etc.) from the environment.  
+- **GO**(LOCATION): Teleport or navigate the agent to a named location such as a workshop, boundary, water, or stone area.  
+- **USE_TOOL**(ITEM): Apply a held tool to an appropriate target (e.g., using an axe on wood).  
+- **CRAFT**(ITEM): Combine required ingredients at the current location according to the recipe database to produce the specified item.- **MOVE**(DIRECTION): Move the agent one cell in the specified cardinal direction.  
+- **TURN**(DIRECTION): Change the agent’s facing direction to the specified cardinal direction.  
+- **PICKUP**(ITEM): Pick up an already‑present item (e.g., a loose gem) from the current cell.  
+- **GATHER**(ITEM): Collect a primitive resource (iron, wood, gold, etc.) from the environment.  
+- **GO**(LOCATION): Teleport or navigate the agent to a named location such as a workshop, boundary, water, or stone area.  
+- **USE_TOOL**(ITEM): Apply a held tool to an appropriate target (e.g., using an axe on wood).  
+- **CRAFT**(ITEM): Combine required ingredients at the current location according to the recipe database to produce the specified item.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE      LPAR DIRECTION RPAR
+                |  TURN      LPAR DIRECTION RPAR
+                |  PICKUP    LPAR ITEM RPAR
+                |  GATHER    LPAR ITEM RPAR
+                |  GO        LPAR LOCATION RPAR
+                |  USE_TOOL  LPAR ITEM RPAR
+                |  USE_TOOL  LPAR ITEM COMMA ITEM RPAR
+                |  CRAFT     LPAR ITEM RPAR
+
+DIRECTION      ::= UP | DOWN | LEFT | RIGHT
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                | AXE | SLINGSHOT | ARROW | GOLDARROW | BRIDGE
+                | BUNDLE | HAMMER | KNIFE | BED | SHEARS
+                | LADDER | BOW | BENCH | FLAG | PLANK
+                | CLOTH | ROPE | STICK
+
+LOCATION       ::= BOUNDARY | WORKSHOP0 | WORKSHOP1 | WORKSHOP2 | WATER | STONE
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a simple robot‑control language for a crafting world.  
+A program consists of one or more *statements* chained with semicolons.  
+Each statement is a concrete action that the robot can perform, written as a
+function name followed by parentheses containing its arguments.
+
+* **Movement** – `MOVE` and `TURN` change the robot’s position or orientation
+  by specifying a `DIRECTION` (`UP`, `DOWN`, `LEFT`, `RIGHT`).  
+
+* **Resource handling** – `PICKUP` and `GATHER` acquire raw items from the
+  environment; the item to be collected is given as an `ITEM` token.  
+
+* **Navigation** – `GO` moves the robot to a named `LOCATION` such as a
+  workshop or a natural site.  
+
+* **Tool usage** – `USE_TOOL` applies a tool to a target. It can be called with
+  a single `ITEM` (the tool itself) or with two `ITEM`s (`tool, target`) when
+  an explicit target is required.  
+
+* **Crafting** – `CRAFT` creates a new object at the current location,
+  consuming the prerequisite resources defined in the domain recipes.  
+
+The non‑terminal `ITEM` enumerates every object that appears in the primitive
+set or in any recipe, ensuring that only valid items can be referenced.  
+`LOCATION` lists all possible places the robot may travel to.  
+Punctuation symbols (`SEMICOLON`, `LPAR`, `RPAR`, `COMMA`) are defined as
+single‑character terminals to keep the syntax unambiguous.
+
+Together, these rules allow the synthesis engine to generate sequences such as:
+
+```
+GO( WORKSHOP0 );
+CRAFT( PLANK );
+GO( WORKSHOP1 );
+CRAFT( BRIDGE );
+```
+
+which satisfy the listed tasks while respecting resource dependencies and
+location constraints.
+
+**Changes in CFG**
+- Added a `COMMA` terminal to support multi‑argument actions.  
+- Extended `statement` with a second form of `USE_TOOL` that accepts two `ITEM`
+  arguments (`tool, target`).  
+- Preserved all original actions and enumerations, ensuring full coverage of
+  the domain’s items and locations.
+
+**Terminal Functions**
+- **MOVE** (LPAR DIRECTION RPAR): Move the robot one step in the specified direction.  
+- **TURN** (LPAR DIRECTION RPAR): Rotate the robot to face the given direction.  
+- **PICKUP** (LPAR ITEM RPAR): Pick up a raw resource (e.g., iron, gold, gem) from the current tile.  
+- **GATHER** (LPAR ITEM RPAR): Collect a gatherable resource (e.g., grass, wood) from the environment.  
+- **GO** (LPAR LOCATION RPAR): Travel directly to a named location such as a workshop.  
+- **USE_TOOL** (LPAR ITEM RPAR): Apply a tool (e.g., axe, shears) without specifying a separate target.  
+- **USE_TOOL** (LPAR ITEM COMMA ITEM RPAR): Apply a tool to a specific target item (e.g., use shears on stick).  
+- **CRAFT** (LPAR ITEM RPAR): Create the specified item at the current location, consuming required ingredients as defined in the recipes.- **MOVE** (LPAR DIRECTION RPAR): Move the robot one step in the specified direction.  
+- **TURN** (LPAR DIRECTION RPAR): Rotate the robot to face the given direction.  
+- **PICKUP** (LPAR ITEM RPAR): Pick up a raw resource (e.g., iron, gold, gem) from the current tile.  
+- **GATHER** (LPAR ITEM RPAR): Collect a gatherable resource (e.g., grass, wood) from the environment.  
+- **GO** (LPAR LOCATION RPAR): Travel directly to a named location such as a workshop.  
+- **USE_TOOL** (LPAR ITEM RPAR): Apply a tool (e.g., axe, shears) without specifying a separate target.  
+- **USE_TOOL** (LPAR ITEM COMMA ITEM RPAR): Apply a tool to a specific target item (e.g., use shears on stick).  
+- **CRAFT** (LPAR ITEM RPAR): Create the specified item at the current location, consuming required ingredients as defined in the recipes.

@@ -1,6 +1,9 @@
 #stuff i added
 keys.txt
 hello.sh
+experiments/*
+scripts/log/*
+scripts/log_archive/*
 experiments_*/*
 # Byte-compiled / optimized / DLL files
 __pycache__/

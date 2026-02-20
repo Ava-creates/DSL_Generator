@@ -152,8 +152,8 @@ class CraftLab(object):
     done = self._is_done()
     goal_name, goal_arg = self.task.goal
     a = 10 if self._current_state.satisfies(goal_name, goal_arg) else 0
-    if a ==10:
-        print("goal_name", goal_name, "goal_arg", goal_arg, "satisfies", self._current_state.satisfies(goal_name, goal_arg))
+    # if a ==10:
+    #     print("goal_name", goal_name, "goal_arg", goal_arg, "satisfies", self._current_state.satisfies(goal_name, goal_arg))
 
     reward = np.float32(self._get_reward() + state_reward + a)
 
@@ -169,101 +169,53 @@ class CraftLab(object):
             or self.steps >= self.max_steps)
     return done
     
+
+
   def _get_reward(self):
     goal_name, goal_arg = self.task.goal
-    # print(goal_name, goal_arg)
-    needed_items = self.world.cookbook.primitives_for_reward(goal_arg)
-    # print(needed_items)
-    # if goal_arg == 12:
-    #   needed_items = {9: 1, 7: 1, 23: 1, self.world.cookbook.index["axe"]:1}
-    # Get all items needed in the recipe for the goal
 
-    # print(needed_items)
-    # Calculate reward based on new pickups of needed items
-    reward = 0.0
-    
-    # Check for new pickups by comparing current inventory with last inventory
-    if self._last_inventory is not None:
-      for item, needed_count in needed_items.items():
-        # If we have more of this item than before, it was just picked up
-        if self._current_state.inventory[item] > self._last_inventory[item]:
-          reward += 0.5  # Give reward for picking up a needed item
-          
-      # Check for goal item pickup
-      if self._current_state.inventory[goal_arg] > self._last_inventory[goal_arg]:
-        reward = 1.0  # Give full reward for picking up goal item
-    
-    # Update last inventory for next step
-    self._last_inventory = self._current_state.inventory.copy()
-      
-    # Penalize picking up items not needed for the recipe
+    # We want the correct pickup to be in inventory.
+    # But we will penalise the agent for picking up extra stuff.
     items_index = np.arange(self._current_state.inventory.size)
-    # Create mask for items that aren't needed (not in needed_items and not the goal)
-    not_needed_mask = np.ones_like(items_index, dtype=bool)
-    for item in needed_items:
-      not_needed_mask[item] = False
-    not_needed_mask[goal_arg] = False
-    
-    # Only penalize items that aren't needed for the recipe
+    reward = float(self._current_state.inventory[goal_arg] > 0)
     reward -= self._extra_pickup_penalty * np.sum(
-        self._current_state.inventory[not_needed_mask])
+        self._current_state.inventory[items_index != goal_arg])
     reward = np.maximum(reward, 0)
     return reward
 
+
   # def _get_reward(self):
   #   goal_name, goal_arg = self.task.goal
-
-  #   # We want the correct pickup to be in inventory.
-  #   # But we will penalise the agent for picking up extra stuff.
+  #   needed_items = self.world.cookbook.primitives_for_reward(goal_arg)
+  #   reward = 0.0
+    
+  #   # Check for new pickups by comparing current inventory with last inventory
+  #   if self._last_inventory is not None:
+  #     for item, needed_count in needed_items.items():
+  #       # If we have more of this item than before, it was just picked up
+  #       if self._current_state.inventory[item] > self._last_inventory[item]:
+  #         reward += 0.5  # Give reward for picking up a needed item
+          
+  #     # Check for goal item pickup
+  #     if self._current_state.inventory[goal_arg] > self._last_inventory[goal_arg]:
+  #       reward = 1.0  # Give full reward for picking up goal item
+    
+  #   # Update last inventory for next step
+  #   self._last_inventory = self._current_state.inventory.copy()
+      
+  #   # Penalize picking up items not needed for the recipe
   #   items_index = np.arange(self._current_state.inventory.size)
-  #   reward = float(self._current_state.inventory[goal_arg] > 0)
-  #   print(self._current_state.inventory[items_index != goal_arg])
-  #   # print(goal_arg)
+  #   # Create mask for items that aren't needed (not in needed_items and not the goal)
+  #   not_needed_mask = np.ones_like(items_index, dtype=bool)
+  #   for item in needed_items:
+  #     not_needed_mask[item] = False
+  #   not_needed_mask[goal_arg] = False
+    
+  #   # Only penalize items that aren't needed for the recipe
   #   reward -= self._extra_pickup_penalty * np.sum(
-  #       self._current_state.inventory[items_index != goal_arg])
-  #   # reward = np.maximum(reward, 0)
+  #       self._current_state.inventory[not_needed_mask])
+  #   reward = np.maximum(reward, 0)
   #   return reward
-
-
-  # #llm provided  40 mini
-
-  # def _get_reward(self):
-  #       """
-  #       Computes a shaped reward for FunSearch:
-  #         - +1.0 for achieving the goal
-  #         - +0.1 * fraction of required primitives already collected
-  #         - +0.2 bonus if near a workshop and the goal requires crafting
-  #         - -extra_pickup_penalty for each USE action
-  #       """
-  #       reward = 0.0
-  #       goal_name, goal_idx = self.task.goal
-  #       satisfies = self._current_state.satisfies(goal_name, goal_idx)
-
-  #       if satisfies:
-  #           reward += 1.0
-  #       else:
-  #           # Shaped reward based on how many goal ingredients are collected
-  #           recipe = self.world.cookbook.recipes.get(goal_idx, {})
-  #           total_required = sum(v for k, v in recipe.items() if isinstance(k, int))
-  #           if total_required > 0:
-  #               collected = sum(
-  #                   min(self._current_state.inventory[k], v)
-  #                   for k, v in recipe.items()
-  #                   if isinstance(k, int)
-  #               )
-  #               reward += 0.1 * (collected / total_required)
-
-  #           # Bonus if next to workshop and this is a craftable goal
-  #           if any(isinstance(k, int) for k in recipe):
-  #               if any(self._current_state.next_to(wk) for wk in self.world.workshop_indices):
-  #                   reward += 0.2
-
-  #       # Penalty for excessive USE
-  #       USE = self.action_specs()['USE']
-  #       if getattr(self, '_last_action', None) == USE:
-  #           reward -= self._extra_pickup_penalty
-
-  #       return reward
 
 
   def close(self):

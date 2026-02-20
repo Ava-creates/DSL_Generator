@@ -18,7 +18,7 @@ class Output(BaseModel):
     example_program: list[str]
 
 json_schema = Output.model_json_schema()
-print(json_schema)
+# print(json_schema)
 
 from vllm import SamplingParams
 from vllm import LLM as vLLM
@@ -114,7 +114,11 @@ Return three fenced code blocks:
 ```json
 {{"ACTION1": "Description of what ACTION1 does", "ACTION2": "Description of what ACTION2 does", ...}}
 ```
-**CRITICAL**: You MUST include ALL terminal functions that appear in your CFG productions. Every function name that appears at the start of a statement production (e.g., ACTION1, ACTION2, ACTION3 in `statement ::= ACTION1 LPAR PARAM RPAR | ACTION2 LPAR PARAM RPAR | ACTION3`) MUST have an entry in this JSON dictionary with a clear, descriptive explanation of what it does. Do not omit any terminal functions - completeness is essential.
+**CRITICAL**: You MUST include ALL terminal functions that appear in your CFG productions. Every function name that appears at the start of a statement production (e.g., ACTION1, ACTION2, ACTION3 in `statement ::= ACTION1 LPAR PARAM RPAR | ACTION2 LPAR PARAM RPAR | ACTION3`) MUST have an entry in this JSON dictionary. Do not omit any terminal functions - completeness is essential.
+
+Each description MUST be detailed and include ALL of the following:
+- **What the function does** (high-level purpose)
+- **Behavioral details**: how the function should work step by step — e.g., how it navigates, what state it reads, what conditions it checks
 
 3. **DSL example block** (labeled `dsl` or `example`):
 ```dsl
@@ -128,7 +132,11 @@ Use actual terminal function names and values from your CFG.
 ## Recipes for the domain:
 {recipes}
 
-Return the CFG, terminal functions dictionary, and example program as specified above. Use ONLY UPPERCASE for all terminal functions and symbols. Choose meaningful UPPERCASE names for terminal functions based on the domain (e.g., if the domain involves movement, use MOVE, TURN, etc.; if it involves crafting, use CRAFT, COLLECT, etc.).
+## Domain semantics guidance (soft, not rigid):
+- Use the recipe file to infer meaningful value categories.
+- It is fine to keep the grammar compact, but preserve semantic clarity in symbol naming and function argument choices.
+
+Return the CFG, terminal functions dictionary, and example program as specified above. Use ONLY UPPERCASE for all terminal functions and symbols. Choose meaningful UPPERCASE names for terminal functions based on the domain.
 '''
 
     return TEMPLATE.format(domain_description=domain_description, recipes=recipes)

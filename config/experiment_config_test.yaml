@@ -1,4 +1,4 @@
-experiment_dir:
+experiment_dir: experiments/experiment_success
 spec_file: prompt_specifications/specification_with_updated_nld.txt
 tasks:
   - get[gem]
@@ -20,7 +20,7 @@ tasks:
   - make[goldarrow]
 max_dsl_evolutions: 2
 max_function_evolutions: 1
-total_samples: 1000
+total_samples: 2000
 num_explicit_feedback_iterations: 30
 max_attempts: 30
 model_type: huggingface
@@ -30,5 +30,5 @@ skip_cfg_generation: false
 cfg_output_file:
 max_cfg_retries: 10
 grid_regeneration_attempts: 15
-use_existing_grid_specs: false
-# grid_spec_dir: experiments/experiment_success/grids
+use_existing_grid_specs: true
+grid_spec_dir: experiments/experiment_success/grids
