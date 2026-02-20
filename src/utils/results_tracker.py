@@ -818,3 +818,288 @@ class ResultsTracker:
         
         print(f"\n✓ All plots generated in {plot_dir}")
 
+
+def parse_funsearch_log(log_file: str) -> List[Dict]:
+    """Parse a FunSearch log file into a list of metrics entries."""
+    entries: List[Dict] = []
+    if not os.path.exists(log_file):
+        return entries
+    with open(log_file, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            env_interactions = record.get("env_interactions", 0)
+            scores = record.get("scores", {})
+            reward = None
+            if isinstance(scores, dict) and scores:
+                try:
+                    reward = max(float(v) for v in scores.values() if v is not None)
+                except (TypeError, ValueError):
+                    reward = None
+            entries.append({
+                "timestamp": record.get("timestamp"),
+                "env_interactions": int(env_interactions) if env_interactions is not None else 0,
+                "reward": reward,
+            })
+    return entries
+
+
+def parse_explicit_feedback_file(feedback_file: str) -> List[Dict]:
+    """Parse an explicit feedback JSON file into a list of metrics entries."""
+    entries: List[Dict] = []
+    if not os.path.exists(feedback_file):
+        return entries
+    try:
+        with open(feedback_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return entries
+    if not isinstance(data, list):
+        return entries
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        env_interactions = entry.get("env_interactions")
+        if env_interactions is None:
+            env_interactions = entry.get("actions_count", 0)
+        try:
+            env_interactions = int(env_interactions)
+        except (TypeError, ValueError):
+            env_interactions = 0
+        reward = entry.get("score")
+        try:
+            reward = float(reward) if reward is not None else None
+        except (TypeError, ValueError):
+            reward = None
+        entries.append({
+            "iteration": entry.get("iteration"),
+            "env_interactions": env_interactions,
+            "reward": reward,
+            "runs_ok": entry.get("runs_ok", True),
+        })
+    return entries
+
+
+def plot_funsearch_reward_vs_interactions(
+    log_file: str,
+    output_dir: str,
+    function_name: Optional[str] = None,
+) -> Optional[str]:
+    """Plot best reward vs cumulative env interactions from a FunSearch log."""
+    entries = parse_funsearch_log(log_file)
+    if not entries:
+        print(f"No FunSearch log entries found in {log_file}")
+        return None
+
+    plt.switch_backend("Agg")
+
+    cumulative_interactions: List[int] = []
+    best_rewards: List[float] = []
+    raw_rewards: List[Optional[float]] = []
+    total = 0
+    best = float("-inf")
+
+    for entry in entries:
+        total += int(entry.get("env_interactions", 0))
+        reward = entry.get("reward")
+        raw_rewards.append(reward)
+        if reward is not None and reward > best:
+            best = reward
+        cumulative_interactions.append(total)
+        best_rewards.append(best if best != float("-inf") else 0.0)
+
+    os.makedirs(output_dir, exist_ok=True)
+    safe_name = function_name.replace(" ", "_") if function_name else "funsearch"
+    plot_path = os.path.join(output_dir, f"{safe_name}_reward_vs_interactions.png")
+    metrics_path = os.path.join(output_dir, f"{safe_name}_reward_vs_interactions.json")
+
+    # Save metrics
+    metrics = []
+    for idx, entry in enumerate(entries):
+        metrics.append({
+            "timestamp": entry.get("timestamp"),
+            "env_interactions": int(entry.get("env_interactions", 0)),
+            "cumulative_interactions": cumulative_interactions[idx],
+            "reward": raw_rewards[idx],
+            "best_reward_so_far": best_rewards[idx],
+        })
+    with open(metrics_path, "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2)
+
+    # Plot best reward vs interactions
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(cumulative_interactions, best_rewards, marker="o", linewidth=2, markersize=4)
+    ax.set_title("Best Reward vs Env Interactions")
+    ax.set_xlabel("Cumulative Env Interactions")
+    ax.set_ylabel("Best Reward So Far")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"✓ Saved FunSearch plot to {plot_path}")
+    return plot_path
+
+
+def plot_explicit_feedback_reward_vs_interactions(
+    feedback_file: str,
+    output_dir: str,
+    function_name: Optional[str] = None,
+) -> Optional[str]:
+    """Plot best reward vs cumulative env interactions from explicit feedback."""
+    entries = parse_explicit_feedback_file(feedback_file)
+    if not entries:
+        print(f"No explicit feedback entries found in {feedback_file}")
+        return None
+
+    plt.switch_backend("Agg")
+
+    cumulative_interactions: List[int] = []
+    best_rewards: List[float] = []
+    raw_rewards: List[Optional[float]] = []
+    total = 0
+    best = float("-inf")
+
+    for entry in entries:
+        total += int(entry.get("env_interactions", 0))
+        reward = entry.get("reward")
+        raw_rewards.append(reward)
+        if reward is not None and reward > best:
+            best = reward
+        cumulative_interactions.append(total)
+        best_rewards.append(best if best != float("-inf") else 0.0)
+
+    os.makedirs(output_dir, exist_ok=True)
+    safe_name = function_name.replace(" ", "_") if function_name else "explicit_feedback"
+    plot_path = os.path.join(output_dir, f"{safe_name}_explicit_feedback_reward_vs_interactions.png")
+    metrics_path = os.path.join(output_dir, f"{safe_name}_explicit_feedback_reward_vs_interactions.json")
+
+    metrics = []
+    for idx, entry in enumerate(entries):
+        metrics.append({
+            "iteration": entry.get("iteration"),
+            "env_interactions": int(entry.get("env_interactions", 0)),
+            "cumulative_interactions": cumulative_interactions[idx],
+            "reward": raw_rewards[idx],
+            "best_reward_so_far": best_rewards[idx],
+        })
+    with open(metrics_path, "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(cumulative_interactions, best_rewards, marker="o", linewidth=2, markersize=4)
+    ax.set_title("Best Reward vs Env Interactions (Explicit Feedback)")
+    ax.set_xlabel("Cumulative Env Interactions")
+    ax.set_ylabel("Best Reward So Far")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"✓ Saved explicit feedback plot to {plot_path}")
+    return plot_path
+
+
+def plot_baseline_reward_vs_interactions(
+    funsearch_log_file: str,
+    explicit_feedback_file: str,
+    output_dir: str,
+    function_name: Optional[str] = None,
+) -> Optional[str]:
+    """Plot baseline (FunSearch + explicit feedback) reward vs interactions."""
+    funsearch_entries = parse_funsearch_log(funsearch_log_file)
+    explicit_entries = parse_explicit_feedback_file(explicit_feedback_file)
+
+    if not funsearch_entries and not explicit_entries:
+        print("No FunSearch or explicit feedback entries found for baseline plotting")
+        return None
+
+    plt.switch_backend("Agg")
+
+    # FunSearch series
+    funsearch_cumulative: List[int] = []
+    funsearch_best: List[float] = []
+    total_funsearch = 0
+    best = float("-inf")
+    for entry in funsearch_entries:
+        total_funsearch += int(entry.get("env_interactions", 0))
+        reward = entry.get("reward")
+        if reward is not None and reward > best:
+            best = reward
+        funsearch_cumulative.append(total_funsearch)
+        funsearch_best.append(best if best != float("-inf") else 0.0)
+
+    # Explicit feedback series (offset by FunSearch total)
+    explicit_cumulative: List[int] = []
+    explicit_best: List[float] = []
+    total_explicit = total_funsearch
+    best_explicit = best
+    for entry in explicit_entries:
+        total_explicit += int(entry.get("env_interactions", 0))
+        reward = entry.get("reward")
+        if reward is not None and reward > best_explicit:
+            best_explicit = reward
+        explicit_cumulative.append(total_explicit)
+        explicit_best.append(best_explicit if best_explicit != float("-inf") else 0.0)
+
+    os.makedirs(output_dir, exist_ok=True)
+    safe_name = function_name.replace(" ", "_") if function_name else "baseline"
+    plot_path = os.path.join(output_dir, f"{safe_name}_baseline_reward_vs_interactions.png")
+    metrics_path = os.path.join(output_dir, f"{safe_name}_baseline_reward_vs_interactions.json")
+
+    metrics = {
+        "funsearch": {
+            "cumulative_interactions": funsearch_cumulative,
+            "best_rewards": funsearch_best,
+        },
+        "explicit_feedback": {
+            "cumulative_interactions": explicit_cumulative,
+            "best_rewards": explicit_best,
+        },
+    }
+    with open(metrics_path, "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    # Plot a single continuous line, switching colors between phases.
+    if funsearch_entries:
+        ax.plot(
+            funsearch_cumulative,
+            funsearch_best,
+            marker="o",
+            linewidth=2,
+            markersize=4,
+            color="#1f77b4",
+            label="FunSearch",
+        )
+    # if explicit_entries:
+    #     # Ensure continuity by connecting the last FunSearch point to the first explicit point.
+    #     explicit_x = explicit_cumulative
+    #     explicit_y = explicit_best
+    #     if funsearch_entries and explicit_x:
+    #         explicit_x = [funsearch_cumulative[-1]] + explicit_x
+    #         explicit_y = [funsearch_best[-1]] + explicit_y
+    #     ax.plot(
+    #         explicit_x,
+    #         explicit_y,
+    #         marker="o",
+    #         linewidth=2,
+    #         markersize=4,
+    #         color="#ff7f0e",
+    #         label="Explicit Feedback",
+    #     )
+
+    ax.set_title("Baseline Best Reward vs Env Interactions")
+    ax.set_xlabel("Cumulative Env Interactions")
+    ax.set_ylabel("Best Reward So Far")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"✓ Saved baseline plot to {plot_path}")
+    return plot_path
+

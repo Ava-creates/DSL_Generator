@@ -19,11 +19,17 @@ sys.path.insert(0, _project_root)
 from src.pipeline.cfg_to_funsearch_pipeline import (
     determine_inputs, 
     run_explicit_feedback_generation,
-    sanitize_function_name
+    sanitize_function_name,
+    find_funsearch_log_file,
 )
 from funsearch.implementation.funsearch import FunSearch
 from funsearch.implementation import config as config_lib
-from src.utils.results_tracker import ResultsTracker
+from src.utils.results_tracker import (
+    ResultsTracker,
+    plot_funsearch_reward_vs_interactions,
+    plot_explicit_feedback_reward_vs_interactions,
+    plot_baseline_reward_vs_interactions,
+)
 from src.utils.pipeline_state import (
     decrement_function_implementation,
     read_state,
@@ -47,6 +53,12 @@ def main():
     parser.add_argument('--func_evolution_round', type=int, default=None, help='Function evolution round number')
     parser.add_argument('--total_samples', type=int, default=1000, help='Total number of samples for FunSearch (default: 1000)')
     parser.add_argument('--num_iterations', type=int, default=30, help='Number of explicit feedback iterations')
+    parser.add_argument(
+        '--grid_regeneration_attempts',
+        type=int,
+        default=int(os.environ.get("GRID_REGENERATION_ATTEMPTS", 5)),
+        help='Attempts to regenerate grids when initial pass_check fails'
+    )
     
     args = parser.parse_args()
     
@@ -246,7 +258,8 @@ def main():
         num_evaluators=2,
         samples_per_prompt=2,
         total_samples=args.total_samples,
-        programs_database=config_lib.ProgramsDatabaseConfig()
+        programs_database=config_lib.ProgramsDatabaseConfig(),
+        grid_regeneration_attempts=args.grid_regeneration_attempts,
     )
     
     initial_funsearch_steps = results_tracker.interactions.get("funsearch", 0)
@@ -289,6 +302,23 @@ def main():
         for path in (status_file, status_dir_file):
             with open(path, 'w') as f:
                 json.dump(funsearch_status, f, indent=2)
+
+        # Plot FunSearch reward vs interactions for this function
+        try:
+            log_file = find_funsearch_log_file(args.function_name, results_dir)
+            if log_file:
+                funsearch_plot_dir = os.path.join(
+                    args.experiment_dir, "results_tracking", "funsearch"
+                )
+                plot_funsearch_reward_vs_interactions(
+                    log_file=log_file,
+                    output_dir=funsearch_plot_dir,
+                    function_name=args.function_name,
+                )
+            else:
+                print(f"  ⚠ No FunSearch log found for plotting: {args.function_name}")
+        except Exception as plot_error:
+            print(f"  ⚠ Failed to plot FunSearch metrics: {plot_error}")
         
     except Exception as e:
         error_msg = str(e)
@@ -342,7 +372,7 @@ def main():
             
             try:
                 iter_func = run_explicit_feedback_generation(
-                    args.function_name, results_dir, tmp_file_path, args.experiment_dir, explicit_feedback_dir,
+                    args.function_name, results_dir, func_file, args.experiment_dir, explicit_feedback_dir,
                     specification, k=5, shared_vllm=shared_vllm, 
                     func_signature=func_signatures.get(args.function_name, ""),
                     results_tracker=results_tracker,
@@ -429,6 +459,45 @@ def main():
                     json.dump(explicit_fb_status, f, indent=2)
             
             print(f"[{args.function_name}] ✓ Completed explicit feedback ({args.num_iterations} iterations)")
+            
+            # Plot explicit feedback reward vs interactions and baseline combined plot
+            try:
+                safe_name = sanitize_function_name(args.function_name)
+                if args.dsl_round is not None:
+                    if args.func_evolution_round is not None:
+                        feedback_filename = f"feedback_{safe_name}_dsl{args.dsl_round}_func{args.func_evolution_round}.json"
+                    else:
+                        feedback_filename = f"feedback_{safe_name}_dsl{args.dsl_round}_func0.json"
+                else:
+                    feedback_filename = f"feedback_{safe_name}.json"
+                feedback_file = os.path.join(explicit_feedback_dir, feedback_filename)
+                
+                explicit_plot_dir = os.path.join(
+                    args.experiment_dir, "results_tracking", "explicit_feedback"
+                )
+                if os.path.exists(feedback_file):
+                    plot_explicit_feedback_reward_vs_interactions(
+                        feedback_file=feedback_file,
+                        output_dir=explicit_plot_dir,
+                        function_name=args.function_name,
+                    )
+                else:
+                    print(f"  ⚠ No explicit feedback file found for plotting: {feedback_file}")
+                
+                # Combined baseline plot (FunSearch + Explicit Feedback)
+                log_file = find_funsearch_log_file(args.function_name, results_dir)
+                if log_file and os.path.exists(feedback_file):
+                    baseline_plot_dir = os.path.join(
+                        args.experiment_dir, "results_tracking", "baseline"
+                    )
+                    plot_baseline_reward_vs_interactions(
+                        funsearch_log_file=log_file,
+                        explicit_feedback_file=feedback_file,
+                        output_dir=baseline_plot_dir,
+                        function_name=args.function_name,
+                    )
+            except Exception as plot_error:
+                print(f"  ⚠ Failed to plot explicit feedback/baseline metrics: {plot_error}")
             
             # Decrement counter (both FunSearch and Explicit Feedback are part of implement_cfg)
             print(f"\n[Chaining] Decrementing function implementation counter...")

@@ -78,6 +78,9 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "SKIP_CFG_GENERATION": "skip_cfg_generation",
         "CFG_OUTPUT_FILE": "cfg_output_file",
         "MAX_CFG_RETRIES": "max_cfg_retries",
+        "GRID_REGENERATION_ATTEMPTS": "grid_regeneration_attempts",
+        "USE_EXISTING_GRID_SPECS": "use_existing_grid_specs",
+        "GRID_SPEC_DIR": "grid_spec_dir",
     }
     
     for env_var, config_key in env_mappings.items():
@@ -86,13 +89,17 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
             # Convert string values to appropriate types
             if config_key in ["max_dsl_evolutions", "max_function_evolutions", 
                              "total_samples", "num_explicit_feedback_iterations",
-                             "max_attempts", "max_cfg_retries"]:
+                             "max_attempts", "max_cfg_retries", "grid_regeneration_attempts"]:
                 try:
                     config[config_key] = int(env_value)
                 except ValueError:
                     pass
             elif config_key == "skip_cfg_generation":
                 config[config_key] = env_value.lower() in ("true", "1", "yes")
+            elif config_key == "use_existing_grid_specs":
+                config[config_key] = env_value.lower() in ("true", "1", "yes")
+            elif config_key == "grid_spec_dir":
+                config[config_key] = env_value
             elif config_key == "tasks":
                 # Handle tasks - can be JSON array or space-separated
                 try:
@@ -120,6 +127,9 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "skip_cfg_generation": False,
         "cfg_output_file": None,
         "max_cfg_retries": 10,
+        "grid_regeneration_attempts": 5,
+        "use_existing_grid_specs": False,
+        "grid_spec_dir": None,
     }
     
     for key, default_value in defaults.items():
@@ -151,6 +161,9 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
         "skip_cfg_generation": "SKIP_CFG_GENERATION",
         "cfg_output_file": "CFG_OUTPUT_FILE",
         "max_cfg_retries": "MAX_CFG_RETRIES",
+        "grid_regeneration_attempts": "GRID_REGENERATION_ATTEMPTS",
+        "use_existing_grid_specs": "USE_EXISTING_GRID_SPECS",
+        "grid_spec_dir": "GRID_SPEC_DIR",
     }
     
     for config_key, env_var in env_mappings.items():
@@ -159,8 +172,10 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
             if config_key == "tasks" and isinstance(value, list):
                 # Convert list to space-separated string for SLURM
                 os.environ[env_var] = " ".join(str(t) for t in value)
-            elif config_key == "skip_cfg_generation":
+            elif config_key in ("skip_cfg_generation", "use_existing_grid_specs"):
                 os.environ[env_var] = "true" if value else "false"
+            elif config_key == "grid_spec_dir" and value is not None:
+                os.environ[env_var] = str(value)
             else:
                 os.environ[env_var] = str(value)
 

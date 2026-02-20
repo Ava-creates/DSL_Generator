@@ -40,3 +40,6 @@ Return True ONLY if the function's intended behavior (per its description) is sa
 Focus on validating the FUNCTION behavior, not the global task:
 - For movement/turning functions, check state.pos / state.dir changes.
 - For pickup/craft/use actions, check changes in inventory or grid around the agent.
+
+
+ Do NOT ignore the function parameters. The function MUST operate based on the values of its arguments, NOT by hardcoding values or inferring them from the environment. Ignoring arguments is WRONG and will result in a score of 0.

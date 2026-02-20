@@ -4,7 +4,7 @@
 #SBATCH --mail-user=avani4@ualberta.ca
 #SBATCH --output=scripts/log/stage_implement_cfg_%x_%j.out
 #SBATCH --error=scripts/log/stage_implement_cfg_%x_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time=12:00:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
 #SBATCH --gres=gpu:4
@@ -40,9 +40,11 @@ python src/pipeline/stages/stage_implement_cfg_single.py \
     --num_iterations "${NUM_EXPLICIT_FEEDBACK_ITERATIONS:-30}" \
     $FUNC_ROUND_ARG
 
-# Chain to next stage based on state
-if [ $? -eq 0 ] || [ $? -eq 1 ]; then
-    source scripts/stages/chain_next_stage.sh
-    chain_based_on_state
+# Chain to next stage based on state (can be disabled)
+if [ "${SKIP_CHAINING:-0}" != "1" ]; then
+    if [ $? -eq 0 ] || [ $? -eq 1 ]; then
+        source scripts/stages/chain_next_stage.sh
+        chain_based_on_state
+    fi
 fi
 

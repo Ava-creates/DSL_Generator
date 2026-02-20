@@ -122,7 +122,7 @@ def main():
                 
                 try:
                     iter_func = run_explicit_feedback_generation(
-                        func_name, results_dir, tmp_file_path, args.experiment_dir, explicit_feedback_dir,
+                        func_name, results_dir, func_file, args.experiment_dir, explicit_feedback_dir,
                         specification, k=5, shared_vllm=shared_vllm, 
                         func_signature=func_signatures.get(func_name, ""),
                         results_tracker=None,

@@ -15,9 +15,6 @@ primitives:
   - gem
 
 recipes:
-  stick:
-    wood: 1
-    _at: workshop2
 
   axe:
     wood: 1
@@ -104,3 +101,7 @@ recipes:
   rope:
     grass: 1
     _at: workshop0
+
+  stick:
+    wood: 1
+    _at: workshop2

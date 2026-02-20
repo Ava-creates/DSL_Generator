@@ -595,8 +595,14 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
         # print(b[:200] + "..." if len(b) > 200 else b)
         
         # Evaluate the function (pass specification for imports, func_signature, and function_name)
-        score, runs_ok, _ = eval(b, file, specification=specification, func_signature=func_signature, 
-                                 function_name=func_name, results_tracker=results_tracker)
+        score, runs_ok, actions_count = eval(
+            b,
+            file,
+            specification=specification,
+            func_signature=func_signature,
+            function_name=func_name,
+            results_tracker=results_tracker,
+        )
         
         # Skip writing per-iteration feedback logs
         
@@ -613,6 +619,8 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
             "feedback": feedback,
             "score": score,
             "runs_ok": runs_ok,
+            "env_interactions": int(actions_count) if actions_count is not None else 0,
+            "actions_count": int(actions_count) if actions_count is not None else 0,
             "function": b,
         })
     

@@ -44,8 +44,13 @@ for key, value in config.items():
             'hints_path': 'HINTS_PATH',
             'cfg_output_file': 'CFG_OUTPUT_FILE',
             'max_cfg_retries': 'MAX_CFG_RETRIES',
+            'grid_regeneration_attempts': 'GRID_REGENERATION_ATTEMPTS',
+            'use_existing_grid_specs': 'USE_EXISTING_GRID_SPECS',
+            'grid_spec_dir': 'GRID_SPEC_DIR',
         }
-        if key in env_mapping:
+        if key == 'use_existing_grid_specs':
+            print(f"export USE_EXISTING_GRID_SPECS=\"{'true' if value else 'false'}\"")
+        elif key in env_mapping:
             env_var = env_mapping[key]
             print(f"export {env_var}=\"{value_str}\"")
 EOF

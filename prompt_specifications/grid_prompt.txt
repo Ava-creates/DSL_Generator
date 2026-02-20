@@ -1,20 +1,65 @@
-You are generating a Craft grid spec for testing a DSL function.
+You are generating a Craft grid spec for unit testing a DSL function.
+We want the simplest test possible to check if the generated function is working as expected.
 
 Function: <<FUNCTION_NAME>>
 Description: <<DESCRIPTION>>
+Craft description : <<ENV_DESCRIPTION>>
+Recipes : <<RECIPES>>
+Function Arguments Needed: <<ARGUMENTS>>
+- Include every function argument (excluding env) in arg_values with correct types.
+- Choose arg_values from valid CFG/grammar values for this function.
+- For string arguments, use uppercase tokens matching the grammar (e.g., "WOOD").
 
 Return ONLY valid JSON with the following keys:
 - task_name (string) must be one of: <<VALID_TASKS>>
-- width (int) = <<WIDTH>>
-- height (int) = <<HEIGHT>>
+- width (int) must be 12
+- height (int) must be 12
 - include_boundary (bool) = true
 - init_pos (list[int,int]) inside the grid, not on the boundary
 - init_dir (int) in {0,1,2,3}
-- grid (list of <<HEIGHT>> rows, each row is a list of <<WIDTH>> strings)
+- inventory (object mapping item name -> count)
+- arg_values (object mapping function argument name -> value)
+- pass_check (string Python expression returning true/false)
+- grid (list of 12 rows, each row is a list of 12 strings)
 
 Grid cells must be empty "" or one of these item names:
 <<VALID_ITEMS>>
 
 Do NOT place boundary items in the grid; boundaries are added automatically.
-Use a grid that makes sense for the task (place needed primitives/workshops).
+The agent's init_pos must be on an empty cell (no item there).
+The grid and inventory should comply with the task requirement to be valid.
+Use the simplest setup that isolates the function under test.
+Make sure the generated test cases cover diverse situations, including corner cases.
+If the function has arguments, generate cases with diverse argument values. Write pass_check so that the expected outcome reflects the argument values when applicable.
+Here are existing test cases -
+<<EXISTING_CASES>>
+
+
+
+Try to make more diverse test cases different from the existing ones
+Decide whether prerequisites (primitives and crafted items) should be on the grid or in inventory based on
+what the function is supposed to do 
+Ensure the chosen task is actually satisfiable:
+- For get[ITEM], must include ITEM on the grid 
+- For make[ITEM], include the required workshop on the grid and required inputs
+  on the grid.
+if the ITEM is in inventory then the program will just stop as end condition has been met.
+For get[ITEM], the ITEM must appear on the grid (do NOT rely only on inventory),
+otherwise the environment will be pre-solved and stop.
+Also, gold is surrounded by water and gem is surrounded by stone always 
+Define pass_check as a boolean expression. Use ONLY the variables below (do NOT invent others). Use explicit arg values directly (e.g., for TURN direction==2). Pass check only has the below available using anythign else will lead to errors.
+- pos_before, pos_after: [int, int] (agent x,y) or None
+- inventory_before, inventory_after: dict[str, int] (item name -> count, e.g. {"wood": 1, "iron": 2})
+- dir_before, dir_after: int or None (0=up,1=right,2=down,3=left)
+- grid_before_cells, grid_after_cells: 12x12 list[list[str]] cell item names ("" if empty)
+- actions_count: int (number of env steps taken)
+Keep pass_check minimal and avoid complex logic. inventory_before/after are dicts
+keyed by item name (use inventory_after.get("wood", 0) style access).
+grid_before_cells/after are plain Python lists, not numpy arrays.
+IMPORTANT: item names in grid_before_cells and grid_after_cells are lowercase (e.g., "wood", "workshop0", "stone").
+Write pass_check comparisons against lowercase strings only.
+CRITICAL: pass_check must only test behavior directly implied by the function description and its arguments.
+Do NOT include unrelated state changes. If a state variable cannot be affected by this function in this test setup, do not reference it.
+Example of invalid check: asserting crafted-item inventory changes when testing a function whose described behavior is only movement or turning.
+Use the minimum set of variables needed to verify expected behavior.
 Output JSON only, no code fences or commentary.

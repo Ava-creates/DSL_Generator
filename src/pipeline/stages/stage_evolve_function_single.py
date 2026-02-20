@@ -29,7 +29,7 @@ def main():
     parser.add_argument('--experiment_dir', type=str, required=True, help='Experiment directory')
     parser.add_argument('--spec_file', type=str, required=True, help='Path to specification file')
     parser.add_argument('--function_name', type=str, required=True, help='Name of the function to evolve')
-    parser.add_argument('--failing_tasks', type=str, nargs='+', required=True, help='List of failing tasks')
+    parser.add_argument('--failing_tasks', type=str, nargs='*', default=[], help='List of failing tasks (optional, kept for API compat)')
     parser.add_argument('--model_type', type=str, default='huggingface', choices=['huggingface', 'ollama', 'gemini'])
     parser.add_argument('--dsl_round', type=int, default=0, help='DSL evolution round number')
     parser.add_argument('--func_evolution_round', type=int, default=0, help='Function evolution round number')

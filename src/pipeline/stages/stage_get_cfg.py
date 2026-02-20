@@ -37,7 +37,9 @@ def main():
     if not args.experiment_dir or args.experiment_dir.strip() == "":
         from datetime import datetime
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        args.experiment_dir = f"experiment_{timestamp}"
+        base_root = "experiments"
+        os.makedirs(base_root, exist_ok=True)
+        args.experiment_dir = os.path.join(base_root, f"experiment_{timestamp}")
         print(f"\n{'='*80}", flush=True)
         print(f"Experiment directory not provided, auto-generating: {args.experiment_dir}", flush=True)
         print(f"{'='*80}\n", flush=True)
