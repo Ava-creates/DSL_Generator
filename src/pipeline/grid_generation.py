@@ -171,6 +171,7 @@ def _render_prompt(
     valid_items: list[str],
     valid_tasks: list[str],
     existing_cases: list[Dict] | None = None,
+    codebase_text: str = "",
 ) -> str:
     if existing_cases:
         summaries = []
@@ -201,6 +202,7 @@ def _render_prompt(
         "<<DESCRIPTION>>": description,
         "<<ARGUMENTS>>": func_args,
         "<<ENV_DESCRIPTION>>": env_description,
+        "<<CODEBASE>>": codebase_text,
         "<<RECIPES>>": recipes_text,
         "<<WIDTH>>": str(width),
         "<<HEIGHT>>": str(height),
@@ -356,6 +358,7 @@ def ensure_function_grid_spec(
     attempts: int = 3,
     existing_cases: list[Dict] | None = None,
     cfg_text: str = "",
+    codebase_text: str = "",
 ) -> Optional[Dict]:
     cookbook = _get_cookbook(recipes_path)
     if cookbook is None:
@@ -381,6 +384,7 @@ def ensure_function_grid_spec(
             valid_items=list(valid_items),
             valid_tasks=valid_tasks,
             existing_cases=existing_cases,
+            codebase_text=codebase_text or "",
         )
         print(f"[grid_generation] Prompt for {func_name}:\n{base_prompt}\n")
         print(f"[grid_generation] Args for {func_name}: {func_args or 'None'}")

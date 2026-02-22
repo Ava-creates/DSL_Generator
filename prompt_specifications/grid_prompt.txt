@@ -10,6 +10,9 @@ Function Arguments Needed: <<ARGUMENTS>>
 - Choose arg_values from valid CFG/grammar values for this function.
 - For string arguments, use uppercase tokens matching the grammar (e.g., "WOOD").
 
+## Code base for the game
+<<CODEBASE>>
+
 Return ONLY valid JSON with the following keys:
 - task_name (string) must be one of: <<VALID_TASKS>>
 - width (int) must be 12
@@ -38,19 +41,19 @@ Here are existing test cases -
 
 Try to make more diverse test cases different from the existing ones
 Decide whether prerequisites (primitives and crafted items) should be on the grid or in inventory based on
-what the function is supposed to do 
+what the function is supposed to do
 Ensure the chosen task is actually satisfiable:
-- For get[ITEM], must include ITEM on the grid 
+- For get[ITEM], must include ITEM on the grid
 - For make[ITEM], include the required workshop on the grid and required inputs
   on the grid.
 if the ITEM is in inventory then the program will just stop as end condition has been met.
 For get[ITEM], the ITEM must appear on the grid (do NOT rely only on inventory),
 otherwise the environment will be pre-solved and stop.
-Also, gold is surrounded by water and gem is surrounded by stone always 
+Also, gold is surrounded by water and gem is surrounded by stone always
 Define pass_check as a boolean expression. Use ONLY the variables below (do NOT invent others). Use explicit arg values directly (e.g., for TURN direction==2). Pass check only has the below available using anythign else will lead to errors.
 - pos_before, pos_after: [int, int] (agent x,y) or None
 - inventory_before, inventory_after: dict[str, int] (item name -> count, e.g. {"wood": 1, "iron": 2})
-- dir_before, dir_after: int or None (0=up,1=right,2=down,3=left)
+- dir_before, dir_after: int (agent's current facing direction, encoding matches action_specs)
 - grid_before_cells, grid_after_cells: 12x12 list[list[str]] cell item names ("" if empty)
 - actions_count: int (number of env steps taken)
 Keep pass_check minimal and avoid complex logic. inventory_before/after are dicts

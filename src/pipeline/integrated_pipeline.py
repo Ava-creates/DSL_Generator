@@ -111,7 +111,7 @@ Existing terminal functions and their descriptions (for reference - includes bot
 """
             
             prompt += """
-Generate a single-sentence description that explains what this function does. Be specific and domain-appropriate. The description should be consistent with the style and domain of the existing terminal functions.
+Generate a single-sentence description that explains the PURPOSE and INTENT of this function (what it achieves), not how it is implemented. Do NOT make assumptions about environment mechanics, specific state changes, or low-level execution details. Be specific and domain-appropriate. The description should be consistent with the style and domain of the existing terminal functions.
 
 Return only the description, no additional text, explanations, or formatting.
 

@@ -558,6 +558,14 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
             recipes_text = f.read().strip()
     except Exception:
         recipes_text = ""
+    codebase_text = ""
+    codebase_path = os.path.join(_repo_root, "..", "prompt_specifications", "codebase.txt")
+    try:
+        with open(codebase_path, "r", encoding="utf-8") as f:
+            codebase_text = f.read().strip()
+    except Exception as e:
+        print(f"  Warning: could not read codebase description ({codebase_path}): {e}")
+        codebase_text = ""
     grid_dir_override = os.environ.get("GRID_SPEC_DIR")
     grid_dir = grid_dir_override if grid_dir_override else (os.path.join(experiment_dir, "grids") if experiment_dir else "grids")
     os.makedirs(grid_dir, exist_ok=True)
@@ -621,6 +629,7 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
                 attempts=attempts_for_case,
                 existing_cases=generated_cases if generated_cases else None,
                 cfg_text=cfg,
+                codebase_text=codebase_text,
             )
             if isinstance(grid_spec, dict):
                 generated_cases.append(grid_spec)

@@ -231,10 +231,15 @@ Dict containing:
 step(self, action) → (float, CraftState)
 Inputs
 - self
-- action: int (DOWN, UP, LEFT, RIGHT, or USE)
+- action: int (DOWN=0, UP=1, LEFT=2, RIGHT=3, or USE=4)
 Outputs
 - reward: float (always 0.0 in this implementation)
 - new_state: CraftState instance after applying movement or use logic, with updated grid, position, direction, and inventory
+Behavior for movement actions (DOWN, UP, LEFT, RIGHT):
+- Sets the agent's facing direction (dir) to the action value: e.g., action DOWN(0) sets dir=0, action RIGHT(3) sets dir=3
+- Computes a movement delta: DOWN→(0,-1), UP→(0,+1), LEFT→(-1,0), RIGHT→(+1,0)
+- If the target cell is empty (not blocked), the agent moves there; otherwise the agent stays in place
+- There is no separate TURN action; every directional action both sets direction and attempts to move
 next_to(self, i_kind) → bool
 Inputs
 - self
@@ -247,7 +252,7 @@ Data Attributes
 - grid: numpy.ndarray of shape (WIDTH, HEIGHT, n_kinds) (current grid occupancy)
 - inventory: numpy.ndarray of length n_kinds (current counts of each item)
 - pos: tuple(int, int) (agent’s current position)
-- dir: int (agent’s current facing direction)
+- dir: int (agent’s current facing direction, uses same encoding as action indices: DOWN=0, UP=1, LEFT=2, RIGHT=3)
 - _cached_features_dict: dict or None (cache for computed feature slices)
 - _cached_features: numpy.ndarray or None (cache for flattened feature vector)
 ---

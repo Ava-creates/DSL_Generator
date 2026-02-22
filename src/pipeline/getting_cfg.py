@@ -116,9 +116,10 @@ Return three fenced code blocks:
 ```
 **CRITICAL**: You MUST include ALL terminal functions that appear in your CFG productions. Every function name that appears at the start of a statement production (e.g., ACTION1, ACTION2, ACTION3 in `statement ::= ACTION1 LPAR PARAM RPAR | ACTION2 LPAR PARAM RPAR | ACTION3`) MUST have an entry in this JSON dictionary. Do not omit any terminal functions - completeness is essential.
 
-Each description MUST be detailed and include ALL of the following:
-- **What the function does** (high-level purpose)
-- **Behavioral details**: how the function should work step by step — e.g., how it navigates, what state it reads, what conditions it checks
+Each description should state the function's PURPOSE and INTENT only:
+- **What the function achieves** (high-level goal, e.g., "picks up an item", "moves the agent forward")
+- **What arguments it takes and what they mean**
+- Do NOT describe implementation mechanics, step-by-step behavior, or make assumptions about how the environment executes the action (e.g., do NOT claim specific position/direction changes, do NOT assume what low-level actions exist). The execution semantics will be determined by the actual environment code, not by this description.
 
 3. **DSL example block** (labeled `dsl` or `example`):
 ```dsl
