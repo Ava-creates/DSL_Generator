@@ -32,14 +32,10 @@ Do NOT place boundary items in the grid; boundaries are added automatically.
 The agent's init_pos must be on an empty cell (no item there).
 The grid and inventory should comply with the task requirement to be valid.
 Use the simplest setup that isolates the function under test.
-Make sure the generated test cases cover diverse situations, including corner cases.
-If the function has arguments, generate cases with diverse argument values. Write pass_check so that the expected outcome reflects the argument values when applicable.
-Here are existing test cases -
+Generate exactly ONE test case as a single JSON object.
+If the function has arguments, write pass_check so that the expected outcome reflects the argument values.
 <<EXISTING_CASES>>
-
-
-
-Try to make more diverse test cases different from the existing ones
+If existing test cases are listed above, generate a test case that is DIFFERENT from all of them — use different arg_values, init_pos, init_dir, or grid layout. If no existing cases are listed, generate a straightforward test case that clearly verifies the function's core behavior.
 Decide whether prerequisites (primitives and crafted items) should be on the grid or in inventory based on
 what the function is supposed to do
 Ensure the chosen task is actually satisfiable:
