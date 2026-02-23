@@ -730,4 +730,49 @@ location constraints.
 - **GO** (LPAR LOCATION RPAR): Travel directly to a named location such as a workshop.  
 - **USE_TOOL** (LPAR ITEM RPAR): Apply a tool (e.g., axe, shears) without specifying a separate target.  
 - **USE_TOOL** (LPAR ITEM COMMA ITEM RPAR): Apply a tool to a specific target item (e.g., use shears on stick).  
-- **CRAFT** (LPAR ITEM RPAR): Create the specified item at the current location, consuming required ingredients as defined in the recipes.
+- **CRAFT** (LPAR ITEM RPAR): Create the specified item at the current location, consuming required ingredients as defined in the recipes.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE_FORWARD
+                |  TURN_LEFT
+                |  TURN_RIGHT
+                |  PICKUP LPAR ITEM RPAR
+                |  COLLECT LPAR ITEM RPAR
+                |  USE_TOOL LPAR TOOL COMMA OBSTACLE RPAR
+                |  CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                |  AXE | SLINGSHOT | ARROW | GOLDARROW | BRIDGE
+                |  BUNDLE | HAMMER | KNIFE | BED | SHEARS
+                |  LADDER | BOW | BENCH | FLAG | PLANK | CLOTH
+                |  ROPE | STICK
+
+TOOL           ::= AXE | HAMMER | KNIFE | BOW | SHEARS | LADDER
+
+OBSTACLE       ::= ROCK_OBSTACLE | WATER_OBSTACLE | BOUNDARY_OBSTACLE | STONE_OBSTACLE
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+SEMICOLON      ::= ';'
+COMMA          ::= ','
+LPAR           ::= '('
+RPAR           ::= ')'
+The grammar defines a `program` as a sequence of one or more `statement`s separated by semicolons.  
+Each `statement` is a concrete action that the agent can perform in the environment:
+
+* **Movement** – `MOVE_FORWARD`, `TURN_LEFT`, `TURN_RIGHT` change the agent’s position or orientation.  
+* **Resource acquisition** – `PICKUP` and the newly added `COLLECT` allow the agent to obtain raw resources (iron, grass, wood, rock, gold, gem) or any other item that may be lying in the world. Both actions take a single `ITEM` argument.  
+* **Tool usage** – `USE_TOOL` applies a `TOOL` to an `OBSTACLE`, modelling interactions such as chopping a tree or breaking a rock.  
+* **Crafting** – `CRAFT` creates a new `ITEM` at a specific `WORKSHOP`. The recipe information (required inputs and workshop location) is external to the grammar; the grammar only provides the syntactic form for invoking a craft operation.
+
+The non‑terminal `ITEM` enumerates every object that appears in the domain’s primitive set or in any recipe, ensuring that the planner can reference any needed material or product. `TOOL`, `OBSTACLE`, and `WORKSHOP` enumerate the valid identifiers for tools, obstacles, and workshop locations, respectively.  
+
+Punctuation symbols (`SEMICOLON`, `COMMA`, `LPAR`, `RPAR`) are defined as quoted single characters, satisfying the required format for terminal symbols.- **MOVE_FORWARD**: Advances the agent one step forward in the direction it is currently facing.  
+- **TURN_LEFT**: Rotates the agent 90° counter‑clockwise without changing its position.  
+- **TURN_RIGHT**: Rotates the agent 90° clockwise without changing its position.  
+- **PICKUP** `(ITEM)`: Picks up an item that is directly on the agent’s current tile.  
+- **COLLECT** `(ITEM)`: Gathers a raw resource (e.g., iron, wood, grass, gold, gem) from the environment; used when the task requires obtaining basic materials.  
+- **USE_TOOL** `(TOOL, OBSTACLE)`: Applies a specified tool to an obstacle, enabling actions such as chopping, cutting, or breaking.  
+- **CRAFT** `(ITEM, WORKSHOP)`: Initiates the crafting of an item at a designated workshop, following the domain’s recipes.

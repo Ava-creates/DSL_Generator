@@ -374,7 +374,6 @@ This is just an example, do not use the example function.
       break
 
 The individual functions cannot call other functions of the cfg. They are completely independent of each other.
-Avoid adding fallbacks assumed you get the a validated grid always so no fallbacks required.
 CRITICAL: The function generated MUST use the arguments passed to it.
 ## Return only the python code
 '''

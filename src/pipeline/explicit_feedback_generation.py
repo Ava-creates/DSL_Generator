@@ -415,7 +415,7 @@ print(evaluate())
                 print("actions_count:", actions_count)
                 # if grid_markdown:
                 if actions_count > 0 :
-                  total_reward +=actions_count *0.01
+                  total_reward +=actions_count *0.001
                 #     print("grid_markdown:\n", grid_markdown)
 
                 # Track explicit feedback interactions if tracker is available

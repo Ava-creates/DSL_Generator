@@ -1,6 +1,8 @@
 #stuff i added
 keys.txt
 hello.sh
+.cursor/
+.agents/
 experiments/*
 scripts/log/*
 scripts/log_archive/*
