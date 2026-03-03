@@ -264,7 +264,7 @@ def create_test_environment_for_item(
         # Create environment with a task related to this item
         task_name = f"make[{item_name}]"
         env_sampler = env_factory_module.EnvironmentFactory(
-            recipes_path, hints_path, 7, max_steps=300,
+            recipes_path, hints_path, 7, max_steps=400,
             reuse_environments=False, visualise=False
         )
         env = env_sampler.sample_environment(task_name=task_name)

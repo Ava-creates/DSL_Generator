@@ -48,7 +48,7 @@ def main():
     # Load CFG
     cfg_path = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
     if not os.path.exists(cfg_path):
-        print(f"✗ CFG file not found: {cfg_path}", file=sys.stderr)
+        print(f" CFG file not found: {cfg_path}", file=sys.stderr)
         return 1
     
     with open(cfg_path, 'r', encoding='utf-8') as f:
@@ -57,11 +57,11 @@ def main():
     terminals = cfg_data.get("terminals", {})
     
     if not cfg or not terminals:
-        print("✗ Invalid CFG data", file=sys.stderr)
+        print(" Invalid CFG data", file=sys.stderr)
         return 1
     
     if args.function_name not in terminals:
-        print(f"✗ Function {args.function_name} not found in terminals", file=sys.stderr)
+        print(f" Function {args.function_name} not found in terminals", file=sys.stderr)
         return 1
     
     description = terminals[args.function_name]
@@ -69,7 +69,7 @@ def main():
     # Load file generation status to get func_files and func_init_files
     file_gen_status_path = os.path.join(args.experiment_dir, "stage_file_generation_status.json")
     if not os.path.exists(file_gen_status_path):
-        print(f"✗ File generation status not found: {file_gen_status_path}", file=sys.stderr)
+        print(f" File generation status not found: {file_gen_status_path}", file=sys.stderr)
         return 1
     
     with open(file_gen_status_path, 'r') as f:
@@ -79,7 +79,7 @@ def main():
     func_init_files = file_gen_status.get("func_init_files", {})
     
     if args.function_name not in func_files or args.function_name not in func_init_files:
-        print(f"✗ Function files not found for {args.function_name}", file=sys.stderr)
+        print(f" Function files not found for {args.function_name}", file=sys.stderr)
         return 1
     
     func_file = func_files[args.function_name]
@@ -87,7 +87,7 @@ def main():
     
     # Load specification
     if not os.path.exists(args.spec_file):
-        print(f"✗ Specification file not found: {args.spec_file}", file=sys.stderr)
+        print(f" Specification file not found: {args.spec_file}", file=sys.stderr)
         return 1
     
     with open(args.spec_file, 'r', encoding='utf-8') as f:
@@ -105,9 +105,9 @@ def main():
                 tensor_parallel_size=4,
                 gpu_memory_utilization=0.85  # Use 85% of GPU memory to leave headroom
             )
-            print("✓ Shared vLLM instance created")
+            print(" Shared vLLM instance created")
         except Exception as e:
-            print(f"⚠ Warning: Could not create shared vLLM instance: {e}")
+            print(f" Warning: Could not create shared vLLM instance: {e}")
             shared_vllm = None
     
     # Configure FunSearch - match the original configuration pattern
@@ -173,7 +173,7 @@ def main():
             spec_file=args.spec_file,
             experiment_dir=results_dir
         )
-        print(f"[{args.function_name}] ✓ Completed FunSearch")
+        print(f"[{args.function_name}]  Completed FunSearch")
         
         # Get total funsearch steps after completion
         final_funsearch_steps = results_tracker.interactions.get("funsearch", 0)
@@ -213,7 +213,7 @@ def main():
         return 0
     except Exception as e:
         error_msg = str(e)
-        print(f"[{args.function_name}] ✗ Error: {error_msg}", file=sys.stderr)
+        print(f"[{args.function_name}]  Error: {error_msg}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         

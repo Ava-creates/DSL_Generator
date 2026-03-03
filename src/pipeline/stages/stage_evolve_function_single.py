@@ -43,7 +43,7 @@ def main():
     # Load CFG
     cfg_path = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
     if not os.path.exists(cfg_path):
-        print(f"✗ CFG file not found: {cfg_path}", file=sys.stderr)
+        print(f" CFG file not found: {cfg_path}", file=sys.stderr)
         return 1
     
     with open(cfg_path, 'r', encoding='utf-8') as f:
@@ -52,7 +52,7 @@ def main():
     terminals = cfg_data.get("terminals", {})
     
     if not cfg:
-        print("✗ Invalid CFG data: missing CFG string", file=sys.stderr)
+        print(" Invalid CFG data: missing CFG string", file=sys.stderr)
         return 1
     
     # Ensure terminals match CFG (re-extract if missing or incomplete)
@@ -63,17 +63,17 @@ def main():
     terminals = ensure_terminals_match_cfg(cfg, terminals, old_terminals=old_terminals, shared_vllm=None)
     
     if not terminals:
-        print("✗ Invalid CFG data: no terminals found after extraction", file=sys.stderr)
+        print(" Invalid CFG data: no terminals found after extraction", file=sys.stderr)
         return 1
     
     if args.function_name not in terminals:
-        print(f"✗ Function {args.function_name} not found in terminals", file=sys.stderr)
+        print(f" Function {args.function_name} not found in terminals", file=sys.stderr)
         print(f"  Available terminals: {list(terminals.keys())}", file=sys.stderr)
         return 1
     
     # Load specification
     if not os.path.exists(args.spec_file):
-        print(f"✗ Specification file not found: {args.spec_file}", file=sys.stderr)
+        print(f" Specification file not found: {args.spec_file}", file=sys.stderr)
         return 1
     
     with open(args.spec_file, 'r', encoding='utf-8') as f:
@@ -119,10 +119,10 @@ def main():
                 tensor_parallel_size=4,
                 gpu_memory_utilization=0.75  # Reduced from 0.85 to leave more headroom for parallel jobs
             )
-            print("✓ Shared vLLM instance created - will be reused for both FunSearch and explicit feedback")
+            print(" Shared vLLM instance created - will be reused for both FunSearch and explicit feedback")
         except RuntimeError as e:
             error_msg = str(e)
-            print(f"✗ ERROR: Could not create shared vLLM instance: {error_msg}", file=sys.stderr)
+            print(f" ERROR: Could not create shared vLLM instance: {error_msg}", file=sys.stderr)
             
             # Provide diagnostic information
             try:
@@ -148,7 +148,7 @@ def main():
             print(f"  Shared instance is required to avoid GPU memory issues when running FunSearch and explicit feedback sequentially", file=sys.stderr)
             return 1
         except Exception as e:
-            print(f"✗ ERROR: Unexpected error creating shared vLLM instance: {e}", file=sys.stderr)
+            print(f" ERROR: Unexpected error creating shared vLLM instance: {e}", file=sys.stderr)
             import traceback
             traceback.print_exc(file=sys.stderr)
             return 1
@@ -192,9 +192,9 @@ def main():
                 json.dump(stage_status, f, indent=2)
         
         if evolved:
-            print(f"[{args.function_name}] ✓ Function evolution completed")
+            print(f"[{args.function_name}]  Function evolution completed")
         else:
-            print(f"[{args.function_name}] ✗ Function evolution failed or produced no results")
+            print(f"[{args.function_name}]  Function evolution failed or produced no results")
         
         # Clean up vLLM instance to free GPU memory before chaining
         if shared_vllm is not None:
@@ -207,9 +207,9 @@ def main():
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                     torch.cuda.synchronize()
-                print("✓ GPU memory freed")
+                print(" GPU memory freed")
             except Exception as cleanup_error:
-                print(f"  ⚠ Warning: Error during cleanup: {cleanup_error}")
+                print(f"   Warning: Error during cleanup: {cleanup_error}")
         
         # Decrement function evolution counter and check if we should trigger funsearch
         print(f"\n[Chaining] Decrementing function evolution count...")
@@ -255,7 +255,7 @@ def main():
         return 0 if evolved else 1
     except Exception as e:
         error_msg = str(e)
-        print(f"[{args.function_name}] ✗ Error: {error_msg}", file=sys.stderr)
+        print(f"[{args.function_name}]  Error: {error_msg}", file=sys.stderr)
         
         # Clean up vLLM instance to free GPU memory even on error
         if shared_vllm is not None:
@@ -268,9 +268,9 @@ def main():
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                     torch.cuda.synchronize()
-                print("✓ GPU memory freed")
+                print(" GPU memory freed")
             except Exception as cleanup_error:
-                print(f"  ⚠ Warning: Error during cleanup: {cleanup_error}")
+                print(f"   Warning: Error during cleanup: {cleanup_error}")
         import traceback
         traceback.print_exc()
         

@@ -119,7 +119,7 @@ def run_unified_pipeline(
                 print(f"  Checkpoint type: DSL Evolution")
             print(f"  Restored parameters from checkpoint")
         else:
-            print(f"  ⚠ Checkpoint file not found, starting from beginning")
+            print(f"   Checkpoint file not found, starting from beginning")
     
     # Create shared vLLM instance if not provided
     if shared_vllm is None:
@@ -127,9 +127,9 @@ def run_unified_pipeline(
             try:
                 print("\n[Setup] Initializing shared vLLM instance...")
                 shared_vllm = vLLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
-                print("✓ Shared vLLM instance created")
+                print(" Shared vLLM instance created")
             except Exception as e:
-                print(f"⚠ Warning: Could not create shared vLLM instance: {e}")
+                print(f" Warning: Could not create shared vLLM instance: {e}")
                 print("  Will create individual instances as needed")
                 shared_vllm = None
         else:
@@ -159,10 +159,10 @@ def run_unified_pipeline(
     )
     
     if not success or not cfg or not terminals:
-        print("✗ Failed to get valid CFG. Cannot proceed.")
+        print(" Failed to get valid CFG. Cannot proceed.")
         return 1
     
-    print(f"\n✓ Got CFG with {len(terminals)} terminal functions")
+    print(f"\n Got CFG with {len(terminals)} terminal functions")
     
     # Load recipes for DSL evolution
     with open(recipes_path, 'r') as f:
@@ -192,7 +192,7 @@ def run_unified_pipeline(
         }
         with open(checkpoint_path, 'w') as f:
             json.dump(checkpoint_data, f, indent=2)
-        print(f"  ✓ Saved checkpoint at start of DSL round {dsl_round + 1}")
+        print(f"   Saved checkpoint at start of DSL round {dsl_round + 1}")
         
         # Check if we're resuming from a function evolution checkpoint
         # If so, skip CFG implementation and testing, go straight to function evolution
@@ -230,7 +230,7 @@ def run_unified_pipeline(
             )
                 
             if not implementation_success:
-                print("✗ CFG implementation failed. Stopping pipeline.")
+                print(" CFG implementation failed. Stopping pipeline.")
                 return 1
             
             # Step 2b: Test CFG on tasks
@@ -302,7 +302,7 @@ def run_unified_pipeline(
                 
                 return 0
             
-            print(f"\n  ✗ {len(failing_tasks)}/{len(tasks)} tasks failed: {failing_tasks}")
+            print(f"\n   {len(failing_tasks)}/{len(tasks)} tasks failed: {failing_tasks}")
         
         # Update checkpoint with failing tasks before function evolution
         checkpoint_path = os.path.join(experiment_dir, "checkpoint.json")
@@ -348,14 +348,14 @@ def run_unified_pipeline(
                 checkpoint_data["checkpoint_type"] = "function_evolution"  # Mark as function evolution checkpoint
                 with open(checkpoint_path, 'w') as f:
                     json.dump(checkpoint_data, f, indent=2)
-                print(f"  ✓ Saved checkpoint at start of function evolution round {func_round + 1}")
+                print(f"   Saved checkpoint at start of function evolution round {func_round + 1}")
             
             # Load specification
             if os.path.exists(spec_file):
                 with open(spec_file, 'r') as f:
                     specification = f.read()
             else:
-                print("  ⚠ Specification file not found")
+                print("   Specification file not found")
                 specification = ""
             
             # Evolve functions with failing tasks
@@ -374,7 +374,7 @@ def run_unified_pipeline(
             )
             
             if not evolved:
-                print("  ⚠ Function evolution failed or produced no results")
+                print("   Function evolution failed or produced no results")
                 break
             
             # Re-test tasks
@@ -398,7 +398,7 @@ def run_unified_pipeline(
             
             print(f"\n  Task Results after function evolution round {func_round + 1}:")
             for task, success in task_results.items():
-                status = "✓" if success else "✗"
+                status = "" if success else ""
                 print(f"    {status} {task}")
             
             # Save evolution metrics for this function evolution round
@@ -439,7 +439,7 @@ def run_unified_pipeline(
             if all_solved:
                 print(f"\n  All tasks solved after function evolution round {func_round + 1}!")
                 print(f"\n{'='*80}")
-                print("✓ ALL TASKS SOLVED!")
+                print(" ALL TASKS SOLVED!")
                 print(f"{'='*80}")
                 
                 # Print summary (plots already generated above)
@@ -483,16 +483,16 @@ def run_unified_pipeline(
                 # Check if evolution was successful and CFG is different
                 if attempt_success and new_cfg != cfg:
                     dsl_success = True
-                    print(f"\n  ✓ DSL evolved successfully on attempt {dsl_attempt}")
+                    print(f"\n   DSL evolved successfully on attempt {dsl_attempt}")
                     break
                 else:
                     if attempt_success:
-                        print(f"  ⚠ Attempt {dsl_attempt}: Evolved CFG is same as original, retrying...")
+                        print(f"   Attempt {dsl_attempt}: Evolved CFG is same as original, retrying...")
                     else:
-                        print(f"  ⚠ Attempt {dsl_attempt}: DSL evolution failed, retrying...")
+                        print(f"   Attempt {dsl_attempt}: DSL evolution failed, retrying...")
             
             if dsl_success and new_cfg != cfg:
-                print(f"\n  ✓ DSL evolved successfully")
+                print(f"\n   DSL evolved successfully")
                 cfg = new_cfg
                 terminals = new_terminals
                 
@@ -522,7 +522,7 @@ def run_unified_pipeline(
                 }
                 with open(checkpoint_path, 'w') as f:
                     json.dump(checkpoint_data, f, indent=2)
-                print(f"  ✓ Saved checkpoint to {checkpoint_path}")
+                print(f"   Saved checkpoint to {checkpoint_path}")
                 
                 # Generate plots before exiting (to show progress so far)
                 print("\n[Generating Plots] Creating reward vs interactions plots...")
@@ -550,7 +550,7 @@ def run_unified_pipeline(
                     # Also generate separate plots per task from evolution metrics
                     results_tracker.plot_tasks_separately_from_metrics(dsl_round=dsl_round, func_evolution_round=None)
             else:
-                print(f"\n  ✗ DSL evolution failed after {max_dsl_retries} attempts")
+                print(f"\n   DSL evolution failed after {max_dsl_retries} attempts")
                 print(f"  Could not generate a valid, different CFG after {max_dsl_retries} retries")
                 
                 # Generate plots even if DSL evolution failed
@@ -566,12 +566,12 @@ def run_unified_pipeline(
                     print(f"  Reached maximum DSL evolution rounds")
         else:
             # This shouldn't happen, but just in case
-            print(f"\n  ✓ All tasks solved (should have returned earlier)")
+            print(f"\n   All tasks solved (should have returned earlier)")
             return 0
     
     # If we get here, we've exhausted all evolution rounds
     print(f"\n{'='*80}")
-    print("✗ PIPELINE COMPLETED WITHOUT SOLVING ALL TASKS")
+    print(" PIPELINE COMPLETED WITHOUT SOLVING ALL TASKS")
     print(f"{'='*80}")
     print(f"Remaining failing tasks: {failing_tasks}")
     return 1
@@ -673,7 +673,7 @@ def main():
                 tasks = config.get("tasks", [])
                 print(f"Loaded {len(tasks)} tasks from {tasks_file}")
         else:
-            print(f"✗ Error: Tasks file not found: {tasks_file}")
+            print(f" Error: Tasks file not found: {tasks_file}")
             return 1
     
     return run_unified_pipeline(

@@ -122,7 +122,7 @@ def main():
       inv_nonzero = None
     print(f"[{task_name}] pos={pos} dir={direction} inv={inv_nonzero}")
   except Exception as e:
-    print(f"[{task_name}] ⚠ Could not hash grid: {e}")
+    print(f"[{task_name}]  Could not hash grid: {e}")
   
   run_loop(env, 100 * 3, visualise=visualise)
 

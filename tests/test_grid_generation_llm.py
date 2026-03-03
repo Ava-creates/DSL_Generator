@@ -16,7 +16,7 @@ def main():
     try:
         from vllm import LLM as vLLM
     except Exception as e:
-        print(f"⚠ vLLM import failed: {e}")
+        print(f" vLLM import failed: {e}")
         return
 
     # Mirror the model path used elsewhere; adjust if needed for your node.
@@ -24,7 +24,7 @@ def main():
     try:
         shared_vllm = vLLM(model=model_path, tensor_parallel_size=4)
     except Exception as e:
-        print(f"⚠ Could not create vLLM instance: {e}")
+        print(f" Could not create vLLM instance: {e}")
         return
 
     output_path = "experiments/experiment_test/grids/turn_dsl0_case0.json"
@@ -44,7 +44,7 @@ def main():
         attempts=5,
     )
 
-    print(f"✓ Generated spec at {output_path}")
+    print(f" Generated spec at {output_path}")
     print(spec)
 
 

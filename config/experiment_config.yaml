@@ -1,5 +1,7 @@
 experiment_dir:
 spec_file: prompt_specifications/specification_with_updated_nld.txt
+failure_analysis_prompt: prompt_specifications/failure_analysis.txt
+cfg_evolution_prompt: prompt_specifications/cfg_evolution.txt
 tasks:
   - get[gem]
   - get[iron]
@@ -19,7 +21,7 @@ tasks:
   - make[ladder]
   - make[goldarrow]
 max_dsl_evolutions: 2
-max_function_evolutions: 1
+max_function_evolutions: 0
 total_samples: 1000
 num_explicit_feedback_iterations: 30
 max_attempts: 30

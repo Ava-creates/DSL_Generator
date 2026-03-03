@@ -131,7 +131,7 @@ Description:"""
             if description and len(description) > 10:  # Valid description
                 return description
         except Exception as e:
-            print(f"  ⚠ LLM description generation failed for {func_name}: {e}, using fallback")
+            print(f"   LLM description generation failed for {func_name}: {e}, using fallback")
     
     # Fallback: pattern-based generation
     # Convert function name to a readable verb form
@@ -379,7 +379,7 @@ def ensure_terminals_match_cfg(cfg: str, terminals: Dict[str, str], old_terminal
                     # Try to get description from old_terminals first (preserve across evolutions)
                     if old_terminals and func_name in old_terminals:
                         updated_terminals[func_name] = old_terminals[func_name]
-                        print(f"  ✓ Preserved description for {func_name} from previous CFG")
+                        print(f"   Preserved description for {func_name} from previous CFG")
                     else:
                         functions_needing_descriptions.append(func_name)
             
@@ -396,32 +396,32 @@ def ensure_terminals_match_cfg(cfg: str, terminals: Dict[str, str], old_terminal
                             shared_vllm=shared_vllm
                         )
                         updated_terminals[func_name] = description
-                        print(f"  ✓ Generated LLM description for {func_name}")
+                        print(f"   Generated LLM description for {func_name}")
                     except Exception as e:
-                        print(f"  ⚠ LLM description generation failed for {func_name}: {e}, using pattern-based fallback")
+                        print(f"   LLM description generation failed for {func_name}: {e}, using pattern-based fallback")
                         # Fall back to pattern-based generation
                         description = _generate_description_from_name(func_name, cfg=cfg, shared_vllm=None)
                         updated_terminals[func_name] = description
-                        print(f"  ✓ Generated pattern-based description for {func_name}")
+                        print(f"   Generated pattern-based description for {func_name}")
             else:
                 # Use pattern-based generation (no LLM available or no functions needing descriptions)
                 for func_name in functions_needing_descriptions:
                     description = _generate_description_from_name(func_name, cfg=cfg, shared_vllm=None)
                     updated_terminals[func_name] = description
-                    print(f"  ✓ Generated pattern-based description for {func_name}")
+                    print(f"   Generated pattern-based description for {func_name}")
             
             # Remove any terminals that aren't in the CFG (cleanup)
             terminals_to_remove = [name for name in updated_terminals.keys() if name not in all_func_names]
             for name in terminals_to_remove:
                 del updated_terminals[name]
-                print(f"  ✓ Removed {name} (not in CFG)")
+                print(f"   Removed {name} (not in CFG)")
             
             return updated_terminals
         else:
             # If no functions found, return terminals as-is
             return terminals
     except Exception as e:
-        print(f"  ⚠ Warning: Could not extract terminals from CFG: {e}")
+        print(f"   Warning: Could not extract terminals from CFG: {e}")
         return terminals
 
 
@@ -579,7 +579,7 @@ def check_final_functions_exist(experiment_dir: str, terminals: Dict[str, str],
                 empty_or_invalid.append(func_name)
                 
         except Exception as e:
-            print(f"  ⚠ Error reading {func_file}: {e}")
+            print(f"   Error reading {func_file}: {e}")
             empty_or_invalid.append(func_name)
     
     all_exist = len(missing) == 0 and len(empty_or_invalid) == 0
@@ -663,7 +663,7 @@ def load_final_functions(experiment_dir: str, terminals: Optional[Dict[str, str]
                         else:
                             print(f"  [DEBUG] {func_name}: File {os.path.basename(func_file)} is empty")
                 except Exception as e:
-                    print(f"  ⚠ Error loading {func_file}: {e}")
+                    print(f"   Error loading {func_file}: {e}")
     else:
         # Load all .py files in the directory
         for func_file in glob.glob(os.path.join(final_functions_dir, "*.py")):
@@ -675,13 +675,13 @@ def load_final_functions(experiment_dir: str, terminals: Optional[Dict[str, str]
                         functions[func_name] = content
                         loaded_files.add(func_name)
             except Exception as e:
-                print(f"  ⚠ Error loading {func_file}: {e}")
+                print(f"   Error loading {func_file}: {e}")
     
     if terminals and len(functions) < len(terminals):
         missing = set(sanitize_function_name(f) for f in terminals.keys()) - loaded_files
         if missing:
             error_msg = (
-                f"\n✗ CRITICAL ERROR: Could not load {len(missing)} required function files:\n"
+                f"\n CRITICAL ERROR: Could not load {len(missing)} required function files:\n"
                 f"  Missing functions: {sorted(missing)}\n"
                 f"  Expected dsl_round={dsl_round}, func_evolution_round={func_evolution_round}\n"
                 f"  Final functions directory: {final_functions_dir}\n"
@@ -735,7 +735,7 @@ def synthesize_and_test_programs(
                 with open(cfg_txt_path, 'r') as f:
                     cfg = f.read()
             else:
-                print("⚠ Warning: Could not find CFG file, using default")
+                print(" Warning: Could not find CFG file, using default")
                 cfg = ""
     else:
         # Check if it's a JSON file
@@ -767,7 +767,7 @@ def synthesize_and_test_programs(
         raise
     
     if not final_functions:
-        error_msg = "✗ CRITICAL ERROR: No final functions found! Cannot synthesize programs."
+        error_msg = " CRITICAL ERROR: No final functions found! Cannot synthesize programs."
         print(error_msg)
         raise FileNotFoundError(error_msg)
     
@@ -786,7 +786,7 @@ def synthesize_and_test_programs(
             llm = LLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
             params = SamplingParams(temperature=0.7, max_tokens=25000)
         except Exception as e:
-            print(f"✗ Error initializing LLM: {e}")
+            print(f" Error initializing LLM: {e}")
             return {task: False for task in tasks}
     
     def _synthesize_single_task(task: str) -> Tuple[str, bool]:
@@ -813,7 +813,7 @@ def synthesize_and_test_programs(
                 test_env._current_state.pos
             )
         except Exception as e:
-            print(f"[{task}] ⚠ Could not generate grid markdown: {e}")
+            print(f"[{task}]  Could not generate grid markdown: {e}")
             markdown = "Grid state unavailable"
         
         # Try to synthesize a program that solves the task
@@ -832,7 +832,7 @@ def synthesize_and_test_programs(
                     test_env._current_state.pos
                 )
             except Exception as e:
-                print(f"[{task}] ⚠ Could not generate grid markdown: {e}")
+                print(f"[{task}]  Could not generate grid markdown: {e}")
                 markdown = "Grid state unavailable"
             try:
                 import hashlib
@@ -860,7 +860,7 @@ def synthesize_and_test_programs(
                     )
                     f.write(markdown + "\n\n")
             except Exception as e:
-                print(f"[{task}] ⚠ Could not hash grid: {e}")
+                print(f"[{task}]  Could not hash grid: {e}")
             # Prepare example program for prompt
             # If no example provided, generate a simple example using available functions
             if cfg_example:
@@ -979,12 +979,14 @@ Also always ensure that the the information provided in this prompt is facts and
                     success = result.get("success", False)
                     reward = result.get("total_reward", 0.0)
                     steps = result.get("steps", 0)  # Number of environment steps taken
+                    inventory_trace = result.get("inventory_trace", [])
                 else:
                     # Fallback: simple test
-                    print(f"[{task}] ⚠ CFGEvaluator not available, using fallback")
+                    print(f"[{task}]  CFGEvaluator not available, using fallback")
                     success = False
                     reward = 0.0
                     steps = 0
+                    inventory_trace = []
                 
                 # Track result if tracker is available
                 if results_tracker is not None:
@@ -995,22 +997,23 @@ Also always ensure that the the information provided in this prompt is facts and
                         reward=reward,
                         steps=steps,
                         func_evolution_round=func_evolution_round,
-                        success=success
+                        success=success,
+                        inventory_trace=inventory_trace
                     )
                 
                 if success:
-                    print(f"[{task}] ✓ Task solved with program: {program}")
+                    print(f"[{task}]  Task solved with program: {program}")
                     return (task, True)
                 else:
                     programs_tried.append(program)
                     print(f"[{task}] Attempt {attempt + 1}: Program failed - {program}")
                     
             except Exception as e:
-                print(f"[{task}] ⚠ Error in attempt {attempt + 1}: {e}")
+                print(f"[{task}]  Error in attempt {attempt + 1}: {e}")
                 continue
         
         if not success:
-            print(f"[{task}] ✗ Could not be solved after {max_attempts} attempts")
+            print(f"[{task}]  Could not be solved after {max_attempts} attempts")
             return (task, False)
     
     # Run program synthesis sequentially for all tasks
@@ -1124,19 +1127,17 @@ def evolve_functions_with_failing_tasks(
             func_name, description, cfg, specification,
             experiment_dir=experiment_dir,
             dsl_round=dsl_round,
-            func_evolution_round=func_evolution_round,
-            use_llm_evaluation=False,
-            shared_vllm=shared_vllm
+            func_evolution_round=func_evolution_round
         )
         func_files[func_name] = func_file
         updated_prompts.append(func_name)
-        print(f"    ✓ Regenerated prompt: {os.path.basename(func_file)}")
+        print(f"     Regenerated prompt: {os.path.basename(func_file)}")
     
     if not updated_prompts:
-        print("  ✗ No prompts were generated")
+        print("   No prompts were generated")
         return False
     
-    print(f"\n  ✓ Regenerated {len(updated_prompts)} function prompts")
+    print(f"\n   Regenerated {len(updated_prompts)} function prompts")
     
     # Step 2: Load final functions from previous round to use as func_init seed
     print(f"\n  [Step 2] Loading final functions from previous round as seed...")
@@ -1171,9 +1172,9 @@ def evolve_functions_with_failing_tasks(
                 final_func_content = f.read().strip()
             if final_func_content:
                 current_final_functions[func_name] = final_func_content
-                print(f"    ✓ Loaded previous implementation for {func_name} from {os.path.basename(final_func_file)}")
+                print(f"     Loaded previous implementation for {func_name} from {os.path.basename(final_func_file)}")
         else:
-            print(f"    ⚠ No previous implementation found for {func_name}")
+            print(f"     No previous implementation found for {func_name}")
     
     # Step 3: Create func_init files seeded with previous round's final function
     print(f"\n  [Step 3] Creating func_init files with previous round's implementation...")
@@ -1251,23 +1252,23 @@ def evolve_functions_with_failing_tasks(
                     os.makedirs(os.path.dirname(func_init_file), exist_ok=True)
                     with open(func_init_file, 'w', encoding='utf-8') as f:
                         f.write(updated_content)
-                    print(f"    ✓ Created func_init for {func_name} seeded with previous implementation")
+                    print(f"     Created func_init for {func_name} seeded with previous implementation")
                 else:
                     func_init_file = generate_func_init(func_name, terminals[func_name], cfg,
                                                         experiment_dir=experiment_dir,
                                                         dsl_round=dsl_round, func_evolution_round=func_evolution_round)
-                    print(f"    ⚠ Could not parse function, generated stub for {func_name}")
+                    print(f"     Could not parse function, generated stub for {func_name}")
             else:
                 func_init_file = generate_func_init(func_name, terminals[func_name], cfg,
                                                     experiment_dir=experiment_dir,
                                                     dsl_round=dsl_round, func_evolution_round=func_evolution_round)
-                print(f"    ⚠ Could not find function def, generated stub for {func_name}")
+                print(f"     Could not find function def, generated stub for {func_name}")
         else:
             # No previous implementation, generate stub
             func_init_file = generate_func_init(func_name, terminals[func_name], cfg,
                                                 experiment_dir=experiment_dir,
                                                 dsl_round=dsl_round, func_evolution_round=func_evolution_round)
-            print(f"    ⚠ No previous implementation, generated stub for {func_name}")
+            print(f"     No previous implementation, generated stub for {func_name}")
         
         func_init_files[func_name] = func_init_file
     
@@ -1287,14 +1288,14 @@ def evolve_functions_with_failing_tasks(
                     gpu_memory_utilization=0.6  # Reduced to 60% to handle parallel jobs
                 )
                 funsearch_vllm_instance = shared_vllm  # Track this instance for cleanup
-                print("  ✓ Created vLLM instance for funsearch")
+                print("   Created vLLM instance for funsearch")
             else:
-                print("  ⚠ vLLM not available, funsearch will create its own instance")
+                print("   vLLM not available, funsearch will create its own instance")
         except Exception as e:
-            print(f"  ⚠ Could not create vLLM instance: {e}")
+            print(f"   Could not create vLLM instance: {e}")
             shared_vllm = None
     else:
-        print("  ✓ Using provided shared vLLM instance for funsearch")
+        print("   Using provided shared vLLM instance for funsearch")
     
     # Configure FunSearch with parallelization
     # Match evaluators to samples_per_prompt for clean parallelization
@@ -1335,11 +1336,11 @@ def evolve_functions_with_failing_tasks(
                 spec_file=spec_file,
                 experiment_dir=results_dir
             )
-            print(f"    [{func_name}] ✓ Completed FunSearch evolution")
+            print(f"    [{func_name}]  Completed FunSearch evolution")
             return func_name, "success", None
         except Exception as e:
             error_msg = str(e)
-            print(f"    [{func_name}] ✗ Error: {error_msg}", file=sys.stderr)
+            print(f"    [{func_name}]  Error: {error_msg}", file=sys.stderr)
             return func_name, "error", error_msg
     
     # Prepare all function data for parallel execution
@@ -1465,10 +1466,10 @@ def evolve_functions_with_failing_tasks(
                     
                     # Verify the content before writing
                     if not updated_content or updated_content.strip() == '':
-                        print(f"    ⚠ WARNING: Updated content is empty for {func_name}!")
+                        print(f"     WARNING: Updated content is empty for {func_name}!")
                         raise ValueError("Updated content is empty")
                     
-                    print(f"    ✓ Prepared func_init content ({len(updated_content)} chars)")
+                    print(f"     Prepared func_init content ({len(updated_content)} chars)")
                     
                     # Ensure directory exists
                     os.makedirs(os.path.dirname(func_init_file), exist_ok=True)
@@ -1484,18 +1485,18 @@ def evolve_functions_with_failing_tasks(
                         with open(func_init_file, 'r', encoding='utf-8') as f:
                             written_content = f.read()
                             if written_content.strip() == '':
-                                error_msg = f"✗ CRITICAL: func_init file for {func_name} is empty after write! Pipeline stopped."
+                                error_msg = f" CRITICAL: func_init file for {func_name} is empty after write! Pipeline stopped."
                                 print(f"    {error_msg}")
                                 raise RuntimeError(error_msg)
                             elif 'return []' in written_content and len(written_content.strip()) < 50:
-                                error_msg = f"✗ CRITICAL: func_init file for {func_name} only contains stub (return [])! File was not updated correctly. Pipeline stopped."
+                                error_msg = f" CRITICAL: func_init file for {func_name} only contains stub (return [])! File was not updated correctly. Pipeline stopped."
                                 print(f"    {error_msg}")
                                 print(f"    File content: {repr(written_content[:200])}")
                                 raise RuntimeError(error_msg)
                             else:
-                                print(f"    ✓ Verified: File contains implementation ({len(written_content)} chars)")
+                                print(f"     Verified: File contains implementation ({len(written_content)} chars)")
                         
-                        print(f"    ✓ Created func_init for {func_name} with current implementation (from previous round)")
+                        print(f"     Created func_init for {func_name} with current implementation (from previous round)")
                     else:
                         # Version the file before updating
                         version_file(func_init_file, keep_original=False)
@@ -1508,18 +1509,18 @@ def evolve_functions_with_failing_tasks(
                         with open(func_init_file, 'r', encoding='utf-8') as f:
                             written_content = f.read()
                             if written_content.strip() == '':
-                                error_msg = f"✗ CRITICAL: func_init file for {func_name} is empty after write! Pipeline stopped."
+                                error_msg = f" CRITICAL: func_init file for {func_name} is empty after write! Pipeline stopped."
                                 print(f"    {error_msg}")
                                 raise RuntimeError(error_msg)
                             elif 'return []' in written_content and len(written_content.strip()) < 50:
-                                error_msg = f"✗ CRITICAL: func_init file for {func_name} only contains stub (return [])! File was not updated correctly. Pipeline stopped."
+                                error_msg = f" CRITICAL: func_init file for {func_name} only contains stub (return [])! File was not updated correctly. Pipeline stopped."
                                 print(f"    {error_msg}")
                                 print(f"    File content: {repr(written_content[:200])}")
                                 raise RuntimeError(error_msg)
                             else:
-                                print(f"    ✓ Verified: File contains implementation ({len(written_content)} chars)")
+                                print(f"     Verified: File contains implementation ({len(written_content)} chars)")
                         
-                        print(f"    ✓ Updated func_init body for {func_name} (preserved signature, previous version saved)")
+                        print(f"     Updated func_init body for {func_name} (preserved signature, previous version saved)")
                 else:
                     # No existing file, write full function (skip docstrings)
                     func_code_lines = func_lines[func_start_idx:body_end_idx]
@@ -1527,7 +1528,7 @@ def evolve_functions_with_failing_tasks(
                     
                     # Verify content before writing
                     if not func_code or func_code.strip() == '':
-                        print(f"    ⚠ WARNING: Extracted function code is empty for {func_name}!")
+                        print(f"     WARNING: Extracted function code is empty for {func_name}!")
                         raise ValueError("Extracted function code is empty")
                     
                     # Ensure directory exists
@@ -1540,20 +1541,20 @@ def evolve_functions_with_failing_tasks(
                     with open(func_init_file, 'r', encoding='utf-8') as f:
                         written_content = f.read()
                         if written_content.strip() == '':
-                            error_msg = f"✗ CRITICAL: func_init file for {func_name} is empty after write! Pipeline stopped."
+                            error_msg = f" CRITICAL: func_init file for {func_name} is empty after write! Pipeline stopped."
                             print(f"    {error_msg}")
                             raise RuntimeError(error_msg)
                         elif 'return []' in written_content and len(written_content.strip()) < 50:
-                            error_msg = f"✗ CRITICAL: func_init file for {func_name} only contains stub (return [])! File was not updated correctly. Pipeline stopped."
+                            error_msg = f" CRITICAL: func_init file for {func_name} only contains stub (return [])! File was not updated correctly. Pipeline stopped."
                             print(f"    {error_msg}")
                             print(f"    File content: {repr(written_content[:200])}")
                             raise RuntimeError(error_msg)
                         else:
-                            print(f"    ✓ Verified: File contains function implementation ({len(written_content)} chars)")
+                            print(f"     Verified: File contains function implementation ({len(written_content)} chars)")
                     
-                    print(f"    ✓ Created func_init for {func_name} with current implementation")
+                    print(f"     Created func_init for {func_name} with current implementation")
             except Exception as e:
-                print(f"    ⚠ Error extracting function definition for {func_name}: {e}")
+                print(f"     Error extracting function definition for {func_name}: {e}")
                 # Fallback: generate stub
                 func_init_file = generate_func_init(func_name, terminals[func_name], cfg, experiment_dir=experiment_dir,
                                                    dsl_round=dsl_round, func_evolution_round=func_evolution_round)
@@ -1562,9 +1563,9 @@ def evolve_functions_with_failing_tasks(
             if not os.path.exists(func_init_file):
                 func_init_file = generate_func_init(func_name, terminals[func_name], cfg, experiment_dir=experiment_dir,
                                                    dsl_round=dsl_round, func_evolution_round=func_evolution_round)
-                print(f"    ⚠ No current implementation found, generated stub for {func_name}")
+                print(f"     No current implementation found, generated stub for {func_name}")
             else:
-                print(f"    ⚠ Using existing func_init for {func_name} (no update available)")
+                print(f"     Using existing func_init for {func_name} (no update available)")
         
         func_init_files[func_name] = func_init_file
     
@@ -1590,11 +1591,11 @@ def evolve_functions_with_failing_tasks(
                 spec_file=spec_file if spec_file else None,
                 experiment_dir=results_dir
             )
-            print(f"    [{func_name}] ✓ Completed FunSearch evolution")
+            print(f"    [{func_name}]  Completed FunSearch evolution")
             return func_name, "success", None
         except Exception as e:
             error_msg = str(e)
-            print(f"    [{func_name}] ✗ Error: {error_msg}", file=sys.stderr)
+            print(f"    [{func_name}]  Error: {error_msg}", file=sys.stderr)
             import traceback
             traceback.print_exc()
             return func_name, "error", error_msg
@@ -1621,13 +1622,13 @@ def evolve_functions_with_failing_tasks(
     
     # Check for errors
     if errors:
-        print(f"\n  ✗ FunSearch failed for {len(errors)} function(s):")
+        print(f"\n   FunSearch failed for {len(errors)} function(s):")
         for func_name, error in errors.items():
             print(f"    - {func_name}: {error}")
-        print("  ✗ Pipeline stopped due to FunSearch failures")
+        print("   Pipeline stopped due to FunSearch failures")
         raise RuntimeError(f"FunSearch failed for functions: {list(errors.keys())}")
     
-    print(f"\n  ✓ All {len(updated_prompts)} functions completed FunSearch successfully")
+    print(f"\n   All {len(updated_prompts)} functions completed FunSearch successfully")
     
     # If we created a separate instance for FunSearch, clean it up before explicit feedback
     # This ensures we free GPU memory before explicit feedback creates its own instance
@@ -1644,9 +1645,9 @@ def evolve_functions_with_failing_tasks(
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
-            print("  ✓ FunSearch vLLM instance freed - explicit feedback will create its own")
+            print("   FunSearch vLLM instance freed - explicit feedback will create its own")
         except Exception as cleanup_error:
-            print(f"  ⚠ Warning: Error cleaning up FunSearch instance: {cleanup_error}")
+            print(f"   Warning: Error cleaning up FunSearch instance: {cleanup_error}")
     
     # Re-run explicit feedback generation for successfully updated functions (30 iterations)
     print(f"\n  [Step 3.2] Re-running explicit feedback generation (30 iterations)...")
@@ -1707,7 +1708,7 @@ def evolve_functions_with_failing_tasks(
                     if final_func:
                         current_func_code = final_func  # Update for next iteration
                     else:
-                        print(f"        ⚠ No improvement in iteration {iteration + 1}")
+                        print(f"         No improvement in iteration {iteration + 1}")
                 finally:
                     # Clean up temporary file immediately
                     try:
@@ -1719,11 +1720,11 @@ def evolve_functions_with_failing_tasks(
             
             if final_func:
                 final_functions[func_name] = final_func
-                print(f"    ✓ Completed {NUM_EXPLICIT_FEEDBACK_ITERATIONS} iterations of explicit feedback for {func_name}")
+                print(f"     Completed {NUM_EXPLICIT_FEEDBACK_ITERATIONS} iterations of explicit feedback for {func_name}")
             else:
-                print(f"    ⚠ No final function extracted for {func_name} after {NUM_EXPLICIT_FEEDBACK_ITERATIONS} iterations")
+                print(f"     No final function extracted for {func_name} after {NUM_EXPLICIT_FEEDBACK_ITERATIONS} iterations")
         except Exception as e:
-            print(f"    ✗ Error running explicit feedback for {func_name}: {e}", file=sys.stderr)
+            print(f"     Error running explicit feedback for {func_name}: {e}", file=sys.stderr)
             import traceback
             traceback.print_exc()
         finally:
@@ -1761,12 +1762,12 @@ def evolve_functions_with_failing_tasks(
             
             with open(func_file, 'w', encoding='utf-8') as f:
                 f.write(func_code)
-            print(f"    ✓ Saved {func_name} to {os.path.basename(func_file)}")
+            print(f"     Saved {func_name} to {os.path.basename(func_file)}")
         
-        print(f"\n  ✓ Function evolution completed: {len(final_functions)} functions updated")
+        print(f"\n   Function evolution completed: {len(final_functions)} functions updated")
         return True
     else:
-        print(f"\n  ✗ No final functions were generated from evolution")
+        print(f"\n   No final functions were generated from evolution")
         return False
 
 
@@ -1813,7 +1814,7 @@ def test_cfg_on_tasks(
     
     print(f"\nTask Results:")
     for task, success in task_results.items():
-        status = "✓" if success else "✗"
+        status = "" if success else ""
         print(f"  {status} {task}")
     
     return task_results
@@ -1857,7 +1858,7 @@ def evolve_dsl(
             llm = LLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
             params = SamplingParams(temperature=0.7, max_tokens=25000)
         except Exception as e:
-            print(f"✗ Error initializing LLM: {e}")
+            print(f" Error initializing LLM: {e}")
             return cfg, terminals, False
     
     # Get failure analysis
@@ -1949,16 +1950,16 @@ COMMA          ::= ','
 ```
 
 8. **What NOT to do** (COMMON MISTAKES THAT CAUSE VALIDATION ERRORS):
-   - ❌ NEVER use regex syntax: `(?:VALUE1|VALUE2|)` - use BNF: `PARAM ::= VALUE1 | VALUE2`
-   - ❌ NEVER create empty alternatives: `PARAM ::= VALUE1 | | VALUE2` - remove empty alternatives
-   - ❌ NEVER put non-terminals inside terminal definitions: `ITEM ::= NonTerminal('items')` - use: `ITEM ::= VALUE1 | VALUE2`
-   - ❌ NEVER create recursive terminals: `NUMBER ::= NUMBER DIGIT` - use non-terminals for recursion
-   - ❌ NEVER create undefined rules - every non-terminal used must be defined
-   - ❌ NEVER create `ACTION1 ::= 'action1'` or any lowercase definitions
-   - ❌ NEVER create `ACTION1 ::= 'ACTION1'` - terminal functions appear directly in productions
-   - ❌ NEVER use lowercase terminal function names
-   - ❌ NEVER use literal parentheses in productions (always use LPAR/RPAR)
-   - ❌ NEVER create circular rules like `X ::= X`
+   -  NEVER use regex syntax: `(?:VALUE1|VALUE2|)` - use BNF: `PARAM ::= VALUE1 | VALUE2`
+   -  NEVER create empty alternatives: `PARAM ::= VALUE1 | | VALUE2` - remove empty alternatives
+   -  NEVER put non-terminals inside terminal definitions: `ITEM ::= NonTerminal('items')` - use: `ITEM ::= VALUE1 | VALUE2`
+   -  NEVER create recursive terminals: `NUMBER ::= NUMBER DIGIT` - use non-terminals for recursion
+   -  NEVER create undefined rules - every non-terminal used must be defined
+   -  NEVER create `ACTION1 ::= 'action1'` or any lowercase definitions
+   -  NEVER create `ACTION1 ::= 'ACTION1'` - terminal functions appear directly in productions
+   -  NEVER use lowercase terminal function names
+   -  NEVER use literal parentheses in productions (always use LPAR/RPAR)
+   -  NEVER create circular rules like `X ::= X`
 
 9. **Validation Requirements**:
    - The CFG must be parseable by a strict BNF parser
@@ -2065,7 +2066,7 @@ If the current CFG is already sufficient, restate it under "Updated CFG (BNF)" a
         filepath, cfg_text, term_text, failure_text, cfg_explanation = extract_and_save_cfg(response)
         
         if cfg_text:
-            print("✓ Generated new CFG")
+            print(" Generated new CFG")
             
             # Validate the evolved CFG
             print("\n[Validating Evolved CFG] Checking CFG validity...")
@@ -2081,11 +2082,11 @@ If the current CFG is already sufficient, restate it under "Updated CFG (BNF)" a
             
             is_valid, validation_msg = validate_cfg(cfg_text, example=example)
             if not is_valid:
-                print(f"✗ Evolved CFG validation failed: {validation_msg}")
+                print(f" Evolved CFG validation failed: {validation_msg}")
                 print("  Rejecting evolved CFG, using original")
                 return cfg, terminals, False
             else:
-                print(f"✓ {validation_msg}")
+                print(f" {validation_msg}")
             
             # Extract terminal functions directly from CFG text using CFGParser
             new_terminals = {}
@@ -2098,7 +2099,7 @@ If the current CFG is already sufficient, restate it under "Updated CFG (BNF)" a
                 if terminal_funcs:
                     # Extract function names (first element of each tuple)
                     func_names = [func_name for func_name, _ in terminal_funcs]
-                    print(f"  ✓ Extracted {len(func_names)} terminal functions from CFG: {func_names}")
+                    print(f"   Extracted {len(func_names)} terminal functions from CFG: {func_names}")
                     
                     # Try to get descriptions from term_text if available
                     term_descriptions = {}
@@ -2115,7 +2116,7 @@ If the current CFG is already sufficient, restate it under "Updated CFG (BNF)" a
                                     if func_name in parsed_terminals:
                                         term_descriptions[func_name] = parsed_terminals[func_name]
                         except Exception as e:
-                            print(f"  ⚠ Could not parse terminal descriptions using parse_generated_output: {e}")
+                            print(f"   Could not parse terminal descriptions using parse_generated_output: {e}")
                         
                         # Fallback: try regex patterns if parser didn't work
                         if not term_descriptions:
@@ -2144,10 +2145,10 @@ If the current CFG is already sufficient, restate it under "Updated CFG (BNF)" a
                             # Use a generic description without hardcoding specific patterns
                             new_terminals[func_name] = f"Terminal function: {func_name}"
                 else:
-                    print("  ⚠ CFGParser found no terminal functions, falling back to term_text parsing")
+                    print("   CFGParser found no terminal functions, falling back to term_text parsing")
                     raise ValueError("No terminal functions found in CFG")
             except Exception as e:
-                print(f"  ⚠ Could not parse terminal functions from CFG: {e}")
+                print(f"   Could not parse terminal functions from CFG: {e}")
                 # Fallback: try to parse from term_text
                 if term_text:
                     try:
@@ -2156,9 +2157,9 @@ If the current CFG is already sufficient, restate it under "Updated CFG (BNF)" a
                         _, parsed_terminals, _ = parse_generated_output(combined_text)
                         if parsed_terminals:
                             new_terminals = parsed_terminals
-                            print(f"  ✓ Parsed {len(new_terminals)} terminal functions from term_text")
+                            print(f"   Parsed {len(new_terminals)} terminal functions from term_text")
                     except Exception as e2:
-                        print(f"  ⚠ Could not parse terminals from term_text: {e2}")
+                        print(f"   Could not parse terminals from term_text: {e2}")
                         # Final fallback: extract from term_text manually
                         term_pattern = r'([A-Z_][A-Z0-9_()]*)\s*[:\-–]\s*(.+?)(?=\n|$)'
                         for match in re.finditer(term_pattern, term_text, re.MULTILINE):
@@ -2166,16 +2167,16 @@ If the current CFG is already sufficient, restate it under "Updated CFG (BNF)" a
                             description = match.group(2).strip().rstrip(';.')
                             new_terminals[func_name] = description
                         if new_terminals:
-                            print(f"  ✓ Extracted {len(new_terminals)} terminal functions manually")
+                            print(f"   Extracted {len(new_terminals)} terminal functions manually")
             
             # If still no terminals extracted, try to use the old terminals (may need updating)
             if not new_terminals:
-                print("  ⚠ No terminals extracted, using previous terminals")
+                print("   No terminals extracted, using previous terminals")
                 new_terminals = terminals.copy()
             
             # Check if the new CFG is actually different from the old one
             if cfg_text == cfg:
-                print("  ⚠ Evolved CFG is identical to original, will retry evolution")
+                print("   Evolved CFG is identical to original, will retry evolution")
                 return cfg, terminals, False  # Return False to trigger retry in calling code
             
             # Save the new CFG to JSON file
@@ -2191,9 +2192,9 @@ If the current CFG is already sufficient, restate it under "Updated CFG (BNF)" a
             if os.path.exists(cfg_path):
                 try:
                     version_file(cfg_path, keep_original=False)
-                    print(f"  ✓ Versioned previous CFG file")
+                    print(f"   Versioned previous CFG file")
                 except Exception as e:
-                    print(f"  ⚠ Warning: Failed to version CFG file: {e}")
+                    print(f"   Warning: Failed to version CFG file: {e}")
                     import traceback
                     traceback.print_exc()
             
@@ -2209,16 +2210,16 @@ If the current CFG is already sufficient, restate it under "Updated CFG (BNF)" a
             }
             with open(cfg_path, 'w', encoding='utf-8') as f:
                 json.dump(cfg_data, f, indent=2, ensure_ascii=False)
-            print(f"  ✓ Saved new CFG to {cfg_path}")
-            print(f"  ✓ New CFG has {len(new_terminals)} terminal functions: {list(new_terminals.keys())}")
+            print(f"   Saved new CFG to {cfg_path}")
+            print(f"   New CFG has {len(new_terminals)} terminal functions: {list(new_terminals.keys())}")
             
             return cfg_text, new_terminals, True
         else:
-            print("⚠ Could not extract new CFG, using original")
+            print(" Could not extract new CFG, using original")
             return cfg, terminals, False
         
     except Exception as e:
-        print(f"✗ Error evolving DSL: {e}")
+        print(f" Error evolving DSL: {e}")
         import traceback
         traceback.print_exc()
         return cfg, terminals, False
@@ -2271,16 +2272,16 @@ def evolve_dsl_and_restart(
         # Check if evolution was successful and CFG is different
         if attempt_success and new_cfg != cfg:
             dsl_success = True
-            print(f"\n✓ DSL evolved successfully on attempt {dsl_attempt}")
+            print(f"\n DSL evolved successfully on attempt {dsl_attempt}")
             break
         else:
             if attempt_success:
-                print(f"  ⚠ Attempt {dsl_attempt}: Evolved CFG is same as original, retrying...")
+                print(f"   Attempt {dsl_attempt}: Evolved CFG is same as original, retrying...")
             else:
-                print(f"  ⚠ Attempt {dsl_attempt}: DSL evolution failed, retrying...")
+                print(f"   Attempt {dsl_attempt}: DSL evolution failed, retrying...")
     
     if not dsl_success or new_cfg == cfg:
-        print(f"\n✗ Could not evolve DSL after {max_retries} attempts")
+        print(f"\n Could not evolve DSL after {max_retries} attempts")
         return cfg, terminals, False
     
     # Implement the new CFG (steps 2-7)
@@ -2308,7 +2309,7 @@ def evolve_dsl_and_restart(
     )
     
     if success:
-        print(f"\n✓ New CFG successfully implemented")
+        print(f"\n New CFG successfully implemented")
         print(f"  Generated {len(final_functions)} final functions:")
         for func_name in final_functions.keys():
             print(f"    - {func_name}")
@@ -2321,7 +2322,7 @@ def evolve_dsl_and_restart(
         
         return new_cfg, new_terminals, True
     else:
-        print("\n⚠ New CFG implemented but some functions may be missing")
+        print("\n New CFG implemented but some functions may be missing")
         if final_functions:
             print(f"  Generated {len(final_functions)} final functions: {list(final_functions.keys())}")
         return new_cfg, new_terminals, False
@@ -2359,7 +2360,7 @@ def run_integrated_pipeline(
         os.makedirs(os.path.join(experiment_dir, "cfg"), exist_ok=True)
         os.makedirs(os.path.join(experiment_dir, "final_functions"), exist_ok=True)
         os.makedirs(os.path.join(experiment_dir, "explicit_feedback"), exist_ok=True)
-        print(f"✓ Created experiment directory structure")
+        print(f" Created experiment directory structure")
     else:
         # Ensure subdirectories exist even if main directory does
         os.makedirs(os.path.join(experiment_dir, "function_specific_prompts"), exist_ok=True)
@@ -2376,9 +2377,9 @@ def run_integrated_pipeline(
             try:
                 print("\n[Setup] Initializing shared vLLM instance...")
                 shared_vllm = vLLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
-                print("✓ Shared vLLM instance created")
+                print(" Shared vLLM instance created")
             except Exception as e:
-                print(f"⚠ Warning: Could not create shared vLLM instance: {e}")
+                print(f" Warning: Could not create shared vLLM instance: {e}")
                 print("  Will create individual instances as needed")
                 shared_vllm = None
         else:
@@ -2397,12 +2398,12 @@ def run_integrated_pipeline(
             terminals = cfg_data.get("terminals", {})
             cfg = cfg_data.get("cfg", "")
     else:
-        print("⚠ Could not find CFG, need to run initial pipeline")
+        print(" Could not find CFG, need to run initial pipeline")
         terminals = {}
         cfg = ""
     
     if not terminals:
-        print("✗ No terminal functions found in CFG. Cannot proceed.")
+        print(" No terminal functions found in CFG. Cannot proceed.")
         return 1
     
     print(f"  Checking {len(terminals)} terminal functions:")
@@ -2413,33 +2414,33 @@ def run_integrated_pipeline(
     
     if not all_exist:
         if missing:
-            print(f"\n  ✗ Missing final functions ({len(missing)}):")
+            print(f"\n   Missing final functions ({len(missing)}):")
             for func_name, description in missing.items():
                 safe_name = sanitize_function_name(func_name)
                 func_file = os.path.join(experiment_dir, "final_functions", f"{safe_name}.py")
                 print(f"    - {func_name} (expected: {func_file})")
         
         if empty_or_invalid:
-            print(f"\n  ✗ Empty or invalid final functions ({len(empty_or_invalid)}):")
+            print(f"\n   Empty or invalid final functions ({len(empty_or_invalid)}):")
             for func_name in empty_or_invalid:
                 safe_name = sanitize_function_name(func_name)
                 func_file = os.path.join(experiment_dir, "final_functions", f"{safe_name}.py")
                 print(f"    - {func_name} (file exists but is empty or invalid: {func_file})")
         
-        print(f"\n  ⚠ Total missing/invalid: {len(missing) + len(empty_or_invalid)}/{len(terminals)}")
+        print(f"\n   Total missing/invalid: {len(missing) + len(empty_or_invalid)}/{len(terminals)}")
         print("  Running explicit feedback generation for missing/invalid functions...")
         
         # Run explicit feedback generation for missing functions
         # This would require calling the explicit feedback generation
         # For now, we'll assume the user needs to run it manually
-        print("  ⚠ Please run explicit feedback generation manually or")
+        print("   Please run explicit feedback generation manually or")
         print("    re-run the full pipeline to generate missing functions")
         print(f"    Missing functions: {list(missing.keys())}")
         if empty_or_invalid:
             print(f"    Invalid functions: {empty_or_invalid}")
         return 1
     
-    print(f"\n  ✓ All {len(terminals)} terminal functions exist and are valid")
+    print(f"\n   All {len(terminals)} terminal functions exist and are valid")
     
     # Step 2: Synthesize and test programs
     print(f"\n[Step 2] Synthesizing and testing programs...")
@@ -2454,11 +2455,11 @@ def run_integrated_pipeline(
     
     print(f"\nTask Results:")
     for task, success in task_results.items():
-        status = "✓" if success else "✗"
+        status = "" if success else ""
         print(f"  {status} {task}")
     
     if all_solved:
-        print("\n✓ All tasks solved successfully!")
+        print("\n All tasks solved successfully!")
         return 0
     
     # Step 3: Evolve functions (up to max_function_evolutions times)
@@ -2472,7 +2473,7 @@ def run_integrated_pipeline(
             with open(spec_file, 'r') as f:
                 specification = f.read()
         else:
-            print("  ⚠ Specification file not found")
+            print("   Specification file not found")
             specification = ""
         
         # Load CFG if not already loaded
@@ -2500,7 +2501,7 @@ def run_integrated_pipeline(
             failing_tasks = [task for task, success in task_results.items() if not success]
             
             if all_solved:
-                print("\n✓ All tasks solved after function evolution!")
+                print("\n All tasks solved after function evolution!")
                 return 0
     
     # Step 4: Evolve DSL and implement (up to max_dsl_evolutions times)
@@ -2523,26 +2524,26 @@ def run_integrated_pipeline(
         )
         
         if new_cfg == current_cfg:
-            print("\n  ✗ Could not evolve DSL or evolution produced same CFG")
+            print("\n   Could not evolve DSL or evolution produced same CFG")
             if dsl_evolution_round < max_dsl_evolutions - 1:
                 print("  Continuing to next evolution round...")
                 continue
             else:
-                print("\n✗ Reached maximum DSL evolution rounds without success")
+                print("\n Reached maximum DSL evolution rounds without success")
                 return 1
         
         if not implementation_success:
-            print("\n  ⚠ DSL evolved but implementation had issues")
+            print("\n   DSL evolved but implementation had issues")
             if dsl_evolution_round < max_dsl_evolutions - 1:
                 print("  Continuing to next evolution round...")
                 current_cfg = new_cfg
                 current_terminals = new_terminals
                 continue
             else:
-                print("\n✗ Reached maximum DSL evolution rounds")
+                print("\n Reached maximum DSL evolution rounds")
                 return 1
         
-        print("\n  ✓ DSL evolved and implemented successfully")
+        print("\n   DSL evolved and implemented successfully")
         
         # Update current CFG and terminals
         current_cfg = new_cfg
@@ -2564,23 +2565,23 @@ def run_integrated_pipeline(
         
         print(f"\n  Task Results after DSL evolution round {dsl_evolution_round + 1}:")
         for task, success in task_results.items():
-            status = "✓" if success else "✗"
+            status = "" if success else ""
             print(f"    {status} {task}")
         
         if all_solved:
-            print(f"\n✓ All tasks solved after DSL evolution round {dsl_evolution_round + 1}!")
+            print(f"\n All tasks solved after DSL evolution round {dsl_evolution_round + 1}!")
             return 0
         
         # If not all solved and we have more rounds, continue
         if dsl_evolution_round < max_dsl_evolutions - 1:
             print(f"\n  Some tasks still failing. Continuing to next DSL evolution round...")
         else:
-            print(f"\n✗ Reached maximum DSL evolution rounds ({max_dsl_evolutions})")
+            print(f"\n Reached maximum DSL evolution rounds ({max_dsl_evolutions})")
             print(f"  Remaining failing tasks: {failing_tasks}")
             return 1
     
     # Should not reach here, but just in case
-    print("\n✗ DSL evolution loop completed without solving all tasks")
+    print("\n DSL evolution loop completed without solving all tasks")
     return 1
 
 
@@ -2651,7 +2652,7 @@ def main():
                 tasks = config.get("tasks", [])
                 print(f"Loaded {len(tasks)} tasks from {tasks_file}")
         else:
-            print(f"✗ Error: Tasks file not found: {tasks_file}")
+            print(f" Error: Tasks file not found: {tasks_file}")
             return 1
     
     return run_integrated_pipeline(

@@ -32,6 +32,7 @@ import os
 import random
 import subprocess
 from vllm import LLM, SamplingParams
+import glob
 
 
 def eval(res):
@@ -91,7 +92,7 @@ print(evaluate())
                     ['python', script_path],
                     capture_output=True,
                     text=True,
-                    timeout=300, #this is in seconds
+                    timeout=400, #this is in seconds
                     check=True,
                     encoding='utf-8',
                     errors='replace'
@@ -128,6 +129,86 @@ print(evaluate())
         # Clean up the temporary file
         if os.path.exists(script_path):
             os.remove(script_path)
+
+def _get_final_function_descriptions(experiment_dir: str, dsl_round: int = None, func_evolution_round: int = None) -> str:
+    """Load final function source code from experiment_dir/final_functions for prompt context.
+    
+    Args:
+        experiment_dir: Path to experiment directory
+        dsl_round: DSL evolution round number (optional)
+        func_evolution_round: Function evolution round number (optional)
+        
+    Raises:
+        ValueError: If experiment_dir is not provided
+        FileNotFoundError: If final_functions directory doesn't exist
+        FileNotFoundError: If specific versioned functions are requested but not found
+    """
+    if not experiment_dir:
+        raise ValueError("experiment_dir must be provided")
+    
+    final_functions_dir = os.path.join(experiment_dir, "final_functions")
+    if not os.path.isdir(final_functions_dir):
+        raise FileNotFoundError(f"final_functions directory not found: {final_functions_dir}")
+    
+    parts = []
+    
+    # If specific rounds are provided, look for exact versioned files
+    if dsl_round is not None and func_evolution_round is not None:
+        # Look for files with specific DSL and function rounds
+        pattern = f"*_dsl{dsl_round}_func{func_evolution_round}.py"
+        versioned_files = glob.glob(os.path.join(final_functions_dir, pattern))
+        
+        if not versioned_files:
+            available_files = [os.path.basename(f) for f in glob.glob(os.path.join(final_functions_dir, "*.py")) if not os.path.basename(f).startswith("__")]
+            raise FileNotFoundError(
+                f"No final functions found for DSL round {dsl_round}, function round {func_evolution_round}. "
+                f"Pattern searched: {pattern}\n"
+                f"Available files: {available_files}"
+            )
+        
+        for path in sorted(versioned_files):
+            name = os.path.basename(path)
+            if name.startswith("__"):
+                continue
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            parts.append(f"## {name}\n```python\n{content}\n```")
+    
+    # If only DSL round is provided, look for func0 files
+    elif dsl_round is not None and func_evolution_round is None:
+        pattern = f"*_dsl{dsl_round}_func0.py"
+        dsl_files = glob.glob(os.path.join(final_functions_dir, pattern))
+        
+        if not dsl_files:
+            available_files = [os.path.basename(f) for f in glob.glob(os.path.join(final_functions_dir, "*.py")) if not os.path.basename(f).startswith("__")]
+            raise FileNotFoundError(
+                f"No final functions found for DSL round {dsl_round} (func0). "
+                f"Pattern searched: {pattern}\n"
+                f"Available files: {available_files}"
+            )
+        
+        for path in sorted(dsl_files):
+            name = os.path.basename(path)
+            if name.startswith("__"):
+                continue
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            parts.append(f"## {name}\n```python\n{content}\n```")
+    
+    # If no rounds specified, load all .py files
+    else:
+        for path in sorted(glob.glob(os.path.join(final_functions_dir, "*.py"))):
+            name = os.path.basename(path)
+            if name.startswith("__"):
+                continue
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            parts.append(f"## {name}\n```python\n{content}\n```")
+    
+    if not parts:
+        raise FileNotFoundError(f"No valid Python files found in {final_functions_dir}")
+    
+    return "\n\n".join(parts)
 
 def grid_to_markdown(grid, cookbook, agent_pos=None) -> str:
     width, height, n_kinds = grid.shape
@@ -389,11 +470,11 @@ def extract_and_save_cfg(output_text, cfg_dir="cfg"):
 
     # # --- Print diagnostics ---
     # if failure_text:
-    #     print("\n🧠 Extracted Failure Analysis:\n")
+    #     print("\n Extracted Failure Analysis:\n")
     #     print(failure_text)
 
     # if term_text:
-    #     print("\n🧩 Extracted Terminal Functions:\n")
+    #     print("\n Extracted Terminal Functions:\n")
     #     print(term_text)
 
     return None, cfg_text, term_text, failure_text, cfg_explanation
@@ -410,7 +491,7 @@ hints_path = "craft/resources/hints.yaml"
 # evaluator will be created in synthesis_llm() where CFG is available
 evaluator = None
 env_sampler = env_factory.EnvironmentFactory(
-            recipes_path, hints_path, 7, max_steps=300, 
+            recipes_path, hints_path, 7, max_steps=400, 
             reuse_environments=False, visualise=False)
 
 
@@ -422,7 +503,7 @@ with open("src/prog_synth_pipeline/task_config.json", "r") as f:
 def is_terminal(symbol: str, cfg: CFGParser) -> bool:
     return symbol not in cfg.non_terminals
 
-def evaluate_program_with_evaluator(evaluator, program_str: str, env, max_steps=300) -> int:
+def evaluate_program_with_evaluator(evaluator, program_str: str, env, max_steps=400) -> int:
     """
     Evaluate a program using CFGEvaluator.
     """
@@ -434,11 +515,23 @@ def evaluate_program_with_evaluator(evaluator, program_str: str, env, max_steps=
     success = result.get("success", False)
     total_reward = result.get("total_reward", 0.0)
     evaluation_time = result.get("evaluation_time", 0.0)
+    
+    # Check if program ran out of steps
+    max_steps_reached = result.get("max_steps_reached", False)
+    steps_taken = result.get("steps_taken", len(actions))
+    failure_reason = None
+    
+    if not success:
+        if max_steps_reached or steps_taken >= max_steps:
+            failure_reason = f"Program ran out of steps (exceeded max_steps limit of {max_steps})"
+        else:
+            failure_reason = result.get("failure_reason", "Program failed to complete task")
+    
     # CFGEvaluator doesn't provide these, so use defaults
     func = None
     interactions = [len(actions)] if actions else [0]
     rewards = [total_reward] if success else [0.0]
-    return actions, success, total_reward, evaluation_time, func, interactions, rewards
+    return actions, success, total_reward, evaluation_time, func, interactions, rewards, failure_reason
 
 def plot_watermark(data, task):
     # print(data)
@@ -518,19 +611,31 @@ def evaluate(program_str, task , env, inter, reward):
     results = set()
     if evaluator is None:
         # Fallback: return failure if evaluator not initialized
-        return [], program_str, {0}, False, 0.0, 0.0, task, None, [0], [0.0]
-    result = evaluator.evaluate_program(program_str, env=env, max_steps=300)
+        return [], program_str, {0}, False, 0.0, 0.0, task, None, [0], [0.0], None
+    result = evaluator.evaluate_program(program_str, env=env, max_steps=400)
     results.add(1 if result.get("success", False) else 0)
     # Map CFGEvaluator result format to expected format
     actions = result.get("actions_taken", [])
     success = result.get("success", False)
     total_reward = result.get("total_reward", 0.0)
     evaluation_time = result.get("evaluation_time", 0.0)
+    
+    # Check if program ran out of steps
+    max_steps_reached = result.get("max_steps_reached", False)
+    steps_taken = result.get("steps_taken", len(actions))
+    failure_reason = None
+    
+    if not success:
+        if max_steps_reached or steps_taken >= 400:
+            failure_reason = "Program ran out of steps (exceeded max_steps limit)"
+        else:
+            failure_reason = result.get("failure_reason", "Program failed to complete task")
+    
     # CFGEvaluator doesn't provide these, so use defaults
     func = None
     interactions = [len(actions)] if actions else [0]
     rewards = [total_reward] if success else [0.0]
-    return actions, program_str, results, success, total_reward, evaluation_time, task, func, interactions, rewards
+    return actions, program_str, results, success, total_reward, evaluation_time, task, func, interactions, rewards, failure_reason
         
 def eval_pll(programs, num_workers=None):
     if num_workers is None:
@@ -547,7 +652,7 @@ def eval_pll(programs, num_workers=None):
     return results
 
 
-def synthesis_llm():
+def synthesis_llm(experiment_dir: str = None, dsl_round: int = None, func_evolution_round: int = None):
     global evaluator
     # llm = LLM(model="/scratch/avani/gpt",     tensor_parallel_size=4 )
     # params = SamplingParams(temperature=0.7, max_tokens=15000)
@@ -575,15 +680,15 @@ def synthesis_llm():
         if final_functions_dir and os.path.exists(final_functions_dir):
             try:
                 evaluator = CFGEvaluator(cfg=cfg, final_functions_dir=final_functions_dir)
-                print(f"✓ Created CFGEvaluator with functions from {final_functions_dir}")
+                print(f" Created CFGEvaluator with functions from {final_functions_dir}")
             except Exception as e:
-                print(f"⚠ Warning: Could not create CFGEvaluator: {e}")
+                print(f" Warning: Could not create CFGEvaluator: {e}")
                 evaluator = None
         else:
-            print("⚠ Warning: final_functions directory not found. Evaluator will not be available.")
+            print(" Warning: final_functions directory not found. Evaluator will not be available.")
             evaluator = None
     else:
-        print("⚠ Warning: CFGEvaluator not available. Evaluation will not work.")
+        print(" Warning: CFGEvaluator not available. Evaluation will not work.")
         evaluator = None
     extra_body={"reasoning_effort": "high"}
 #    client = genai.Client()
@@ -616,9 +721,20 @@ def synthesis_llm():
         # break
         programs= []
         programs.append(program)
+        failed_programs_info = []  # Store programs with their failure reasons
+        
+        # Load final function implementations if experiment_dir is provided
+        final_functions_descriptions = ""
+        if experiment_dir:
+            final_functions_descriptions = _get_final_function_descriptions(experiment_dir, dsl_round, func_evolution_round)
+        
         #change to 128 
         for i in range(30):
-            programs_str = "\n".join(programs)  
+            # Create detailed failed programs string with failure reasons
+            if failed_programs_info:
+                programs_str = "\n".join([f"Program: {prog}\nFailure reason: {reason}" for prog, reason in failed_programs_info])
+            else:
+                programs_str = "\n".join(programs)  
             prompt = f"""
     You are a Domain Specific Language (DSL) program generator for the Craft domain. 
 
@@ -651,6 +767,11 @@ def synthesis_llm():
 
     {cfg_explanation}
 
+    ## Final Function Implementations
+    Here are the current implementations of the terminal functions used in the DSL:
+
+    {final_functions_descriptions}
+
     ## Example Programs
     Here are examples of programs written in this DSL:
 
@@ -677,6 +798,8 @@ def synthesis_llm():
     ##Previous programs that FAILED to solve the task:
     {programs_str}
     These programs are syntactically correct but did not solve the task. When generating a new program, avoid repeating the mistakes made in these failed programs, and generate semantically different programs. Try to explore the environment in different ways.
+    
+    IMPORTANT: Some programs may have failed because they ran out of steps (exceeded the maximum step limit of 400). If this is the case, try to generate more efficient programs that can complete the task in fewer steps.
 
 
     Also always ensure that the the information provided in this prompt is facts and always correct and cannot be changed so please adhere to it strictly.
@@ -729,16 +852,26 @@ def synthesis_llm():
             # print(b)
             # b= "COLLECT_FUNC(WOOD) ;  COLLECT_FUNC(IRON) ; CRAFT_FUNC(BRIDGE) ;"
             programs.append(b)
-            a, program_str, results, s, r, eval_time, task, funcs, interact, rewa = evaluate(b, task ,env, inter, reward)
+            a, program_str, results, s, r, eval_time, task, funcs, interact, rewa, failure_reason = evaluate(b, task ,env, inter, reward)
             # a, program_str, results, s, r, eval_time, task, funcs, interact, rewa = None, b, None, False, None, None, task, None, [0], 0
             # s = input("Enter s (True/False): ").strip().lower() in ("true", "t", "1", "yes", "y")
             # rewa = [float(input("Enter rewa: "))]
+            
+            # Print feedback about program execution
+            if not s and failure_reason:
+                print(f"Program failed: {program_str}")
+                print(f"Failure reason: {failure_reason}")
+                if "ran out of steps" in failure_reason:
+                    print("⚠️  This program exceeded the maximum step limit - consider generating more efficient programs")
             interactions += interact
             rewards += rewa
             inter+= interactions[-1] if interactions else 0
             reward+= rewards[-1] if rewards else 0
             if not s:
-                reasoning[program_str]= response
+                reasoning[program_str] = {
+                    "generation_reasoning": response,
+                    "failure_reason": failure_reason
+                }
             os.makedirs(f"results/program_synthesis/{task}", exist_ok=True)
             record = {
                 "task": task,
@@ -748,6 +881,7 @@ def synthesis_llm():
                 "eval_time": eval_time,
                 "interactions": interact,
                 "rewards": rewa,
+                "failure_reason": failure_reason if not s else None,
             }
             json_path = os.path.join(f"results/program_synthesis/{task}", f"programs_results_date_{date.today().isoformat()}.jsonl")
 
@@ -761,6 +895,8 @@ def synthesis_llm():
                 break
             else:
                 program = b
+                # Add failed program with its failure reason to the list
+                failed_programs_info.append((b, failure_reason if failure_reason else "Unknown failure reason"))
 
                 # find_bad_func(funcs, task)
         # # plot_interactions_rewards(interactions, rewards, task)
@@ -770,10 +906,10 @@ def synthesis_llm():
             print("Failed to find a solution for task:", task)
             # print(programs)
             failure_analysis_prommpt = f"""
-            Here are the programs that failed to solve the task {task} and their generation reasoning traces:
+            Here are the programs that failed to solve the task {task}, their generation reasoning traces, and failure reasons:
             {reasoning}
 
-            Give me top three reasons why they are failing to solve the task in bullet points
+            Give me top three reasons why they are failing to solve the task in bullet points. Pay special attention to programs that ran out of steps, as this indicates the programs may be too long or inefficient.
 
             """ 
 
@@ -883,19 +1019,28 @@ def synthesis_llm():
 
 if __name__ == "__main__":
     
-    # Check if JSON file path is provided as command line argument
-    if len(sys.argv) != 2:
-        print("Usage: python program_synthesis.py <json_file_path>")
-        print("Example: python program_synthesis.py task_config.json")
+    # Check if arguments are provided
+    if len(sys.argv) < 2:
+        print("Usage: python program_synthesis.py <json_file_path> [experiment_dir] [dsl_round] [func_evolution_round]")
+        print("Example: python program_synthesis.py task_config.json experiments/experiment_20260223_163251_4042520 1 2")
         sys.exit(1)
     
     json_file = sys.argv[1]
+    experiment_dir = sys.argv[2] if len(sys.argv) > 2 else None
+    dsl_round = int(sys.argv[3]) if len(sys.argv) > 3 else None
+    func_evolution_round = int(sys.argv[4]) if len(sys.argv) > 4 else None
     
     cfg_parser = CFGParser("cfg/cfg.txt")
     start_symbol = "s"
     print(f"Start symbol: {start_symbol}")
     print(f"Using JSON config file: {json_file}")
+    if experiment_dir:
+        print(f"Using experiment directory: {experiment_dir}")
+    if dsl_round is not None:
+        print(f"DSL round: {dsl_round}")
+    if func_evolution_round is not None:
+        print(f"Function evolution round: {func_evolution_round}")
     print("\nGenerating programs (worklist)...")
-    synthesis_llm()
+    synthesis_llm(experiment_dir, dsl_round, func_evolution_round)
 
     # synthesis_baseline()

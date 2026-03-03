@@ -342,7 +342,7 @@ def eval(res, file, specification=None, func_signature=None, function_name=None,
         if not sig_clean.endswith(':'):
             sig_clean += ':'
         res = f"{sig_clean}\n{res}"
-        print(f"  ⚠ Function body missing signature, prepended: {sig_clean}")
+        print(f"   Function body missing signature, prepended: {sig_clean}")
     
     # Before inserting the new function, remove any existing function with the same name
     # Extract function name from res
@@ -492,7 +492,7 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
         # Fallback: create new instance if shared one not provided
         # This should only happen if the calling stage didn't create a shared instance
         # Use lower memory utilization since multiple jobs may run in parallel
-        print("  ⚠ Warning: No shared vLLM instance provided, creating new one with reduced memory settings")
+        print("   Warning: No shared vLLM instance provided, creating new one with reduced memory settings")
         llm = vLLM(
             model="/scratch/avani/gpt", 
             tensor_parallel_size=4,
@@ -631,7 +631,7 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
     
     if best_runs_ok:
         # Generated function works - use it
-        print(f"  ✓ Using generated function (score: {best_score:.4f})")
+        print(f"   Using generated function (score: {best_score:.4f})")
         # Ensure the function has a signature before using it
         # Extract function name from signature to check if it's the main function
         func_name_match = re.search(r'def\s+(\w+)', func_signature) if func_signature else None
@@ -697,7 +697,7 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
         # Generated function failed, use best function from log as fallback
         # Functions in log are already evaluated, so we can use their scores directly
         # Filter out functions with score -1 (runs_ok=False) and use the best one
-        print(f"  ⚠ Generated function failed, using best function from log as fallback...")
+        print(f"   Generated function failed, using best function from log as fallback...")
         
         # Find the best function from log based on existing scores
         # funcs is already sorted by score (highest first) from parse_log_file
@@ -769,14 +769,14 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
                 best_log_func = f"{sig_clean}\n{indented_body}"
                 print(f"    Prepended signature to log function (with indentation)")
             
-            print(f"  ✓ Using best function from log (score: {best_log_score:.4f}, already evaluated)")
+            print(f"   Using best function from log (score: {best_log_score:.4f}, already evaluated)")
             final_func = best_log_func
             # Update best_score and best_runs_ok to reflect the fallback function
             best_score = best_log_score
             best_runs_ok = True  # Functions from log that pass the filter (score > -1) are working
         else:
             
-            print(f"  ⚠ No working functions found. Creating stub function that returns []")
+            print(f"   No working functions found. Creating stub function that returns []")
             # Extract function name and parameters from signature
             func_name_match = re.search(r'def\s+(\w+)', func_signature)
             func_name = func_name_match.group(1) if func_name_match else "function"
@@ -793,7 +793,7 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
     \"\"\"
     return []
 """
-            print(f"  ⚠ Created stub function: {func_name}({params}) -> []")
+            print(f"   Created stub function: {func_name}({params}) -> []")
             # Update best_score and best_runs_ok for stub function
             best_score = -1.0  # Stub function has score -1
             best_runs_ok = False  # Stub function doesn't actually run
@@ -872,7 +872,7 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
             score_str = "-inf"
         else:
             score_str = f"{best_score:.4f}"
-        print(f"  ✓ Final function ready (score: {score_str}, runs_ok: {best_runs_ok})")
+        print(f"   Final function ready (score: {score_str}, runs_ok: {best_runs_ok})")
     
     # Append entries to deterministic feedback file (only iteration entries)
     try:
@@ -891,7 +891,7 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
         with open(log_filename, "w", encoding="utf-8") as log_file:
             json.dump(combined_entries, log_file, indent=2)
     except Exception as e:
-        print(f"  ⚠ Failed to write feedback log: {e}")
+        print(f"   Failed to write feedback log: {e}")
     
     return best_func
     

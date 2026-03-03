@@ -28,11 +28,11 @@ def test_recipe_loading():
     assert 'primitives' in recipes, "Recipes missing primitives"
     assert 'recipes' in recipes, "Recipes missing recipes"
     
-    print(f"✓ Loaded {len(recipes.get('primitives', []))} primitives:")
+    print(f" Loaded {len(recipes.get('primitives', []))} primitives:")
     for prim in recipes.get('primitives', []):
         print(f"  - {prim}")
     
-    print(f"\n✓ Loaded {len(recipes.get('recipes', {}))} recipes:")
+    print(f"\n Loaded {len(recipes.get('recipes', {}))} recipes:")
     for item in list(recipes.get('recipes', {}).keys())[:5]:
         print(f"  - {item}")
     if len(recipes.get('recipes', {})) > 5:
@@ -53,28 +53,28 @@ def test_primitives_for_item(recipes):
     print(f"  Primitives needed: {primitives}")
     assert primitives, "Should find primitives for goldarrow"
     assert "gold" in primitives or "wood" in primitives, "Should include gold or wood"
-    print("  ✓ Found primitives for goldarrow")
+    print("   Found primitives for goldarrow")
     
     # Test a complex item
     print("\nTesting flag (complex item):")
     primitives_flag = get_primitives_for_item("flag", recipes)
     print(f"  Primitives needed: {primitives_flag}")
     assert primitives_flag, "Should find primitives for flag"
-    print("  ✓ Found primitives for flag")
+    print("   Found primitives for flag")
     
     # Test a primitive itself
     print("\nTesting wood (primitive):")
     primitives_wood = get_primitives_for_item("wood", recipes)
     print(f"  Primitives needed: {primitives_wood}")
     assert "wood" in primitives_wood, "Wood should be in its own primitives set"
-    print("  ✓ Wood correctly identified as primitive")
+    print("   Wood correctly identified as primitive")
     
     # Test arrow (needs knife, which needs iron and rock)
     print("\nTesting arrow (needs intermediate items):")
     primitives_arrow = get_primitives_for_item("arrow", recipes)
     print(f"  Primitives needed: {primitives_arrow}")
     assert primitives_arrow, "Should find primitives for arrow"
-    print("  ✓ Found primitives for arrow (recursively)")
+    print("   Found primitives for arrow (recursively)")
 
 
 def test_argument_selection():
@@ -97,9 +97,9 @@ def test_argument_selection():
     
     # Should prefer primitives from goldarrow recipe
     if "gold" in arg_value or "wood" in arg_value:
-        print("  ✓ Selected item related to goldarrow task")
+        print("   Selected item related to goldarrow task")
     else:
-        print("  ⚠ Selected item may not be related to task")
+        print("   Selected item may not be related to task")
     
     # Test with no recipes
     print("\nTesting argument selection without recipes:")
@@ -135,7 +135,7 @@ def test_with_environment():
         items = get_items_on_grid(env)
         print(f"  Items on grid: {sorted(items)}")
         assert items, "Should find items on grid"
-        print(f"  ✓ Found {len(items)} items on grid")
+        print(f"   Found {len(items)} items on grid")
         
         # Test argument selection with environment
         print("\nTesting argument selection with environment:")
@@ -150,15 +150,15 @@ def test_with_environment():
         if arg_value.startswith('"') and arg_value.endswith('"'):
             item_name = arg_value.strip('"')
             if item_name in items:
-                print(f"  ✓ Selected item '{item_name}' is present on the grid!")
+                print(f"   Selected item '{item_name}' is present on the grid!")
             else:
-                print(f"  ⚠ Selected item '{item_name}' may not be on the grid")
+                print(f"   Selected item '{item_name}' may not be on the grid")
         
     except ImportError as e:
-        print(f"  ⚠ Could not import craft module: {e}")
+        print(f"   Could not import craft module: {e}")
         print("  Skipping environment-based tests")
     except Exception as e:
-        print(f"  ⚠ Error testing with environment: {e}")
+        print(f"   Error testing with environment: {e}")
         import traceback
         traceback.print_exc()
 
@@ -180,7 +180,7 @@ def main():
         print("=" * 80)
         return 0
     except Exception as e:
-        print(f"\n✗ Test failed: {e}")
+        print(f"\n Test failed: {e}")
         import traceback
         traceback.print_exc()
         return 1

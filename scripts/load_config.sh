@@ -21,11 +21,13 @@ export_config_to_env(config)
 # Print export statements for bash to evaluate
 for key, value in config.items():
     if key == 'tasks' and isinstance(value, list):
-        # Export as space-separated string
-        tasks_str = ' '.join(str(t) for t in value)
-        print(f"export TASKS=\"{tasks_str}\"")
+        # Export as space-separated string (only if not already set in environment)
+        if not os.environ.get('TASKS'):
+            tasks_str = ' '.join(str(t) for t in value)
+            print(f"export TASKS=\"{tasks_str}\"")
     elif key == 'skip_cfg_generation':
-        print(f"export SKIP_CFG_GENERATION=\"{'true' if value else 'false'}\"")
+        if not os.environ.get('SKIP_CFG_GENERATION'):
+            print(f"export SKIP_CFG_GENERATION=\"{'true' if value else 'false'}\"")
     elif value is not None:
         # Escape quotes in values
         value_str = str(value).replace('"', '\\"')
@@ -49,10 +51,12 @@ for key, value in config.items():
             'grid_spec_dir': 'GRID_SPEC_DIR',
         }
         if key == 'use_existing_grid_specs':
-            print(f"export USE_EXISTING_GRID_SPECS=\"{'true' if value else 'false'}\"")
+            if not os.environ.get('USE_EXISTING_GRID_SPECS'):
+                print(f"export USE_EXISTING_GRID_SPECS=\"{'true' if value else 'false'}\"")
         elif key in env_mapping:
             env_var = env_mapping[key]
-            print(f"export {env_var}=\"{value_str}\"")
+            if not os.environ.get(env_var):
+                print(f"export {env_var}=\"{value_str}\"")
 EOF
 )" 2>&1
     echo "Loaded configuration from: $CONFIG_FILE"

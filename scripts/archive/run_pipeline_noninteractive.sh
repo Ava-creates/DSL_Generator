@@ -65,18 +65,18 @@ first_job_id=$(sbatch --parsable --export=ALL "$SCRIPT_DIR/run_first_iteration.s
 sbatch_exit=$?
 
 if [ $sbatch_exit -ne 0 ]; then
-    echo -e "${RED}✗ Failed to submit job${NC}" >&2
+    echo -e "${RED} Failed to submit job${NC}" >&2
     echo "sbatch output: $first_job_id" >&2
     exit 1
 fi
 
 if [[ ! "$first_job_id" =~ ^[0-9]+$ ]]; then
-    echo -e "${RED}✗ Failed to get valid job ID${NC}" >&2
+    echo -e "${RED} Failed to get valid job ID${NC}" >&2
     echo "sbatch output: $first_job_id" >&2
     exit 1
 fi
 
-echo -e "${GREEN}✓ First iteration job submitted: $first_job_id${NC}"
+echo -e "${GREEN} First iteration job submitted: $first_job_id${NC}"
 echo ""
 
 # Wait for first job to complete
@@ -128,7 +128,7 @@ if [ -z "${EXPERIMENT_DIR:-}" ]; then
 fi
 
 if [ -z "$EXPERIMENT_DIR" ]; then
-    echo -e "${RED}✗ Could not determine experiment directory${NC}" >&2
+    echo -e "${RED} Could not determine experiment directory${NC}" >&2
     echo "Please check the job logs and set EXPERIMENT_DIR manually if needed" >&2
     exit 1
 fi
@@ -140,7 +140,7 @@ echo "Using experiment directory: $EXPERIMENT_DIR"
 if [ "$exit_code" = "0" ]; then
     echo ""
     echo "=========================================="
-    echo -e "${GREEN}✓ Pipeline Complete!${NC}"
+    echo -e "${GREEN} Pipeline Complete!${NC}"
     echo "=========================================="
     echo "All tasks solved successfully."
     echo "Experiment directory: $EXPERIMENT_DIR"
@@ -164,7 +164,7 @@ elif [ "$exit_code" = "100" ]; then
         # Verify checkpoint exists
         checkpoint_file="$PROJECT_ROOT/$EXPERIMENT_DIR/checkpoint.json"
         if [ ! -f "$checkpoint_file" ]; then
-            echo -e "${RED}✗ Checkpoint file not found: $checkpoint_file${NC}" >&2
+            echo -e "${RED} Checkpoint file not found: $checkpoint_file${NC}" >&2
             exit 1
         fi
         
@@ -178,18 +178,18 @@ elif [ "$exit_code" = "100" ]; then
         sbatch_exit=$?
         
         if [ $sbatch_exit -ne 0 ]; then
-            echo -e "${RED}✗ Failed to submit CFG version job${NC}" >&2
+            echo -e "${RED} Failed to submit CFG version job${NC}" >&2
             echo "sbatch output: $cfg_job_id" >&2
             exit 1
         fi
         
         if [[ ! "$cfg_job_id" =~ ^[0-9]+$ ]]; then
-            echo -e "${RED}✗ Failed to get valid job ID for CFG version job${NC}" >&2
+            echo -e "${RED} Failed to get valid job ID for CFG version job${NC}" >&2
             echo "sbatch output: $cfg_job_id" >&2
             exit 1
         fi
         
-        echo -e "${GREEN}✓ CFG version job submitted: $cfg_job_id${NC}"
+        echo -e "${GREEN} CFG version job submitted: $cfg_job_id${NC}"
         echo ""
         echo "Monitoring CFG version (job ID: $cfg_job_id)..."
         echo "  View logs: tail -f $SCRIPT_DIR/log/cfg_version_${cfg_job_id}.out"
@@ -219,7 +219,7 @@ elif [ "$exit_code" = "100" ]; then
         if [ "$cfg_exit_code" = "0" ]; then
             echo ""
             echo "=========================================="
-            echo -e "${GREEN}✓ Pipeline Complete!${NC}"
+            echo -e "${GREEN} Pipeline Complete!${NC}"
             echo "=========================================="
             echo "All tasks solved successfully."
             echo "Experiment directory: $EXPERIMENT_DIR"
@@ -233,7 +233,7 @@ elif [ "$exit_code" = "100" ]; then
         else
             echo ""
             echo "=========================================="
-            echo -e "${RED}✗ Pipeline Failed${NC}"
+            echo -e "${RED} Pipeline Failed${NC}"
             echo "=========================================="
             echo "CFG version job exited with code: $cfg_exit_code"
             echo "Experiment directory: $EXPERIMENT_DIR"
@@ -246,7 +246,7 @@ elif [ "$exit_code" = "100" ]; then
 else
     echo ""
     echo "=========================================="
-    echo -e "${RED}✗ Pipeline Failed${NC}"
+    echo -e "${RED} Pipeline Failed${NC}"
     echo "=========================================="
     echo "First iteration job exited with code: $exit_code"
     echo "Experiment directory: $EXPERIMENT_DIR"

@@ -16,6 +16,9 @@ source new_dsl_env/bin/activate
 # Set working directory to project root
 cd /home/avani/projects/aip-lelis/avani/DSL_Generator
 
+source scripts/stages/log_chain_context.sh
+log_chain_context "stage_implement_cfg_single"
+
 # Set PyTorch CUDA allocation config to reduce memory fragmentation
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 

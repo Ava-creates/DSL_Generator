@@ -15,7 +15,6 @@ import argparse
 from datetime import datetime
 from typing import Dict, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 from funsearch.implementation.funsearch import FunSearch
 from funsearch.implementation import config as config_lib
 from src.utils.file_utils import version_file
@@ -24,7 +23,6 @@ from src.pipeline.domain_templates import (
     craft_solve_template_basic,
     craft_evaluate_template,
     craft_env_setup,
-    craft_env_setup_from_var,
 )
 
 # Import vLLM for shared instance
@@ -445,9 +443,7 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
                              func_dir: str = "function_specific_prompts",
                              experiment_dir: Optional[str] = None,
                              dsl_round: Optional[int] = None,
-                             func_evolution_round: Optional[int] = None,
-                             use_llm_evaluation: bool = False,
-                             shared_vllm=None) -> tuple[str, str]:
+                             func_evolution_round: Optional[int] = None) -> tuple[str, str]:
     """Generate a function-specific prompt file for funsearch.
     
     Args:
@@ -459,8 +455,6 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
         experiment_dir: Experiment directory
         dsl_round: DSL evolution round number (0-indexed)
         func_evolution_round: Function evolution round number (0-indexed, None for initial)
-        use_llm_evaluation: If True, use LLM to generate custom solve/evaluate functions
-        shared_vllm: Optional shared vLLM instance for LLM-based evaluation generation
     """
     # Use experiment directory if provided, otherwise use default
     if experiment_dir:
@@ -471,17 +465,13 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
     # Parse function name to get base name and arguments
     base_name, args_list = parse_function_name_and_args(func_name)
     
-    print(args_list)
     # Get sanitized name for file naming
     safe_name = sanitize_function_name(func_name)
     
     # Extract argument name(s) - prefer from function name, fallback to CFG
     args = extract_function_args(func_name, cfg)
-    print(f"[debug args] func_name={func_name} base_name={base_name} args_list={args_list} extracted_args={args} cfg_len={len(cfg) if cfg else 0}")
     if args_list:
         args = ", ".join([a.strip().lower() for a in args_list if a.strip()])
-        print(f"[debug args] using args_list override -> {args}")
-    print(f"[debug args] final args: {args}")
     if args == "arg" or not args:
             from src.pipeline.cfg_parser import CFGParser
             parser = CFGParser(cfg)
@@ -512,7 +502,7 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
         func_file = os.path.join(func_dir, f"{safe_name}.txt")
     
     # Infer return type from description
-    return_type, default_return = infer_return_type(description)
+    _, default_return = infer_return_type(description)
     
     # Infer argument types if function has arguments
     arg_type = "str"  # default
@@ -608,7 +598,7 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
     if not grid_spec_paths and shared_vllm is not None:
         generated_cases = []
         attempts_for_case = max(1, total_grid_generation_attempts // max(1, num_grid_tests))
-        while len(generated_cases) < num_grid_tests:
+        while len(generated_cases) < num_grid_tests:  #basically kepp on repeating till we get num_grid_tests cases
             generated_count = len(generated_cases)
             if dsl_round is not None:
                 grid_filename = f"{safe_name}_dsl{dsl_round}_case{generated_count}.json"
@@ -634,6 +624,8 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
             if isinstance(grid_spec, dict):
                 generated_cases.append(grid_spec)
                 grid_spec_paths.append(grid_spec_path)
+            else:
+                print(f"[grid_generation] No valid grid for {func_name} case {generated_count} (see grid_generation logs above); will retry.")
 
     if not grid_spec_paths:
         raise ValueError(
@@ -648,56 +640,6 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
         raise ValueError(f"Missing task_name in grid spec for {func_name}; LLM must supply a valid task.")
 
     
-    # Try to use LLM to generate custom solve/evaluate functions if enabled
-    solve_func_custom = None
-    evaluate_func_custom = None
-    use_llm_evaluation = False
-    # if use_llm_evaluation:
-    #     try:
-    #         from src.pipeline.generate_evaluation_functions import generate_custom_evaluation_functions
-            
-    #         # Prepare environment setup code
-    #         env_setup = craft_env_setup_from_var(
-    #             recipes_path=recipes_path,
-    #             hints_path=hints_path,
-    #             task_name=task_name_for_env,
-    #             grid_spec_path_var="grid_spec_path",
-    #         )
-            
-    #         # Try to load recipes for better argument selection
-    #         recipes = None
-    #         task_name = task_name_for_env
-    #         try:
-    #             from src.pipeline.evaluation_helpers import load_recipes
-    #             recipes = load_recipes(recipes_path)
-    #         except Exception as e:
-    #             print(f"  Note: Could not load recipes: {e}")
-            
-    #         print(f"  [LLM] Generating custom solve() function for {func_name}...")
-    #         solve_func_custom = generate_custom_evaluation_functions(
-    #             func_name=display_name,
-    #             description=description,
-    #             func_signature=f"def {safe_name}({func_params})",
-    #             return_type=return_type,
-    #             args=args if has_args else "",
-    #             cfg=cfg,
-    #             specification=specification,
-    #             shared_vllm=shared_vllm,
-    #             recipes=recipes,
-    #             task_name=task_name
-    #         )
-    #         print(f"  [LLM] ✓ Generated custom solve() function for {func_name}")
-    #         # evaluate_func_custom will be generated separately using template below
-    #         evaluate_func_custom = None
-    #     except Exception as e:
-    #         print(f"  [LLM] ⚠ Failed to generate custom evaluation functions: {e}")
-    #         import traceback
-    #         traceback.print_exc()
-    #         print(f"  [LLM] Falling back to template-based evaluation")
-    #         solve_func_custom = None
-    #         evaluate_func_custom = None
-    
-
    
     solve_func_basic = craft_solve_template_basic(
         func_name=func_name,
@@ -709,7 +651,6 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
     seed_body = _load_seed_body(experiment_dir, safe_name, dsl_round, func_evolution_round)
     if seed_body:
         seed_body = "\n".join([f"  {line}" if line.strip() else "" for line in seed_body.splitlines()])
-    evolve_body = seed_body 
     evolve_func = f'''@funsearch.evolve
 def {safe_name}({func_params}):
   """
@@ -790,7 +731,7 @@ def {safe_name}({func_params}):
                         if isinstance(arg_value, str):
                             if not (arg_value.startswith('"') and arg_value.endswith('"')):
                                 arg_value = f'"{arg_value}"'
-                        args_def_lines.append(f'  {arg_name} = arg_values.get("{arg_name}", {arg_value})  {explanation}')
+                        args_def_lines.append(f'  {arg_name} = arg_values.get("{arg_name}", {arg_value}).lower()  {explanation}') #lowecasee tohelp lookup in cookbook
                     except Exception as e:
                         # Fallback to old logic if helper fails
                         print(f"  Warning: Could not use grid-aware argument selection: {e}")
@@ -1170,7 +1111,7 @@ def run_explicit_feedback_generation(func_name: str, results_dir: str, func_file
     # Find the log file
     log_file = find_funsearch_log_file(func_name, results_dir)
     if not log_file:
-        print(f"  ⚠ Could not find log file for {func_name}")
+        print(f"   Could not find log file for {func_name}")
         return None
     
     print(f"  Using log file: {log_file}")
@@ -1178,7 +1119,7 @@ def run_explicit_feedback_generation(func_name: str, results_dir: str, func_file
     # Parse top k functions from log using existing function
     funcs = parse_log_file(log_file, k=k)
     if not funcs:
-        print(f"  ⚠ No functions found in log file")
+        print(f"   No functions found in log file")
         return None
     
     print(f"  Found {len(funcs)} top functions")
@@ -1293,7 +1234,7 @@ def get_cfg(
             print(f"ERROR: Loaded CFG validation failed: {validation_msg}", file=sys.stderr)
             return "", {}, None, False
         else:
-            print(f"✓ {validation_msg}")
+            print(f" {validation_msg}")
             return cfg, terminals, example, True
     elif skip_cfg_generation and os.path.exists(cfg_path):
         print(f"\n[Loading CFG] Loading from {cfg_path}...")
@@ -1310,7 +1251,7 @@ def get_cfg(
             print(f"ERROR: Loaded CFG validation failed: {validation_msg}", file=sys.stderr)
             return "", {}, None, False
         else:
-            print(f"✓ {validation_msg}")
+            print(f" {validation_msg}")
             return cfg, terminals, example, True
     else:
         print("\n[Generating CFG] Generating new CFG...")
@@ -1332,7 +1273,7 @@ def get_cfg(
                 is_valid, validation_msg = validate_cfg(cfg, example)
                 
                 if is_valid:
-                    print(f"✓ {validation_msg}")
+                    print(f" {validation_msg}")
                     # Extract terminals using ensure_terminals_match_cfg which handles both
                     # functions with arguments and functions without arguments
                     try:
@@ -1342,10 +1283,10 @@ def get_cfg(
                         terminals = ensure_terminals_match_cfg(cfg, terminals if terminals else {}, shared_vllm=shared_vllm)
                         
                         if not terminals:
-                            print("  ⚠ Warning: No terminal functions found in CFG after extraction")
+                            print("   Warning: No terminal functions found in CFG after extraction")
                     except Exception as e:
                         # This should not happen if validation passed, but handle gracefully
-                        print(f"  ✗ CRITICAL: Terminal extraction failed after validation passed: {e}", file=sys.stderr)
+                        print(f"   CRITICAL: Terminal extraction failed after validation passed: {e}", file=sys.stderr)
                         import traceback
                         traceback.print_exc()
                         # This is a bug - validation passed but terminal extraction failed
@@ -1366,10 +1307,10 @@ def get_cfg(
                     
                     with open(cfg_path, 'w', encoding='utf-8') as f:
                         json.dump(cfg_data, f, indent=2, ensure_ascii=False)
-                    print(f"✓ Saved CFG to {cfg_path}")
+                    print(f" Saved CFG to {cfg_path}")
                     return cfg, terminals, example, True
                 else:
-                    print(f"✗ CFG validation failed: {validation_msg}")
+                    print(f" CFG validation failed: {validation_msg}")
                     if attempt < max_cfg_retries:
                         print(f"Retrying CFG generation...")
                         continue
@@ -1380,13 +1321,38 @@ def get_cfg(
                         return "", {}, None, False
                         
             except Exception as e:
-                print(f"✗ Error generating CFG (attempt {attempt}): {e}", file=sys.stderr)
+                print(f" Error generating CFG (attempt {attempt}): {e}", file=sys.stderr)
                 if attempt < max_cfg_retries:
                     print(f"Retrying CFG generation...")
                     continue
                 else:
                     print(f"\nERROR: Failed to generate CFG after {max_cfg_retries} attempts", file=sys.stderr)
                     return "", {}, None, False
+
+
+def replace_dsl_section_in_specification(specification: str, cfg: str) -> str:
+    """Replace the DSL block in the specification with the current CFG."""
+    if not cfg or not specification:
+        return specification
+
+    dsl_pattern = r'(## DSL[^\n]*\n.*?"""\n)(.*?)(\n"""\n)'
+    dsl_match = re.search(dsl_pattern, specification, re.DOTALL)
+    if dsl_match:
+        header = dsl_match.group(1)
+        footer = dsl_match.group(3)
+        cfg_section = header + cfg + footer
+        return re.sub(dsl_pattern, cfg_section, specification, flags=re.DOTALL)
+
+    dsl_pattern_simple = r'(## DSL[^\n]*\n"""\n)(.*?)(\n"""\n)'
+    dsl_match_simple = re.search(dsl_pattern_simple, specification, re.DOTALL)
+    if dsl_match_simple:
+        header = dsl_match_simple.group(1)
+        footer = dsl_match_simple.group(3)
+        cfg_section = header + cfg + footer
+        return re.sub(dsl_pattern_simple, cfg_section, specification, flags=re.DOTALL)
+
+    print("\n[Step 2.1] Warning: Could not find DSL section in specification to replace")
+    return specification
 
 
 def implement_cfg(
@@ -1438,32 +1404,10 @@ def implement_cfg(
         with open(spec_file, 'r', encoding='utf-8') as f:
             specification = f.read()
     
-    # Replace DSL section in specification with current CFG
+    # Replace DSL section in specification with current CFG.
     if cfg:
-        # Pattern to match the DSL section (from "## DSL" to the closing """ on its own line)
-        dsl_pattern = r'(## DSL[^\n]*\n.*?"""\n)(.*?)(\n"""\n)'
-        # Find the DSL section
-        dsl_match = re.search(dsl_pattern, specification, re.DOTALL)
-        if dsl_match:
-            # Replace the CFG content between the triple quotes
-            header = dsl_match.group(1)  # "## DSL" + description + opening """
-            footer = dsl_match.group(3)  # closing """
-            # Replace with new CFG section
-            cfg_section = header + cfg + footer
-            specification = re.sub(dsl_pattern, cfg_section, specification, flags=re.DOTALL)
-            print("\n[Step 2.1] Replaced DSL section in specification with current CFG")
-        else:
-            # Try a simpler pattern - just match from "## DSL" to the next """
-            dsl_pattern_simple = r'(## DSL[^\n]*\n"""\n)(.*?)(\n"""\n)'
-            dsl_match_simple = re.search(dsl_pattern_simple, specification, re.DOTALL)
-            if dsl_match_simple:
-                header = dsl_match_simple.group(1)
-                footer = dsl_match_simple.group(3)
-                cfg_section = header + cfg + footer
-                specification = re.sub(dsl_pattern_simple, cfg_section, specification, flags=re.DOTALL)
-                print("\n[Step 2.1] Replaced DSL section in specification with current CFG (simple pattern)")
-            else:
-                print("\n[Step 2.1] Warning: Could not find DSL section in specification to replace")
+        specification = replace_dsl_section_in_specification(specification, cfg)
+        print("\n[Step 2.1] Replaced DSL section in specification with current CFG")
     
     func_files = {}
     func_signatures = {}
@@ -1471,9 +1415,7 @@ def implement_cfg(
         func_file, func_signature = generate_function_prompt(func_name, description, cfg, specification, 
                                             experiment_dir=experiment_dir,
                                             dsl_round=dsl_round,
-                                            func_evolution_round=func_evolution_round,
-                                            use_llm_evaluation=True,
-                                            shared_vllm=shared_vllm)
+                                            func_evolution_round=func_evolution_round)
         func_files[func_name] = func_file
         func_signatures[func_name] = func_signature
     
@@ -1499,29 +1441,12 @@ def implement_cfg(
         with open(spec_file, 'r', encoding='utf-8') as f:
             specification = f.read()
         
-        # Replace DSL section if CFG is available
+        # Replace DSL section if CFG is available.
         if cfg:
-            # Pattern to match the DSL section (from "## DSL" to the closing """ on its own line)
-            dsl_pattern = r'(## DSL[^\n]*\n.*?"""\n)(.*?)(\n"""\n)'
-            dsl_match = re.search(dsl_pattern, specification, re.DOTALL)
-            if dsl_match:
-                header = dsl_match.group(1)
-                footer = dsl_match.group(3)
-                cfg_section = header + cfg + footer
-                specification = re.sub(dsl_pattern, cfg_section, specification, flags=re.DOTALL)
-            else:
-                # Try simpler pattern
-                dsl_pattern_simple = r'(## DSL[^\n]*\n"""\n)(.*?)(\n"""\n)'
-                dsl_match_simple = re.search(dsl_pattern_simple, specification, re.DOTALL)
-                if dsl_match_simple:
-                    header = dsl_match_simple.group(1)
-                    footer = dsl_match_simple.group(3)
-                    cfg_section = header + cfg + footer
-                    specification = re.sub(dsl_pattern_simple, cfg_section, specification, flags=re.DOTALL)
+            specification = replace_dsl_section_in_specification(specification, cfg)
     
-    # Configure FunSearch with parallelization
-    # Match evaluators to samples_per_prompt for clean parallelization
-    # Set total_samples=1000 to ensure we get exactly 1000 samples total
+
+    # Set total_samples=1000 to ensure we get exactly 1000 samples total.
     regen_attempts = int(os.environ.get("GRID_REGENERATION_ATTEMPTS", 5))
     config = config_lib.Config(
         num_samplers=1,  # Single sampler - generates samples_per_prompt samples per iteration
@@ -1556,19 +1481,18 @@ def implement_cfg(
                 spec_file=spec_file,
                 experiment_dir=results_dir
             )
-            print(f"[{func_name}] ✓ Completed FunSearch")
+            print(f"[{func_name}]  Completed FunSearch")
             return func_name, "success", None
         except Exception as e:
             error_msg = str(e)
-            print(f"[{func_name}] ✗ Error: {error_msg}", file=sys.stderr)
+            print(f"[{func_name}]  Error: {error_msg}", file=sys.stderr)
             return func_name, "error", error_msg
     
     # Run FunSearch in parallel for all functions
     print(f"\n[Step 4] Running FunSearch in parallel for {len(terminals)} functions...")
-    # Increase max_workers - with shared vLLM, we can handle more concurrent FunSearch runs
-    # Each FunSearch run uses 4 samplers + 4 evaluators internally, so we can run more functions in parallel
-    max_workers = min(len(terminals), 16)  # Increased from 8 to 16 for better parallelization
-    print(f"  Using {max_workers} parallel workers (each with 4 samplers + 4 evaluators)")
+    # Run multiple functions concurrently.
+    max_workers = min(len(terminals), 16)
+    print(f"  Using {max_workers} parallel workers")
     
     results = {}
     errors = {}
@@ -1595,13 +1519,13 @@ def implement_cfg(
     
     # Check for errors
     if errors:
-        print(f"\n✗ FunSearch failed for {len(errors)} function(s):")
+        print(f"\n FunSearch failed for {len(errors)} function(s):")
         for func_name, error in errors.items():
             print(f"  - {func_name}: {error}")
-        print("✗ Pipeline stopped due to FunSearch failures")
+        print(" Pipeline stopped due to FunSearch failures")
         raise RuntimeError(f"FunSearch failed for functions: {list(errors.keys())}")
     
-    print(f"\n✓ All {len(terminals)} functions completed FunSearch successfully")
+    print(f"\n All {len(terminals)} functions completed FunSearch successfully")
     
     # Step 5: Run explicit feedback generation for each function (in parallel)
     print("\n[Step 5] Running explicit feedback generation for each function (in parallel)...")
@@ -1625,19 +1549,18 @@ def implement_cfg(
                 dsl_round=dsl_round, func_evolution_round=func_evolution_round
             )
             if final_func:
-                print(f"[{func_name}] ✓ Completed explicit feedback")
+                print(f"[{func_name}]  Completed explicit feedback")
                 return func_name, final_func, None
             else:
-                print(f"[{func_name}] ⚠ No final function extracted")
+                print(f"[{func_name}]  No final function extracted")
                 return func_name, None, None
         except Exception as e:
             error_msg = str(e)
-            print(f"[{func_name}] ✗ Error: {error_msg}", file=sys.stderr)
+            print(f"[{func_name}]  Error: {error_msg}", file=sys.stderr)
             import traceback
             traceback.print_exc()
             return func_name, None, error_msg
     
-    # Run explicit feedback in parallel
     successful_funcs = [func_name for func_name in terminals.keys() if results.get(func_name) == "success"]
     if successful_funcs:
         max_workers_ef = min(len(successful_funcs), 8)  # Parallel explicit feedback workers
@@ -1659,20 +1582,16 @@ def implement_cfg(
                 if final_func:
                     final_functions[func_name] = final_func
                 elif error:
-                    print(f"  ✗ Explicit feedback failed for {func_name}: {error}")
+                    print(f"   Explicit feedback failed for {func_name}: {error}")
     
     # Step 6: Save final functions to files
     print("\n[Step 6] Saving final functions...")
     
-    # Save final functions to individual files for easy loading
     final_functions_dir = os.path.join(experiment_dir, "final_functions")
     os.makedirs(final_functions_dir, exist_ok=True)
     
     for func_name, func_code in final_functions.items():
         safe_name = sanitize_function_name(func_name)
-        
-        # Build filename with DSL and function evolution round numbers to match prompt files
-        # Initial functions (no func_evolution_round) should be func0
         if dsl_round is not None:
             if func_evolution_round is not None:
                 func_file = os.path.join(final_functions_dir, f"{safe_name}_dsl{dsl_round}_func{func_evolution_round}.py")
@@ -1687,7 +1606,7 @@ def implement_cfg(
             f.write(func_code)
         print(f"  Saved {func_name} to {os.path.basename(func_file)}")
     
-    print(f"✓ Final functions saved. Use standalone cfg_evaluator.py for evaluation.")
+    print(f" Final functions saved. Use standalone cfg_evaluator.py for evaluation.")
     
     # Step 7: Test generated functions with example program from CFG (optional)
     if example and final_functions:
@@ -1740,13 +1659,13 @@ def implement_cfg(
             print(f"  Program: {example_program}")
             print(f"  Task: {task_name}")
             print(f"\n  Execution Status:")
-            print(f"    ✓ Program parsed successfully: {parse_success}")
+            print(f"     Program parsed successfully: {parse_success}")
             
             if result.get('error'):
-                print(f"    ✗ Execution error: {result.get('error')}")
-                print(f"    ✗ Program execution failed")
+                print(f"     Execution error: {result.get('error')}")
+                print(f"     Program execution failed")
             else:
-                print(f"    ✓ Program executed without errors")
+                print(f"     Program executed without errors")
             
             # Check if task was solved (success = True and reward > 0)
             task_solved = result.get('success', False)
@@ -1756,13 +1675,13 @@ def implement_cfg(
             
             print(f"\n  Task Completion:")
             if task_solved and total_reward > 0:
-                print(f"    ✓ Task SOLVED successfully!")
-                print(f"    ✓ Total Reward: {total_reward}")
+                print(f"     Task SOLVED successfully!")
+                print(f"     Total Reward: {total_reward}")
             elif task_solved:
-                print(f"    ⚠ Task completed but reward is 0 (may indicate partial success)")
+                print(f"     Task completed but reward is 0 (may indicate partial success)")
                 print(f"    Total Reward: {total_reward}")
             else:
-                print(f"    ✗ Task NOT solved")
+                print(f"     Task NOT solved")
                 print(f"    Total Reward: {total_reward}")
             
             print(f"\n  Execution Details:")
@@ -1781,22 +1700,22 @@ def implement_cfg(
             print(f"\n  Summary:")
             if parse_success and not result.get('error'):
                 if task_solved and total_reward > 0:
-                    print(f"    ✓✓ Example program executed and SOLVED the task!")
+                    print(f"     Example program executed and SOLVED the task!")
                 elif task_solved:
-                    print(f"    ✓ Example program executed (task completed with 0 reward)")
+                    print(f"     Example program executed (task completed with 0 reward)")
                 else:
-                    print(f"    ✓ Example program executed but did not solve the task")
+                    print(f"     Example program executed but did not solve the task")
             elif not parse_success:
-                print(f"    ✗ Example program failed to parse")
+                print(f"     Example program failed to parse")
             else:
-                print(f"    ✗ Example program execution failed")
+                print(f"     Example program execution failed")
             print(f"  {'='*60}\n")
                 
         except ImportError as e:
-            print(f"  ⚠ Could not import cfg_evaluator: {e}")
+            print(f"   Could not import cfg_evaluator: {e}")
             print(f"  Skipping function testing")
         except Exception as e:
-            print(f"  ⚠ Error testing functions: {e}")
+            print(f"   Error testing functions: {e}")
             import traceback
             traceback.print_exc()
     elif not example:
@@ -1845,9 +1764,9 @@ def run_pipeline(spec_file: str, model_type: str = "huggingface",
         try:
             print("\n[Setup] Initializing shared vLLM instance...")
             shared_vllm = vLLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
-            print("✓ Shared vLLM instance created")
+            print(" Shared vLLM instance created")
         except Exception as e:
-            print(f"⚠ Warning: Could not create shared vLLM instance: {e}")
+            print(f" Warning: Could not create shared vLLM instance: {e}")
             print("  Will create individual instances as needed")
     
     # Create experiment directory if not provided
@@ -1873,7 +1792,7 @@ def run_pipeline(spec_file: str, model_type: str = "huggingface",
     )
     
     if not success or not cfg or not terminals:
-        print("✗ Failed to get valid CFG. Cannot proceed.")
+        print(" Failed to get valid CFG. Cannot proceed.")
         return 1
     
     # Also save to user-specified location if provided and different from experiment dir
@@ -1907,7 +1826,7 @@ def run_pipeline(spec_file: str, model_type: str = "huggingface",
     )
     
     if not success:
-        print("\n✗ CFG implementation failed or incomplete")
+        print("\n CFG implementation failed or incomplete")
         return 1
     
     # Summary
@@ -1974,7 +1893,8 @@ def main():
         experiment_dir=args.experiment_dir
     )
 
-
 if __name__ == "__main__":
     sys.exit(main())
+
+
 

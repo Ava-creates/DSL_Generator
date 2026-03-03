@@ -16,6 +16,9 @@ source new_dsl_env/bin/activate
 # Set working directory to project root
 cd /home/avani/projects/aip-lelis/avani/DSL_Generator
 
+source scripts/stages/log_chain_context.sh
+log_chain_context "stage_evolve_function_single"
+
 # Run the stage script
 # Build command - failing_tasks is optional now (evolve uses domain template)
 CMD="python src/pipeline/stages/stage_evolve_function_single.py \

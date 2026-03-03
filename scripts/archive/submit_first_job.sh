@@ -30,7 +30,7 @@ echo ""
 JOB_ID=$(sbatch --parsable --export=ALL "$SCRIPT_DIR/run_first_iteration.slurm" 2>&1)
 
 if [[ "$JOB_ID" =~ ^[0-9]+$ ]]; then
-    echo "✓ First iteration job submitted: $JOB_ID"
+    echo " First iteration job submitted: $JOB_ID"
     echo ""
     echo "Monitor job with:"
     echo "  squeue -j $JOB_ID"
@@ -44,7 +44,7 @@ if [[ "$JOB_ID" =~ ^[0-9]+$ ]]; then
     echo "    sbatch scripts/run_cfg_version.slurm"
     echo "  - If exit code is 0 (all tasks solved), pipeline is complete!"
 else
-    echo "✗ Failed to submit job"
+    echo " Failed to submit job"
     echo "sbatch output: $JOB_ID"
     exit 1
 fi

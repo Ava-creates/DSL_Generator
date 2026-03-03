@@ -45,11 +45,6 @@ def main():
         print(f"{'='*80}\n", flush=True)
         sys.stdout.flush()
     
-    # Write experiment directory to file for chaining script
-    exp_dir_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), ".experiment_dir")
-    with open(exp_dir_file, 'w') as f:
-        f.write(args.experiment_dir)
-    
     # Create shared vLLM instance if needed
     shared_vllm = None
     if not args.skip_cfg_generation:
@@ -57,9 +52,9 @@ def main():
             try:
                 print("\n[Setup] Initializing shared vLLM instance...")
                 shared_vllm = vLLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
-                print("✓ Shared vLLM instance created")
+                print(" Shared vLLM instance created")
             except Exception as e:
-                print(f"⚠ Warning: Could not create shared vLLM instance: {e}")
+                print(f" Warning: Could not create shared vLLM instance: {e}")
                 shared_vllm = None
     
     # Ensure experiment directory exists
@@ -76,10 +71,10 @@ def main():
     )
     
     if not success or not cfg or not terminals:
-        print("✗ Failed to get valid CFG", file=sys.stderr)
+        print(" Failed to get valid CFG", file=sys.stderr)
         return 1
     
-    print(f"\n✓ Got CFG with {len(terminals)} terminal functions")
+    print(f"\n Got CFG with {len(terminals)} terminal functions")
     
     # Get tasks from environment variable, with default from config file
     tasks_env = os.environ.get("TASKS", "")

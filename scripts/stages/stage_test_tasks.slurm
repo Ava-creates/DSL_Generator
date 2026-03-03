@@ -16,6 +16,9 @@ source new_dsl_env/bin/activate
 # Set working directory to project root
 cd /home/avani/projects/aip-lelis/avani/DSL_Generator
 
+source scripts/stages/log_chain_context.sh
+log_chain_context "stage_test_tasks"
+
 # Convert tasks array to space-separated string if needed
 if [ -n "$TASKS" ]; then
     TASKS_ARGS="$TASKS"
@@ -47,7 +50,7 @@ if [ $? -eq 0 ] || [ $? -eq 1 ]; then
         chain_based_on_state
     ) &
     # Give chaining a brief moment to submit jobs (sbatch is fast but we ensure jobs are queued)
-    sleep 1
+    sleep 30
     # Job exits immediately - background chaining will continue and jobs are already submitted
 fi
 

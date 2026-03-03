@@ -563,19 +563,39 @@ def validate_grid_spec(spec, cookbook):
       if wk_count < 1:
         return False, f"missing required workshop '{workshop}'"
 
-    required = cookbook.primitives_for(goal_idx)
-    for idx, needed in required.items():
-      name = cookbook.index.get(idx)
+    # For each ingredient: require either the item on grid+inv OR (if composite) the
+    # primitives to make the shortfall. So knife+wood is enough for arrow; no iron needed.
+    # If there is no knife, then iron+rock (and wood) are required to make the knife.
+    def have_count(item_name):
+      g = _count_item_in_spec_grid(grid, item_name)
+      inv = inventory.get(item_name, 0)
+      try:
+        inv = int(inv)
+      except Exception:
+        inv = 0
+      return g + max(inv, 0)
+
+    for ing_idx, needed in recipe.items():
+      if not isinstance(ing_idx, int):
+        continue
+      name = cookbook.index.get(ing_idx)
       if not name:
         continue
-      grid_count = _count_item_in_spec_grid(grid, name)
-      inv_val = inventory.get(name, 0)
-      try:
-        inv_val = int(inv_val)
-      except Exception:
-        inv_val = 0
-      if grid_count + max(inv_val, 0) < int(needed):
+      needed = int(needed)
+      have_direct = have_count(name)
+      shortfall = needed - have_direct
+      if shortfall <= 0:
+        continue
+      if ing_idx in cookbook.primitives:
         return False, f"missing '{name}' (need {needed})"
+      # Composite: allow primitives to cover the shortfall (e.g. iron+rock instead of knife).
+      prim_required = cookbook.primitives_for(ing_idx)
+      for p_idx, p_needed in prim_required.items():
+        p_needed_total = int(p_needed) * shortfall
+        p_name = cookbook.index.get(p_idx)
+        if not p_name or have_count(p_name) < p_needed_total:
+          p_name = cookbook.index.get(p_idx) or str(p_idx)
+          return False, f"missing '{p_name}' (need {p_needed_total})"
     # Ensure init_pos is on an empty cell
     try:
       init_pos = spec.get("init_pos", [1, 1])

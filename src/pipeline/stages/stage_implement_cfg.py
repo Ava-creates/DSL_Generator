@@ -37,7 +37,7 @@ def main():
     # Load CFG
     cfg_path = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
     if not os.path.exists(cfg_path):
-        print(f"✗ CFG file not found: {cfg_path}", file=sys.stderr)
+        print(f" CFG file not found: {cfg_path}", file=sys.stderr)
         return 1
     
     with open(cfg_path, 'r', encoding='utf-8') as f:
@@ -47,12 +47,12 @@ def main():
     example = cfg_data.get("example", None)
     
     if not cfg or not terminals:
-        print("✗ Invalid CFG data", file=sys.stderr)
+        print(" Invalid CFG data", file=sys.stderr)
         return 1
     
     # Load specification
     if not os.path.exists(args.spec_file):
-        print(f"✗ Specification file not found: {args.spec_file}", file=sys.stderr)
+        print(f" Specification file not found: {args.spec_file}", file=sys.stderr)
         return 1
     
     with open(args.spec_file, 'r', encoding='utf-8') as f:
@@ -64,9 +64,9 @@ def main():
         try:
             print("\n[Setup] Initializing shared vLLM instance...")
             shared_vllm = vLLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
-            print("✓ Shared vLLM instance created")
+            print(" Shared vLLM instance created")
         except Exception as e:
-            print(f"⚠ Warning: Could not create shared vLLM instance: {e}")
+            print(f" Warning: Could not create shared vLLM instance: {e}")
             shared_vllm = None
     
     # Create ResultsTracker
@@ -95,10 +95,10 @@ def main():
         )
         
         if not success:
-            print("✗ Failed to implement CFG", file=sys.stderr)
+            print(" Failed to implement CFG", file=sys.stderr)
             return 1
         
-        print(f"\n✓ Successfully implemented CFG for {len(final_functions)} functions")
+        print(f"\n Successfully implemented CFG for {len(final_functions)} functions")
         
         # Mark implement_cfg as complete in state (includes both FunSearch and Explicit Feedback)
         # Status files are the source of truth, but we update counter for consistency
@@ -132,13 +132,13 @@ def main():
             with open(legacy_status_file, 'w') as f:
                 json.dump(status, f, indent=2)
         
-        print(f"✓ Created explicit feedback status files for {len(final_functions)} functions")
-        print("✓ Updated pipeline state: FunSearch and Explicit Feedback marked as complete")
+        print(f" Created explicit feedback status files for {len(final_functions)} functions")
+        print(" Updated pipeline state: FunSearch and Explicit Feedback marked as complete")
         
         return 0
         
     except Exception as e:
-        print(f"✗ Error implementing CFG: {e}", file=sys.stderr)
+        print(f" Error implementing CFG: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         return 1

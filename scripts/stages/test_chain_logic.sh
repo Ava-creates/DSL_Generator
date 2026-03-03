@@ -244,18 +244,18 @@ test_stage() {
     # Check result
     if [ "$expected_result" = "should_trigger" ]; then
         if [ "$should_trigger" = true ]; then
-            echo -e "  ${GREEN}✓ PASS: Stage should trigger and does${NC}"
+            echo -e "  ${GREEN} PASS: Stage should trigger and does${NC}"
             return 0
         else
-            echo -e "  ${RED}✗ FAIL: Stage should trigger but doesn't${NC}"
+            echo -e "  ${RED} FAIL: Stage should trigger but doesn't${NC}"
             return 1
         fi
     else
         if [ "$should_trigger" = false ]; then
-            echo -e "  ${GREEN}✓ PASS: Stage should not trigger and doesn't${NC}"
+            echo -e "  ${GREEN} PASS: Stage should not trigger and doesn't${NC}"
             return 0
         else
-            echo -e "  ${RED}✗ FAIL: Stage should not trigger but does${NC}"
+            echo -e "  ${RED} FAIL: Stage should not trigger but does${NC}"
             return 1
         fi
     fi

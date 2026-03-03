@@ -15,6 +15,9 @@ source new_dsl_env/bin/activate
 # Set working directory to project root
 cd /home/avani/projects/aip-lelis/avani/DSL_Generator
 
+source scripts/stages/log_chain_context.sh
+log_chain_context "stage_generate_plots"
+
 # Run plot generation
 python -u generate_plots_from_metrics.py "$EXPERIMENT_DIR" --dsl_round "${DSL_ROUND:-0}"
 

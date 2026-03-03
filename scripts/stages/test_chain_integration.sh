@@ -141,10 +141,10 @@ test_scenario() {
     
     # Check if expected stage was mentioned
     if echo "$output" | grep -qi "$expected_stage"; then
-        echo -e "  ${GREEN}✓ PASS: Expected stage mentioned in output${NC}"
+        echo -e "  ${GREEN} PASS: Expected stage mentioned in output${NC}"
         return 0
     else
-        echo -e "  ${RED}✗ FAIL: Expected stage not found in output${NC}"
+        echo -e "  ${RED} FAIL: Expected stage not found in output${NC}"
         return 1
     fi
 }

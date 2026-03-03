@@ -33,7 +33,7 @@ def main():
     parser.add_argument('--recipes_path', type=str, default="craft/resources/recipes.yaml", help='Path to recipes YAML')
     parser.add_argument('--hints_path', type=str, default="craft/resources/hints.yaml", help='Path to hints YAML')
     parser.add_argument('--max_attempts', type=int, default=30, help='Maximum attempts per task')
-    parser.add_argument('--dsl_round', type=int, default=0, help='DSL evolution round number')
+    parser.add_argument('--dsl_round', type=int, default=int(os.environ.get("DSL_ROUND", "0")), help='DSL evolution round number')
     parser.add_argument('--func_evolution_round', type=int, default=None, help='Function evolution round number')
     
     args = parser.parse_args()
@@ -49,7 +49,7 @@ def main():
                 config = json.load(f)
                 tasks = config.get("tasks", [])
         else:
-            print(f"✗ Tasks file not found: {tasks_file}", file=sys.stderr)
+            print(f" Tasks file not found: {tasks_file}", file=sys.stderr)
             return 1
     # If only one argument and it's a JSON string, parse it
     elif len(tasks) == 1 and tasks[0].startswith('['):
@@ -66,10 +66,11 @@ def main():
     # Deduplicate tasks
     tasks = list(dict.fromkeys(tasks))  # Preserves order while removing duplicates
     
-    # Load CFG
-    cfg_path = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
+    # Load CFG - use dsl_round to select which cfg version
+    cfg_filename = f"cfg_output_{args.dsl_round}.json" if args.dsl_round > 0 else "cfg_output.json"
+    cfg_path = os.path.join(args.experiment_dir, "cfg", cfg_filename)
     if not os.path.exists(cfg_path):
-        print(f"✗ CFG file not found: {cfg_path}", file=sys.stderr)
+        print(f" CFG file not found: {cfg_path}", file=sys.stderr)
         return 1
     
     with open(cfg_path, 'r', encoding='utf-8') as f:
@@ -78,14 +79,14 @@ def main():
     terminals = cfg_data.get("terminals", {})
     
     if not cfg:
-        print("✗ Invalid CFG data", file=sys.stderr)
+        print(" Invalid CFG data", file=sys.stderr)
         return 1
     
     # Ensure terminals match CFG (add missing functions from CFG)
     terminals = ensure_terminals_match_cfg(cfg, terminals, shared_vllm=None)
     
     if not terminals:
-        print("✗ No terminal functions found in CFG", file=sys.stderr)
+        print(" No terminal functions found in CFG", file=sys.stderr)
         return 1
     
     # Guard: Check that final functions exist for this exact round
@@ -103,7 +104,7 @@ def main():
                 missing_for_round.append(f"{safe_name}_dsl{args.dsl_round}_func{args.func_evolution_round}.py")
         
         if missing_for_round:
-            print(f"\n✗ ERROR: test_tasks called for func_evolution_round={args.func_evolution_round} "
+            print(f"\n ERROR: test_tasks called for func_evolution_round={args.func_evolution_round} "
                   f"but the following final function files are missing:", file=sys.stderr)
             for m in missing_for_round:
                 print(f"  - {m}", file=sys.stderr)
@@ -149,9 +150,9 @@ def main():
                 tensor_parallel_size=4,
                 gpu_memory_utilization=0.75  # Use 75% of GPU memory instead of default 90%
             )
-            print("✓ Shared vLLM instance created")
+            print(" Shared vLLM instance created")
         except Exception as e:
-            print(f"✗ ERROR: Failed to create shared vLLM instance: {e}", file=sys.stderr)
+            print(f" ERROR: Failed to create shared vLLM instance: {e}", file=sys.stderr)
             import traceback
             traceback.print_exc(file=sys.stderr)
             # Clean up GPU memory after failure
@@ -203,7 +204,7 @@ def main():
     print("Task Test Results")
     print(f"{'='*80}")
     for task, success in task_results.items():
-        status = "✓" if success else "✗"
+        status = "" if success else ""
         print(f"  {status} {task}")
     
     # Generate plots from results tracking
@@ -218,11 +219,11 @@ def main():
                 dsl_round=args.dsl_round,
                 func_evolution_round=args.func_evolution_round
             )
-            print("✓ Plots generated successfully")
+            print(" Plots generated successfully")
         else:
-            print("⚠ No results found for plotting")
+            print(" No results found for plotting")
     except Exception as e:
-        print(f"⚠ Warning: Could not generate plots: {e}")
+        print(f" Warning: Could not generate plots: {e}")
         import traceback
         traceback.print_exc()
     
@@ -248,10 +249,10 @@ def main():
         print(f"  Chaining script will handle function evolution submission.")
     
     if all_solved:
-        print(f"\n✓ ALL TASKS SOLVED! Pipeline complete.")
+        print(f"\n ALL TASKS SOLVED! Pipeline complete.")
         update_state(args.experiment_dir, phase="complete")
     else:
-        print(f"\n✗ {len(failing_tasks)}/{len(tasks)} tasks failed: {failing_tasks}")
+        print(f"\n {len(failing_tasks)}/{len(tasks)} tasks failed: {failing_tasks}")
         print(f"  Chaining script will check results and submit evolution jobs if needed.")
     
     # Clean up vLLM instance and GPU memory before exiting
@@ -265,9 +266,9 @@ def main():
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
-            print("✓ Cleanup complete")
+            print(" Cleanup complete")
         except Exception as e:
-            print(f"⚠ Warning: Error during cleanup: {e}")
+            print(f" Warning: Error during cleanup: {e}")
     
     return 0
 

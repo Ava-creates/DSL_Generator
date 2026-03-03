@@ -156,28 +156,28 @@ def test_eval_preservation():
 # Test that evaluate exists
 try:
     if 'evaluate' in dir():
-        print("\\n✓ SUCCESS: evaluate() function is preserved and callable")
+        print("\\n SUCCESS: evaluate() function is preserved and callable")
     else:
-        print("\\n✗ FAIL: evaluate() function not found")
+        print("\\n FAIL: evaluate() function not found")
 except Exception as err:
-    print("\\n✗ ERROR: " + str(err))
+    print("\\n ERROR: " + str(err))
 """
         
         # Check syntax
         try:
             compile(test_program, '<string>', 'exec')
-            print("\n✓ SUCCESS: Program compiles without syntax errors")
+            print("\n SUCCESS: Program compiles without syntax errors")
             print("\n" + "=" * 80)
             print("TEST PASSED: solve() and evaluate() are preserved!")
             print("=" * 80)
             return True
         except SyntaxError as e:
-            print(f"\n✗ FAIL: Syntax error: {e}")
+            print(f"\n FAIL: Syntax error: {e}")
             print(f"   Line {e.lineno}: {e.text}")
             return False
             
     except Exception as e:
-        print(f"\n✗ ERROR during processing: {e}")
+        print(f"\n ERROR during processing: {e}")
         import traceback
         traceback.print_exc()
         return False

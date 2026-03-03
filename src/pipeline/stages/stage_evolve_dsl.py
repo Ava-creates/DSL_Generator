@@ -25,19 +25,83 @@ except ImportError:
     vLLM = None
 
 
+def extract_failed_programs_from_synthesis_results(experiment_dir: str, failing_tasks: List[str], dsl_version: int = 0) -> Dict[str, List[str]]:
+    """Extract failed programs for failing tasks from synthesis_results.json"""
+    synthesis_results_path = os.path.join(experiment_dir, "results_tracking", "synthesis_results.json")
+    
+    if not os.path.exists(synthesis_results_path):
+        print(f"Warning: synthesis_results.json not found at {synthesis_results_path}")
+        return {}
+    
+    failed_programs_by_task = {}
+    
+    try:
+        with open(synthesis_results_path, 'r') as f:
+            synthesis_results = json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not read synthesis_results.json: {e}")
+        return {}
+    
+    for task in failing_tasks:
+        failed_programs = []
+        
+        # Find all failed attempts for this task from the specified DSL version
+        for result in synthesis_results:
+            if (result.get("task") == task and 
+                not result.get("success", False) and 
+                result.get("cfg_version", 0) == dsl_version):
+                program = result.get("program", "")
+                reward = result.get("total_reward", 0)
+                steps = result.get("interactions", [])
+                failure_reason = result.get("failure_reason", "Unknown")
+                
+                # Try to extract inventory information from different possible fields
+                inventory_before = result.get("inventory_before", {})
+                inventory_after = result.get("inventory_after", {})
+                inventory_trace = result.get("inventory_trace", [])
+                
+                # Format program information with available inventory data
+                lines = [f"Program:\n{program}"]
+                lines.append(f"Reward: {reward}")
+                lines.append(f"Steps: {sum(steps) if isinstance(steps, list) else steps}")
+                
+                # Add inventory information if available
+                if inventory_trace:
+                    lines.append("Inventory changes during the program (whole inventory after the function where the change happened):")
+                    for entry in inventory_trace:
+                        token = entry.get("token", "?")
+                        inv = entry.get("inventory", [])
+                        inv_str = ", ".join(inv) if inv else "<empty>"
+                        lines.append(f"  {token} -> {inv_str}")
+                elif inventory_before or inventory_after:
+                    lines.append(f"Inventory before: {inventory_before}")
+                    lines.append(f"Inventory after: {inventory_after}")
+                
+                lines.append(f"Failure: {failure_reason}")
+                program_info = "\n".join(lines)
+                failed_programs.append(program_info)
+        
+        if failed_programs:
+            failed_programs_by_task[task] = failed_programs
+            print(f"Found {len(failed_programs)} failed programs for task: {task}")
+    
+    return failed_programs_by_task
+
+
 def main():
     parser = argparse.ArgumentParser(description="Stage 7: Evolve DSL")
     parser.add_argument('--experiment_dir', type=str, required=True, help='Experiment directory')
     parser.add_argument('--failing_tasks', type=str, nargs='+', required=True, help='List of failing tasks')
     parser.add_argument('--recipes_path', type=str, default="craft/resources/recipes.yaml", help='Path to recipes YAML')
     parser.add_argument('--max_retries', type=int, default=10, help='Maximum retries for DSL evolution')
+    parser.add_argument('--dsl_version', type=int, default=0, help='DSL version to load (e.g., 0 for cfg_output_0.json)')
     
     args = parser.parse_args()
     
     # Load CFG
-    cfg_path = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
+    cfg_path = os.path.join(args.experiment_dir, "cfg", f"cfg_output_{args.dsl_version}.json")
     if not os.path.exists(cfg_path):
-        print(f"✗ CFG file not found: {cfg_path}", file=sys.stderr)
+        print(f" CFG file not found: {cfg_path}", file=sys.stderr)
         return 1
     
     with open(cfg_path, 'r', encoding='utf-8') as f:
@@ -46,12 +110,12 @@ def main():
     terminals = cfg_data.get("terminals", {})
     
     if not cfg or not terminals:
-        print("✗ Invalid CFG data", file=sys.stderr)
+        print(" Invalid CFG data", file=sys.stderr)
         return 1
     
     # Load recipes
     if not os.path.exists(args.recipes_path):
-        print(f"✗ Recipes file not found: {args.recipes_path}", file=sys.stderr)
+        print(f" Recipes file not found: {args.recipes_path}", file=sys.stderr)
         return 1
     
     with open(args.recipes_path, 'r') as f:
@@ -63,9 +127,9 @@ def main():
         try:
             print("\n[Setup] Initializing shared vLLM instance...")
             shared_vllm = vLLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
-            print("✓ Shared vLLM instance created")
+            print(" Shared vLLM instance created")
         except Exception as e:
-            print(f"⚠ Warning: Could not create shared vLLM instance: {e}")
+            print(f" Warning: Could not create shared vLLM instance: {e}")
             shared_vllm = None
     
     # Evolve DSL with retries
@@ -73,6 +137,10 @@ def main():
     dsl_success = False
     new_cfg = cfg
     new_terminals = terminals
+    
+    # Extract failed programs from synthesis results for context
+    print("\n[Step 1] Extracting failed programs from synthesis results...")
+    failed_programs_by_task = extract_failed_programs_from_synthesis_results(args.experiment_dir, args.failing_tasks, args.dsl_version)
     
     for dsl_attempt in range(1, args.max_retries + 1):
         if dsl_attempt > 1:
@@ -84,43 +152,48 @@ def main():
             cfg=cfg,
             recipes=recipes,
             terminals=terminals,
-            shared_vllm=shared_vllm
+            shared_vllm=shared_vllm,
+            failed_programs_by_task=failed_programs_by_task
         )
         
         # Check if evolution was successful and CFG is different
         if attempt_success and new_cfg != cfg:
             dsl_success = True
-            print(f"\n✓ DSL evolved successfully on attempt {dsl_attempt}")
+            print(f"\n DSL evolved successfully on attempt {dsl_attempt}")
             break
         else:
             if attempt_success:
-                print(f"  ⚠ Attempt {dsl_attempt}: Evolved CFG is same as original, retrying...")
+                print(f"   Attempt {dsl_attempt}: Evolved CFG is same as original, retrying...")
             else:
-                print(f"  ⚠ Attempt {dsl_attempt}: DSL evolution failed, retrying...")
+                print(f"   Attempt {dsl_attempt}: DSL evolution failed, retrying...")
     
     if dsl_success and new_cfg != cfg:
         # Note: evolve_dsl() in integrated_pipeline.py already versions and saves the CFG file
         # So we don't need to do it again here - just verify it was saved
         if os.path.exists(cfg_path):
-            print(f"✓ Evolved CFG already saved by evolve_dsl() function")
+            print(f" Evolved CFG already saved by evolve_dsl() function")
         else:
-            print(f"⚠ Warning: CFG file not found after evolution, saving manually...")
+            print(f" Warning: CFG file not found after evolution, saving manually...")
             # Version existing file before saving new one (if it exists)
             if os.path.exists(cfg_path):
                 try:
                     version_file(cfg_path, keep_original=False)
-                    print(f"  ✓ Versioned previous CFG file")
+                    print(f"   Versioned previous CFG file")
                 except Exception as e:
-                    print(f"  ⚠ Warning: Failed to version CFG file: {e}")
+                    print(f"   Warning: Failed to version CFG file: {e}")
+            
+            # Save evolved CFG to next version
+            next_version = args.dsl_version + 1
+            output_cfg_path = os.path.join(args.experiment_dir, "cfg", f"cfg_output_{next_version}.json")
             
             cfg_data = {
                 "cfg": new_cfg,
                 "terminals": new_terminals,
                 "example": cfg_data.get("example", None)
             }
-            with open(cfg_path, 'w', encoding='utf-8') as f:
+            with open(output_cfg_path, 'w', encoding='utf-8') as f:
                 json.dump(cfg_data, f, indent=2, ensure_ascii=False)
-            print(f"✓ Saved evolved CFG to {cfg_path}")
+            print(f" Saved evolved CFG to {output_cfg_path}")
         
         # Save stage completion marker (legacy + grouped folder path)
         stage_status = {
@@ -188,15 +261,15 @@ def main():
             file_gen_script = os.path.join(scripts_dir, "stage_file_generation.slurm")
             if os.path.exists(file_gen_script):
                 # Chaining will be handled by the SLURM script
-                print(f"  ✓ Will submit file generation job")
+                print(f"   Will submit file generation job")
             else:
-                print(f"  ⚠ Warning: File generation script not found: {file_gen_script}")
+                print(f"   Warning: File generation script not found: {file_gen_script}")
         except Exception as e:
-            print(f"  ⚠ Warning: Failed to submit file generation job: {e}")
+            print(f"   Warning: Failed to submit file generation job: {e}")
         
         return 0
     else:
-        print(f"\n✗ DSL evolution failed after {args.max_retries} attempts")
+        print(f"\n DSL evolution failed after {args.max_retries} attempts")
         
         # Save stage completion marker
         stage_status = {

@@ -16,6 +16,8 @@ source new_dsl_env/bin/activate
 # Set working directory to project root
 cd /home/avani/projects/aip-lelis/avani/DSL_Generator
 
+source scripts/stages/log_chain_context.sh
+
 # Load configuration from YAML file (if EXPERIMENT_CONFIG is set)
 # Environment variables take precedence over config file
 if [ -n "${EXPERIMENT_CONFIG:-}" ] || [ -f "config/experiment_config.yaml" ]; then
@@ -30,13 +32,7 @@ if [ -z "${EXPERIMENT_DIR:-}" ]; then
     echo "EXPERIMENT_DIR not set, using: $EXPERIMENT_DIR"
 fi
 
-# Ensure experiment directory is set for this job
-if [ -z "${EXPERIMENT_DIR:-}" ]; then
-    timestamp=$(date +%Y%m%d_%H%M%S)
-    EXPERIMENT_DIR="experiments/experiment_${timestamp}_${SLURM_JOB_ID:-$$}"
-    export EXPERIMENT_DIR
-    echo "EXPERIMENT_DIR not set, using: $EXPERIMENT_DIR"
-fi
+log_chain_context "stage_get_cfg"
 
 # Run the stage script
 if [ "${SKIP_CFG_GENERATION:-false}" = "true" ]; then
@@ -51,12 +47,6 @@ python src/pipeline/stages/stage_get_cfg.py \
     $SKIP_FLAG \
     ${CFG_OUTPUT_FILE:+--cfg_output_file "$CFG_OUTPUT_FILE"} \
     --max_cfg_retries "${MAX_CFG_RETRIES:-10}"
-
-# If EXPERIMENT_DIR was auto-generated, read it from the file Python wrote
-if [ -z "${EXPERIMENT_DIR:-}" ] && [ -f ".experiment_dir" ]; then
-    export EXPERIMENT_DIR=$(cat .experiment_dir)
-    echo "Using auto-generated experiment directory: $EXPERIMENT_DIR"
-fi
 
 # Chain to next stage based on state
 if [ $? -eq 0 ]; then

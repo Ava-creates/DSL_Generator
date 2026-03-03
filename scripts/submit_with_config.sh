@@ -28,6 +28,15 @@ echo ""
 export EXPERIMENT_CONFIG="$CONFIG_FILE"
 source scripts/load_config.sh
 
+# Ensure each submission has an isolated experiment directory unless explicitly provided
+if [ -z "${EXPERIMENT_DIR:-}" ]; then
+    timestamp=$(date +%Y%m%d_%H%M%S)
+    EXPERIMENT_DIR="experiments/experiment_${timestamp}_$RANDOM"
+    export EXPERIMENT_DIR
+    echo "Auto-generated EXPERIMENT_DIR: $EXPERIMENT_DIR"
+    echo ""
+fi
+
 # Verify required variables are set
 if [ -z "${TASKS:-}" ]; then
     echo "Error: TASKS not set in config file or environment"
@@ -50,10 +59,19 @@ echo ""
 
 # Submit the first job
 echo "Submitting pipeline job..."
-sbatch --export=ALL,EXPERIMENT_CONFIG="$CONFIG_FILE" scripts/stages/stage_get_cfg.slurm
+# Use experiment-specific log folder when EXPERIMENT_DIR is set
+LOG_DIR="scripts/log"
+if [ -n "${EXPERIMENT_DIR:-}" ]; then
+    LOG_DIR="scripts/log/$(basename "$EXPERIMENT_DIR")"
+fi
+mkdir -p "$LOG_DIR"
+sbatch --export=ALL,EXPERIMENT_CONFIG="$CONFIG_FILE" \
+    --output="${LOG_DIR}/stage_get_cfg_%j.out" \
+    --error="${LOG_DIR}/stage_get_cfg_%j.err" \
+    scripts/stages/stage_get_cfg.slurm
 
 echo ""
 echo "Pipeline job submitted!"
 echo "  Monitor with: squeue -u \$USER"
-echo "  Check logs in: scripts/log/"
+echo "  Check logs in: $LOG_DIR/"
 

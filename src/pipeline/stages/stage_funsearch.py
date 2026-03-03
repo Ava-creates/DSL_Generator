@@ -45,7 +45,7 @@ def main():
     # Load CFG
     cfg_path = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
     if not os.path.exists(cfg_path):
-        print(f"✗ CFG file not found: {cfg_path}", file=sys.stderr)
+        print(f" CFG file not found: {cfg_path}", file=sys.stderr)
         return 1
     
     with open(cfg_path, 'r', encoding='utf-8') as f:
@@ -54,13 +54,13 @@ def main():
     terminals = cfg_data.get("terminals", {})
     
     if not cfg or not terminals:
-        print("✗ Invalid CFG data", file=sys.stderr)
+        print(" Invalid CFG data", file=sys.stderr)
         return 1
     
     # Load file generation status to get func_files and func_init_files
     file_gen_status_path = os.path.join(args.experiment_dir, "stage_file_generation_status.json")
     if not os.path.exists(file_gen_status_path):
-        print(f"✗ File generation status not found: {file_gen_status_path}", file=sys.stderr)
+        print(f" File generation status not found: {file_gen_status_path}", file=sys.stderr)
         return 1
     
     with open(file_gen_status_path, 'r') as f:
@@ -70,12 +70,12 @@ def main():
     func_init_files = file_gen_status.get("func_init_files", {})
     
     if not func_files or not func_init_files:
-        print("✗ Function files not found in file generation status", file=sys.stderr)
+        print(" Function files not found in file generation status", file=sys.stderr)
         return 1
     
     # Load specification
     if not os.path.exists(args.spec_file):
-        print(f"✗ Specification file not found: {args.spec_file}", file=sys.stderr)
+        print(f" Specification file not found: {args.spec_file}", file=sys.stderr)
         return 1
     
     with open(args.spec_file, 'r', encoding='utf-8') as f:
@@ -87,9 +87,9 @@ def main():
         try:
             print("\n[Setup] Initializing shared vLLM instance...")
             shared_vllm = vLLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
-            print("✓ Shared vLLM instance created")
+            print(" Shared vLLM instance created")
         except Exception as e:
-            print(f"⚠ Warning: Could not create shared vLLM instance: {e}")
+            print(f" Warning: Could not create shared vLLM instance: {e}")
             shared_vllm = None
     
     # Configure FunSearch
@@ -123,11 +123,11 @@ def main():
                 spec_file=args.spec_file,
                 experiment_dir=results_dir
             )
-            print(f"[{func_name}] ✓ Completed FunSearch")
+            print(f"[{func_name}]  Completed FunSearch")
             return func_name, "success", None
         except Exception as e:
             error_msg = str(e)
-            print(f"[{func_name}] ✗ Error: {error_msg}", file=sys.stderr)
+            print(f"[{func_name}]  Error: {error_msg}", file=sys.stderr)
             import traceback
             traceback.print_exc()
             return func_name, "error", error_msg
@@ -160,10 +160,10 @@ def main():
     
     # Check for errors
     if errors:
-        print(f"\n✗ FunSearch failed for {len(errors)} function(s):")
+        print(f"\n FunSearch failed for {len(errors)} function(s):")
         for func_name, error in errors.items():
             print(f"  - {func_name}: {error}")
-        print("✗ Stage failed", file=sys.stderr)
+        print(" Stage failed", file=sys.stderr)
         return 1
     
     # Save stage completion marker
@@ -178,7 +178,7 @@ def main():
     with open(status_file, 'w') as f:
         json.dump(stage_status, f, indent=2)
     
-    print(f"\n✓ All {len(terminals)} functions completed FunSearch successfully")
+    print(f"\n All {len(terminals)} functions completed FunSearch successfully")
     return 0
 
 

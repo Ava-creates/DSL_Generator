@@ -16,6 +16,9 @@ source new_dsl_env/bin/activate
 # Set working directory to project root
 cd /home/avani/projects/aip-lelis/avani/DSL_Generator
 
+source scripts/stages/log_chain_context.sh
+log_chain_context "stage_explicit_feedback"
+
 # Run the stage script
 if [ -n "${FUNC_EVOLUTION_ROUND:-}" ]; then
     FUNC_ROUND_ARG="--func_evolution_round $FUNC_EVOLUTION_ROUND"

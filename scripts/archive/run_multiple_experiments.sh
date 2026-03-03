@@ -51,7 +51,7 @@ submit_experiment() {
         --export="ALL,EXPERIMENT_DIR=$exp_dir" \
         scripts/stages/stage_get_cfg.slurm
     
-    echo "  ✓ Submitted initial job for $exp_name"
+    echo "   Submitted initial job for $exp_name"
     echo ""
 }
 

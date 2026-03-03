@@ -11,6 +11,20 @@ if [ -n "${EXPERIMENT_CONFIG:-}" ] || [ -f "config/experiment_config.yaml" ]; th
     fi
 fi
 
+# Return log directory: scripts/log/<experiment_name> when EXPERIMENT_DIR is set, else scripts/log
+get_log_dir() {
+    if [ -n "${EXPERIMENT_DIR:-}" ]; then
+        echo "scripts/log/$(basename "$EXPERIMENT_DIR")"
+    else
+        echo "scripts/log"
+    fi
+}
+
+# Ensure log directory exists (call before sbatch)
+ensure_log_dir() {
+    mkdir -p "$(get_log_dir)"
+}
+
 # Function to read state value
 get_state_value() {
     local key="$1"
@@ -126,24 +140,25 @@ EOF
     return 1
 }
 
-# Helper function to submit test_tasks job
 # Usage: submit_test_tasks_job "func_evolution_round"
 submit_test_tasks_job() {
     local func_evolution_round="$1"
     local tasks_str=$(get_state_value "tasks")
     
     if [ -z "$tasks_str" ] || [ "$tasks_str" = "[]" ]; then
-        echo "  ⚠ No tasks found in state, cannot submit test tasks"
+        echo "   No tasks found in state, cannot submit test tasks"
         return 1
     fi
     
-                    TASKS_STR="$tasks_str" JOB_PREFIX=$job_prefix FUNC_EVOLUTION_ROUND=$func_evolution_round python3 << EOF
+                    ensure_log_dir
+    LOG_DIR="$(get_log_dir)"
+    TASKS_STR="$tasks_str" JOB_PREFIX=$job_prefix FUNC_EVOLUTION_ROUND=$func_evolution_round LOG_DIR="$LOG_DIR" python3 << EOF
 import sys
 import os
+import subprocess
 sys.path.insert(0, '/home/avani/projects/aip-lelis/avani/DSL_Generator')
 from src.utils.pipeline_state import mark_test_tasks_submitted, read_state, update_state
 import json
-import subprocess
 
 if mark_test_tasks_submitted("$EXPERIMENT_DIR"):
     state = read_state("$EXPERIMENT_DIR")
@@ -232,9 +247,12 @@ if mark_test_tasks_submitted("$EXPERIMENT_DIR"):
     if experiment_config:
         env_str = f"{env_str},EXPERIMENT_CONFIG={experiment_config}"
     
+    log_dir = os.environ.get("LOG_DIR", "scripts/log")
     subprocess.run([
         "sbatch", "--parsable", "--export", f"ALL,{env_str}",
         "--job-name", job_name,
+        "--output", f"{log_dir}/stage_test_tasks_%j.out",
+        "--error", f"{log_dir}/stage_test_tasks_%j.err",
         f"{scripts_dir}/stage_test_tasks.slurm"
     ], check=False)
     print(f"Submitted single test tasks job for {num_unique_tasks} tasks")
@@ -288,16 +306,9 @@ verify_test_tasks_complete() {
 chain_based_on_state() {
     local scripts_dir="scripts/stages"
     
-    # If EXPERIMENT_DIR is not set, try to read it from .experiment_dir file
     if [ -z "${EXPERIMENT_DIR:-}" ]; then
-        local exp_dir_file=".experiment_dir"
-        if [ -f "$exp_dir_file" ]; then
-            export EXPERIMENT_DIR=$(cat "$exp_dir_file")
-            echo "Using auto-generated experiment directory from file: $EXPERIMENT_DIR"
-        else
-            echo "ERROR: EXPERIMENT_DIR not set and .experiment_dir file not found"
-            return 1
-        fi
+        echo "ERROR: EXPERIMENT_DIR not set; cannot chain stages safely"
+        return 1
     fi
     
     local state_file="$EXPERIMENT_DIR/pipeline_state.txt"
@@ -355,7 +366,9 @@ chain_based_on_state() {
     # If test_tasks has completed, we should go to evolution instead (checked later)
     if [ "$phase" = "initial" ] && [ "$function_impl_remaining" -eq "$function_impl_total" ] && [ "$function_impl_total" -gt 0 ] && [ "$file_generation_submitted" -eq 0 ] && [ "$test_tasks_submitted" -eq 0 ]; then
         echo "Chaining to file generation..."
-        JOB_PREFIX=$job_prefix python3 << EOF
+        ensure_log_dir
+        LOG_DIR="$(get_log_dir)"
+        JOB_PREFIX=$job_prefix LOG_DIR="$LOG_DIR" python3 << EOF
 import sys
 import os
 sys.path.insert(0, '/home/avani/projects/aip-lelis/avani/DSL_Generator')
@@ -372,9 +385,12 @@ if mark_file_generation_submitted("$EXPERIMENT_DIR"):
     if experiment_config:
         export_str = f"{export_str},EXPERIMENT_CONFIG={experiment_config}"
     
+    log_dir = os.environ.get("LOG_DIR", "scripts/log")
     subprocess.run([
         "sbatch", "--parsable", "--export", export_str,
         "--job-name", job_name,
+        "--output", f"{log_dir}/stage_file_generation_%j.out",
+        "--error", f"{log_dir}/stage_file_generation_%j.err",
         "$scripts_dir/stage_file_generation.slurm"
     ], check=False)
     print("Submitted file generation job")
@@ -430,8 +446,9 @@ try:
     
     if [ "$is_file_gen_stage" = true ] && [ "$phase" = "initial" ] && [ "$file_gen_status" = "completed" ] && [ "$implement_cfg_already_submitted" = false ] && [ "$func_evolution_round" -eq 0 ]; then
         echo "File generation complete. Submitting implement_cfg package jobs (one per function, in parallel)..."
-        
-        JOB_PREFIX=$job_prefix DSL_ROUND=$dsl_round FUNC_EVOLUTION_ROUND=$func_evolution_round python3 << EOF
+        ensure_log_dir
+        LOG_DIR="$(get_log_dir)"
+        JOB_PREFIX=$job_prefix DSL_ROUND=$dsl_round FUNC_EVOLUTION_ROUND=$func_evolution_round LOG_DIR="$LOG_DIR" python3 << EOF
 import sys
 import os
 import json
@@ -478,9 +495,12 @@ for func_name in terminals.keys():
         env_str = f"{env_str},EXPERIMENT_CONFIG={experiment_config}"
     
     job_name = f"{job_prefix}_impl_{func_name}"
+    log_dir = os.environ.get("LOG_DIR", "scripts/log")
     result = subprocess.run([
         "sbatch", "--parsable", "--export", f"ALL,{env_str}",
         "--job-name", job_name,
+        "--output", f"{log_dir}/stage_implement_cfg_%x_%j.out",
+        "--error", f"{log_dir}/stage_implement_cfg_%x_%j.err",
         f"{scripts_dir}/stage_implement_cfg_single.slurm"
     ], capture_output=True, text=True)
     
@@ -509,7 +529,7 @@ EOF
         # This checks that all explicit_feedback status files exist and are marked "completed"
         # Will retry up to 30 times (60 seconds) to handle race conditions
         if ! verify_all_status_complete "explicit_feedback" "$dsl_round" "$func_evolution_round"; then
-            echo "  ⚠ Not all implement_cfg jobs have completed yet. Skipping test_tasks submission."
+            echo "   Not all implement_cfg jobs have completed yet. Skipping test_tasks submission."
             return
         fi
         
@@ -549,7 +569,7 @@ EOF
         
         # Verify test_tasks actually completed (this is the source of truth)
         if ! verify_test_tasks_complete; then
-            echo "  ⚠ Test tasks not actually complete yet. Skipping function evolution submission."
+            echo "   Test tasks not actually complete yet. Skipping function evolution submission."
             return
         fi
         
@@ -573,7 +593,7 @@ if os.path.exists(status_file):
 print('1' if all_solved else '0')
 " 2>/dev/null || echo "0")
             if [ "$all_solved" = "1" ]; then
-                    echo "✓ All tasks solved! Pipeline complete."
+                    echo " All tasks solved! Pipeline complete."
                     return
             fi
         fi
@@ -602,7 +622,7 @@ print('1' if all_solved else '0')
         func_evolution_ever_attempted="${func_evolution_ever_attempted:-0}"
         
         if [ "$func_evolution_ever_attempted" -eq 0 ]; then
-            echo "  ⚠ SAFEGUARD: Function evolution has never been attempted!"
+            echo "   SAFEGUARD: Function evolution has never been attempted!"
             echo "  Forcing function evolution attempt..."
             if [ "$func_evolution_round" -ge "$max_func_evolutions" ]; then
                 python3 << EOF
@@ -635,7 +655,9 @@ EOF
                 echo "Submitting function evolution jobs..."
                 local cfg_file="$EXPERIMENT_DIR/cfg/cfg_output.json"
                 if [ -f "$cfg_file" ]; then
-                    TASKS_STR="$tasks_str" JOB_PREFIX=$job_prefix DSL_ROUND=$dsl_round python3 << EOF
+                    ensure_log_dir
+                    LOG_DIR="$(get_log_dir)"
+                    TASKS_STR="$tasks_str" JOB_PREFIX=$job_prefix DSL_ROUND=$dsl_round LOG_DIR="$LOG_DIR" python3 << EOF
 import sys
 import os
 import json
@@ -701,9 +723,12 @@ if mark_function_evolution_submitted("$EXPERIMENT_DIR"):
             env_str = f"{env_str},EXPERIMENT_CONFIG={experiment_config}"
         
         job_name = f"{job_prefix}_evf_{func_name}"
+        log_dir = os.environ.get("LOG_DIR", "scripts/log")
         subprocess.run([
             "sbatch", "--parsable", "--export", f"ALL,{env_str}",
             "--job-name", job_name,
+            "--output", f"{log_dir}/stage_evolve_function_%x_%j.out",
+            "--error", f"{log_dir}/stage_evolve_function_%x_%j.err",
             f"{scripts_dir}/stage_evolve_function_single.slurm"
         ], check=False)
     print("Submitted function evolution jobs")
@@ -723,7 +748,7 @@ EOF
         # - dsl_evolutions_remaining > 0 (DSL evolution rounds remaining)
         if [ "$func_evolution_round" -ge "$max_func_evolutions" ] && [ "$dsl_evolutions_remaining" -gt 0 ]; then
             if [ "$func_evolution_ever_attempted" -eq 0 ]; then
-                echo "  ⚠ ERROR: DSL evolution requested but function evolution never attempted!"
+                echo "   ERROR: DSL evolution requested but function evolution never attempted!"
                 return
             fi
             
@@ -731,7 +756,9 @@ EOF
             local dsl_evolution_submitted=$(get_state_value "dsl_evolution_submitted")
             if [ "$dsl_evolution_submitted" -eq 0 ]; then
                 echo "Submitting DSL evolution job..."
-                TASKS_STR="$tasks_str" JOB_PREFIX=$job_prefix python3 << EOF
+                ensure_log_dir
+                LOG_DIR="$(get_log_dir)"
+                TASKS_STR="$tasks_str" JOB_PREFIX=$job_prefix LOG_DIR="$LOG_DIR" python3 << EOF
 import sys
 import os
 import json
@@ -773,9 +800,12 @@ if mark_dsl_evolution_submitted("$EXPERIMENT_DIR"):
     
     job_prefix = os.environ.get("JOB_PREFIX", "exp")
     job_name = f"{job_prefix}_evdsl"
+    log_dir = os.environ.get("LOG_DIR", "scripts/log")
     subprocess.run([
         "sbatch", "--parsable", "--export", f"ALL,{env_str}",
         "--job-name", job_name,
+        "--output", f"{log_dir}/stage_evolve_dsl_%j.out",
+        "--error", f"{log_dir}/stage_evolve_dsl_%j.err",
         "$scripts_dir/stage_evolve_dsl.slurm"
     ], check=False)
     print("Submitted DSL evolution job")
@@ -825,7 +855,7 @@ print('false')
             
             # Verify all function evolution jobs completed
             if ! verify_all_status_complete "evolve_function" "$dsl_round" "$func_evolution_round"; then
-                echo "  ⚠ Not all function evolution jobs have completed yet. Skipping test_tasks submission."
+                echo "   Not all function evolution jobs have completed yet. Skipping test_tasks submission."
                 return
             fi
             
@@ -843,7 +873,7 @@ print('false')
                         return
                 fi
             else
-                echo "  ⚠ test_tasks already submitted, waiting for completion..."
+                echo "   test_tasks already submitted, waiting for completion..."
             fi
         fi
     fi
@@ -864,7 +894,9 @@ print('false')
         local dsl_status=$(python3 -c "import json; f=open('$dsl_status_file_to_check'); d=json.load(f); print(d.get('evolved', False))" 2>/dev/null || echo "False")
         if [ "$dsl_status" = "True" ] && [ "$file_generation_submitted" -eq 0 ]; then
             echo "DSL evolution complete. Submitting file generation job..."
-            JOB_PREFIX=$job_prefix python3 << EOF
+            ensure_log_dir
+            LOG_DIR="$(get_log_dir)"
+            JOB_PREFIX=$job_prefix LOG_DIR="$LOG_DIR" python3 << EOF
 import sys
 import os
 sys.path.insert(0, '/home/avani/projects/aip-lelis/avani/DSL_Generator')
@@ -884,9 +916,12 @@ if mark_file_generation_submitted("$EXPERIMENT_DIR"):
         export_str = f"{export_str},EXPERIMENT_CONFIG={experiment_config}"
     
     job_name = f"{job_prefix}_file_gen"
+    log_dir = os.environ.get("LOG_DIR", "scripts/log")
     subprocess.run([
         "sbatch", "--parsable", "--export", export_str,
         "--job-name", job_name,
+        "--output", f"{log_dir}/stage_file_generation_%j.out",
+        "--error", f"{log_dir}/stage_file_generation_%j.err",
         "$scripts_dir/stage_file_generation.slurm"
     ], check=False)
     print(f"Submitted file generation job after DSL evolution (dsl_round={dsl_round}, func_evolution_round={func_evolution_round})")

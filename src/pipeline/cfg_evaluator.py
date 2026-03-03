@@ -112,7 +112,8 @@ class CFGEvaluator:
                 "total_reward": 0.0,
                 "actions_taken": [],
                 "steps": 0,
-                "evaluation_time": evaluation_time
+                "evaluation_time": evaluation_time,
+                "inventory_trace": [],
             }
         
         # Reset environment
@@ -123,14 +124,15 @@ class CFGEvaluator:
         
         evaluation_time = time.time() - start_time
         
-        # Format result similar to ProgramEvaluator
+        # Format result similar to ProgramEvaluator (pass through inventory_trace for prog synth)
         return {
             "success": result.get("success", False),
             "total_reward": result.get("total_reward", 0.0),
             "actions_taken": result.get("actions_taken", []),
             "steps": result.get("steps", 0),
             "evaluation_time": evaluation_time,
-            "error": result.get("error")
+            "error": result.get("error"),
+            "inventory_trace": result.get("inventory_trace", []),
         }
 
 
@@ -180,8 +182,8 @@ if __name__ == "__main__":
     parser.add_argument(
         '--max_steps',
         type=int,
-        default=300,
-        help='Maximum number of steps (default: 300)'
+        default=400,
+        help='Maximum number of steps (default: 400)'
     )
     
     args = parser.parse_args()

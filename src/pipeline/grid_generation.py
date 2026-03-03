@@ -177,6 +177,8 @@ def _render_prompt(
         summaries = []
         for i, case in enumerate(existing_cases):
             parts = [f"Case {i}: task_name={case.get('task_name', '?')}"]
+            if case.get("test_type"):
+                parts.append(f"test_type={case['test_type']}")
             if case.get("arg_values"):
                 parts.append(f"arg_values={json.dumps(case['arg_values'])}")
             if case.get("init_pos"):
@@ -341,6 +343,15 @@ def _normalize_grid_spec(
         normalized["arg_values"] = raw_arg_values
     else:
         normalized["arg_values"] = {}
+    
+    # Add test_type field - REQUIRED
+    test_type = spec.get("test_type")
+    if test_type is None:
+        raise ValueError("test_type is required and must be one of: negative, positive, edge")
+    if test_type not in ["negative", "positive", "edge"]:
+        raise ValueError(f"test_type must be one of 'negative', 'positive', 'edge', got: {test_type}")
+    normalized["test_type"] = test_type
+    
     return normalized
 
 
@@ -386,8 +397,8 @@ def ensure_function_grid_spec(
             existing_cases=existing_cases,
             codebase_text=codebase_text or "",
         )
-        print(f"[grid_generation] Prompt for {func_name}:\n{base_prompt}\n")
-        print(f"[grid_generation] Args for {func_name}: {func_args or 'None'}")
+        # print(f"[grid_generation] Prompt for {func_name}:\n{base_prompt}\n")
+        # print(f"[grid_generation] Args for {func_name}: {func_args or 'None'}")
         params = SamplingParams(temperature=0.2, max_tokens=5000)
         attempts = max(1, int(attempts))
         last_error = ""
@@ -400,8 +411,10 @@ def ensure_function_grid_spec(
                     + last_error
                     + "\nRegenerate a valid JSON spec."
                 )
+            print("prompt", prompt)
             output = shared_vllm.generate([prompt], sampling_params=params)
             raw = output[0].outputs[0].text.strip()
+
             print(f"[grid_generation] Raw LLM output for {func_name}:\n{raw}\n")
             json_text = _extract_json_object(raw)
             print("json_text", json_text)
@@ -412,14 +425,17 @@ def ensure_function_grid_spec(
                 try:
                     spec = ast.literal_eval(json_text)
                 except Exception:
-                    print(f"  Warning: grid JSON parse failed for {func_name}: {e}")
-                    spec = {}
+                    last_error = f"grid JSON parse failed: {e}"
+                    print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
+                    continue
             if not isinstance(spec, dict):
                 last_error = "response is not a JSON object"
+                print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
                 continue
-            required_keys = {"task_name", "width", "height", "grid"}
+            required_keys = {"task_name", "width", "height", "grid", "test_type"}
             if not required_keys.issubset(spec.keys()):
                 last_error = f"missing required keys: {sorted(required_keys - set(spec.keys()))}"
+                print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
                 continue
             normalized = _normalize_grid_spec(
                 spec=spec if isinstance(spec, dict) else {},
@@ -435,11 +451,14 @@ def ensure_function_grid_spec(
             )
             if not args_ok:
                 last_error = args_error
+                print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
                 continue
             print(normalized)
             is_valid = True
             if 'validate_grid_spec' in globals():
                 is_valid, last_error = validate_grid_spec(normalized, cookbook)
+            if not is_valid:
+                print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed (validate_grid_spec): {last_error}")
             if is_valid:
                 output_dir = os.path.dirname(output_path)
                 if output_dir:
@@ -452,7 +471,7 @@ def ensure_function_grid_spec(
 
     reason = last_error or "unknown validation error"
     print(
-        f"  Warning: Grid spec invalid for {func_name} after {attempts} attempts: {reason}"
+        f"[grid_generation] FAILED to generate valid grid for {func_name} after {attempts} attempts. Last error: {reason}"
     )
     return None
 

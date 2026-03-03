@@ -68,8 +68,8 @@ def version_file(file_path: str, keep_original: bool = False) -> None:
     # Rename the existing file to the versioned name
     try:
         os.rename(file_path, versioned_path)
-        print(f"  ✓ Versioned {filename} -> {versioned_filename}")
+        print(f"   Versioned {filename} -> {versioned_filename}")
     except OSError as e:
-        print(f"  ✗ Error versioning file {filename}: {e}")
+        print(f"   Error versioning file {filename}: {e}")
         raise
 

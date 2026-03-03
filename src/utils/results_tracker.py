@@ -93,7 +93,7 @@ class ResultsTracker:
                 temp_path = f.name
             shutil.move(temp_path, self.evolution_metrics_file)
         except Exception as e:
-            print(f"⚠ Error saving evolution metrics: {e}", file=sys.stderr)
+            print(f" Error saving evolution metrics: {e}", file=sys.stderr)
             raise
     
     def _save_results(self):
@@ -110,7 +110,7 @@ class ResultsTracker:
                 temp_path = f.name
             shutil.move(temp_path, self.results_file)
         except Exception as e:
-            print(f"⚠ Error saving results: {e}", file=sys.stderr)
+            print(f" Error saving results: {e}", file=sys.stderr)
             import traceback
             traceback.print_exc()
             raise
@@ -127,7 +127,7 @@ class ResultsTracker:
                 temp_path = f.name
             shutil.move(temp_path, self.interactions_file)
         except Exception as e:
-            print(f"⚠ Error saving interactions: {e}", file=sys.stderr)
+            print(f" Error saving interactions: {e}", file=sys.stderr)
             raise
     
     def add_funsearch_interactions(self, steps: int):
@@ -158,7 +158,10 @@ class ResultsTracker:
         reward: float,
         steps: int,
         func_evolution_round: Optional[int] = None,
-        success: bool = False
+        success: bool = False,
+        raw_llm_response: Optional[str] = None,
+        prompt: Optional[str] = None,
+        inventory_trace: Optional[List] = None
     ):
         """Add a program synthesis result.
         
@@ -170,6 +173,9 @@ class ResultsTracker:
             steps: Number of environment steps taken during program synthesis
             func_evolution_round: Function evolution round number (None if initial testing)
             success: Whether the program successfully solved the task
+            raw_llm_response: Raw LLM output for this synthesis attempt (optional)
+            prompt: Prompt sent to LLM for this synthesis attempt (optional)
+            inventory_trace: Intermediate inventory changes during program execution (optional)
         """
         # Calculate offset (interactions before program synthesis)
         offset = self.interactions["funsearch"] + self.interactions["explicit_feedback"]
@@ -203,14 +209,17 @@ class ResultsTracker:
             "offset": int(offset),
             "total_interactions": int(total_interactions),
             "timestamp": str(datetime.now().isoformat()),
-            "success": bool(success) if success is not None else False
+            "success": bool(success) if success is not None else False,
+            "raw_llm_response": raw_llm_response,
+            "prompt": prompt,
+            "inventory_trace": inventory_trace
         }
         
         # Validate the result can be serialized before adding
         try:
             json.dumps(result)
         except (TypeError, ValueError) as e:
-            print(f"⚠ Error: Result contains non-serializable data: {e}", file=sys.stderr)
+            print(f" Error: Result contains non-serializable data: {e}", file=sys.stderr)
             print(f"  Result: {result}", file=sys.stderr)
             raise ValueError(f"Cannot serialize result: {e}") from e
         
@@ -465,7 +474,7 @@ class ResultsTracker:
             output_file = os.path.join(plot_dir, filename)
         
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved plot to {output_file}")
+        print(f" Saved plot to {output_file}")
         plt.close()
         
         # Also generate separate plots for each task
@@ -555,7 +564,7 @@ class ResultsTracker:
             safe_task_name = task.replace("[", "_").replace("]", "_").replace("/", "_")
             task_output_file = os.path.join(plot_dir, f"reward_vs_interactions_{safe_task_name}.png")
             plt.savefig(task_output_file, dpi=300, bbox_inches='tight')
-            print(f"  ✓ Saved plot for {task} to {task_output_file}")
+            print(f"   Saved plot for {task} to {task_output_file}")
             plt.close()
     
     def plot_all_tasks_combined(
@@ -644,7 +653,7 @@ class ResultsTracker:
             output_file = os.path.join(plot_dir, filename)
         
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
-        print(f"✓ Saved combined plot to {output_file}")
+        print(f" Saved combined plot to {output_file}")
         plt.close()
     
     def get_summary(self) -> Dict:
@@ -781,7 +790,7 @@ class ResultsTracker:
             safe_task_name = task.replace("[", "_").replace("]", "_").replace("/", "_")
             output_file = os.path.join(plot_dir, f"plot_{safe_task_name}.png")
             plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            print(f"  ✓ Saved plot for {task} to {output_file}")
+            print(f"   Saved plot for {task} to {output_file}")
             plt.close()
         
         # Also generate a combined plot
@@ -813,10 +822,10 @@ class ResultsTracker:
         
         output_file = os.path.join(plot_dir, "plot_all_tasks_combined.png")
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
-        print(f"  ✓ Saved combined plot to {output_file}")
+        print(f"   Saved combined plot to {output_file}")
         plt.close()
         
-        print(f"\n✓ All plots generated in {plot_dir}")
+        print(f"\n All plots generated in {plot_dir}")
 
 
 def parse_funsearch_log(log_file: str) -> List[Dict]:
@@ -941,7 +950,7 @@ def plot_funsearch_reward_vs_interactions(
     plt.tight_layout()
     plt.savefig(plot_path, dpi=300, bbox_inches="tight")
     plt.close()
-    print(f"✓ Saved FunSearch plot to {plot_path}")
+    print(f" Saved FunSearch plot to {plot_path}")
     return plot_path
 
 
@@ -999,7 +1008,7 @@ def plot_explicit_feedback_reward_vs_interactions(
     plt.tight_layout()
     plt.savefig(plot_path, dpi=300, bbox_inches="tight")
     plt.close()
-    print(f"✓ Saved explicit feedback plot to {plot_path}")
+    print(f" Saved explicit feedback plot to {plot_path}")
     return plot_path
 
 
@@ -1100,6 +1109,6 @@ def plot_baseline_reward_vs_interactions(
     plt.tight_layout()
     plt.savefig(plot_path, dpi=300, bbox_inches="tight")
     plt.close()
-    print(f"✓ Saved baseline plot to {plot_path}")
+    print(f" Saved baseline plot to {plot_path}")
     return plot_path
 

@@ -70,7 +70,7 @@ echo ""
 
 # Check exit code
 if [ $EXIT_CODE -eq 0 ]; then
-    echo "✓ All tasks solved! Pipeline complete."
+    echo " All tasks solved! Pipeline complete."
     exit 0
 elif [ $EXIT_CODE -eq 100 ]; then
     echo "DSL evolved. Checkpoint saved."
@@ -86,17 +86,17 @@ elif [ $EXIT_CODE -eq 100 ]; then
     NEXT_JOB_ID=$(sbatch --parsable --export=ALL,EXPERIMENT_DIR="$EXPERIMENT_DIR" "$SCRIPT_DIR/run_cfg_version.slurm" 2>&1)
     
     if [[ "$NEXT_JOB_ID" =~ ^[0-9]+$ ]]; then
-        echo "✓ Next job submitted: $NEXT_JOB_ID"
+        echo " Next job submitted: $NEXT_JOB_ID"
         echo "  This job will process CFG version $NEW_CFG_VERSION"
     else
-        echo "⚠ Failed to auto-submit next job. Please submit manually:"
+        echo " Failed to auto-submit next job. Please submit manually:"
         echo "  export EXPERIMENT_DIR=$EXPERIMENT_DIR"
         echo "  sbatch scripts/run_cfg_version.slurm"
     fi
     
     exit 100
 else
-    echo "✗ Pipeline failed or time limit reached"
+    echo " Pipeline failed or time limit reached"
     echo "Exit code: $EXIT_CODE"
     echo ""
     echo "To resume, run:"

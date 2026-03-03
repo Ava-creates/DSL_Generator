@@ -94,12 +94,12 @@ COMMA          ::= ','
 ```
 
 8. **What NOT to do**:
-   - ❌ NEVER create `ACTION1 ::= 'action1'` or any lowercase definitions
-   - ❌ NEVER create `ACTION1 ::= 'ACTION1'` - terminal functions appear directly in productions
-   - ❌ NEVER use lowercase terminal function names
-   - ❌ NEVER use literal parentheses in productions (always use LPAR/RPAR)
-   - ❌ NEVER create circular rules like `X ::= X`
-   - ❌ NEVER create redundant rules for enumeration values
+   -  NEVER create `ACTION1 ::= 'action1'` or any lowercase definitions
+   -  NEVER create `ACTION1 ::= 'ACTION1'` - terminal functions appear directly in productions
+   -  NEVER use lowercase terminal function names
+   -  NEVER use literal parentheses in productions (always use LPAR/RPAR)
+   -  NEVER create circular rules like `X ::= X`
+   -  NEVER create redundant rules for enumeration values
 
 ## Output Format:
 

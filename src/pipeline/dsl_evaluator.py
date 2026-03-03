@@ -98,7 +98,7 @@ class DSLEvaluator:
         Returns:
             Tuple of (function_name, args_list) or None if not a valid function call
         """
-        # Match pattern: FUNC_NAME(ARG1, ARG2, ...)
+        # First, try to match the standard pattern: FUNC_NAME(ARG1, ARG2, ...)
         match = re.match(r'^(\w+)\s*\(([^)]*)\)', token)
         if match:
             func_name = match.group(1)
@@ -108,10 +108,46 @@ class DSLEvaluator:
             else:
                 args = []
             return func_name, args
+        
+        # Fallback: allow bare function names with no parentheses, e.g. "PICKUP".
+        # This supports CFGs where a terminal can appear without arguments, while
+        # still letting CFGParser enforce whether such tokens are syntactically valid.
+        bare_match = re.match(r'^\w+$', token.strip())
+        if bare_match:
+            func_name = bare_match.group(0)
+            return func_name, []
+        
         return None
+
+    @staticmethod
+    def _format_inventory(env) -> List[str]:
+        """Format current inventory as list of 'name=count' strings (nonzero only)."""
+        state = getattr(env, "_current_state", None)
+        if state is None:
+            return []
+        inventory = getattr(state, "inventory", None)
+        if inventory is None:
+            return []
+        world = getattr(env, "world", None)
+        cookbook = getattr(world, "cookbook", None) if world else None
+        index = getattr(cookbook, "index", None) if cookbook else None
+        items = []
+        for idx, count in enumerate(inventory):
+            if not count:
+                continue
+            name = str(idx)
+            if index is not None:
+                try:
+                    resolved = index.get(idx)
+                    if resolved is not None:
+                        name = str(resolved)
+                except Exception:
+                    name = str(idx)
+            items.append(f"{name}={int(count)}")
+        return items
     
     def evaluate_program(self, program: str, env=None, 
-                        max_steps: int = 300,
+                        max_steps: int = 400,
                         **env_kwargs) -> Dict[str, Any]:
         """Evaluate a DSL program.
         
@@ -138,7 +174,8 @@ class DSLEvaluator:
                 "error": "Invalid program syntax",
                 "total_reward": 0.0,
                 "actions_taken": [],
-                "steps": 0
+                "steps": 0,
+                "inventory_trace": [],
             }
         
         # Create or use provided environment
@@ -158,7 +195,9 @@ class DSLEvaluator:
         actions_taken = []
         done = False
         step_count = 0
-        
+        inventory_trace = []  # Only when inventory changes: {"token": str, "inventory": list of "name=count"}
+        last_inventory = self._format_inventory(env) if env else []  # Initial state, to detect changes
+
         i = 0
         while i < len(tokens) and not done and step_count < max_steps:
             token = tokens[i]
@@ -170,7 +209,13 @@ class DSLEvaluator:
                 continue
             
             func_name, args = func_call
-            
+
+            # Normalize string arguments before calling the implementation
+            normalized_args = [
+                arg.lower() if isinstance(arg, str) else arg
+                for arg in args
+            ]
+                        
             # Sanitize function name to match implementation keys
             safe_name = self._sanitize_function_name(func_name)
             
@@ -195,7 +240,7 @@ class DSLEvaluator:
                     
                     # Call function with environment and arguments
                     if args:
-                        actions = func(env_for_func, *args)
+                        actions = func(env_for_func, *normalized_args)
                     else:
                         actions = func(env_for_func)
                     
@@ -226,6 +271,12 @@ class DSLEvaluator:
                         total_reward += float(reward) if reward is not None else 0.0
                         actions_taken.append(actions)
                         step_count += 1
+
+                    # Record inventory only when it changed
+                    inv_items = self._format_inventory(env)
+                    if inv_items != last_inventory:
+                        inventory_trace.append({"token": token, "inventory": inv_items})
+                        last_inventory = inv_items
                     
                 except Exception as e:
                     print(f"Error executing {func_name}: {e}")
@@ -234,7 +285,8 @@ class DSLEvaluator:
                         "error": f"Execution error in {func_name}: {str(e)}",
                         "total_reward": total_reward,
                         "actions_taken": actions_taken,
-                        "steps": step_count
+                        "steps": step_count,
+                        "inventory_trace": inventory_trace,
                     }
             else:
                 # Debug output: show what functions are available
@@ -254,7 +306,8 @@ class DSLEvaluator:
             "success": success,
             "total_reward": total_reward,
             "actions_taken": actions_taken,
-            "steps": step_count
+            "steps": step_count,
+            "inventory_trace": inventory_trace,
         }
     
     @staticmethod
@@ -337,7 +390,7 @@ def load_function_implementations(function_dir: str) -> Dict[str, Callable]:
                         # Also map the original name if different
                         if safe_name != attr_name.lower():
                             implementations[attr_name.lower()] = attr
-                        print(f"  ✓ Loaded function {attr_name} from {filename} (sanitized: {safe_name})")
+                        print(f"   Loaded function {attr_name} from {filename} (sanitized: {safe_name})")
             except Exception as e:
                 print(f"Warning: Could not load module {module_name} from {file_path}: {e}")
                 import traceback

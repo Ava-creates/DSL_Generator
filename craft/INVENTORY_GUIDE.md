@@ -14,7 +14,7 @@ Cookbook and Item Index
 -----------------------
 - Loaded from `craft/resources/recipes.yaml` via `craft.cookbook.Cookbook`.
 - Item ids are 1-based; 0 is reserved/invalid.
-- Name ↔ id:
+- Name <-> id:
   - `cookbook.index.index(name)` → id
   - `cookbook.index.get(id)` → name
   - `len(cookbook.index)` → n_kinds + 1 (because ids start at 1).

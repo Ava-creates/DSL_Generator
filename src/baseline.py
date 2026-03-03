@@ -129,7 +129,7 @@ def main():
     args = parser.parse_args()
 
     if not os.path.exists(args.spec_file):
-        print(f"✗ Specification file not found: {args.spec_file}", file=sys.stderr)
+        print(f" Specification file not found: {args.spec_file}", file=sys.stderr)
         return 1
 
     experiment_dir = args.experiment_dir
@@ -239,7 +239,7 @@ def main():
         else:
             print(f"  Failed {func_name}: {result.stderr.strip()}", file=sys.stderr)
 
-    print(f"\n✓ Submitted {submitted}/{len(terminals)} jobs")
+    print(f"\n Submitted {submitted}/{len(terminals)} jobs")
     return 0 if submitted else 1
 
 

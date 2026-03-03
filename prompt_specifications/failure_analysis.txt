@@ -1,0 +1,18 @@
+Here are the tasks that failed to be solved:
+{failing_tasks}
+
+## Current CFG (Context-Free Grammar)
+{cfg}
+
+## Terminal function descriptions (intended behavior from DSL)
+{terminal_descriptions}
+
+## Latest final function implementations (actual code)
+{final_function_descriptions}
+
+## Failed programs per task (with inventory changes)
+For each failing task, the following programs were tried (with inventory changes during the program shown). Use this to see what each program actually achieved and why it did not solve the task.
+
+{failed_programs_per_task}
+
+Give me top three reasons why the DSL might be failing to solve these tasks in bullet points. Remember that these reasons should correspond to the CFG as we are only genrating the grammar and terminal function descriptions using these reasons and do not have control on the implementation at all.

@@ -128,17 +128,17 @@ submit_first_job() {
     local sbatch_exit=$?
     
     if [ $sbatch_exit -ne 0 ]; then
-        echo -e "${RED} Failed to submit job${NC}" >&2
+        echo -e "${RED}✗ Failed to submit job${NC}" >&2
         echo "sbatch output: $job_id" >&2
         return 1
     fi
     
     if [[ "$job_id" =~ ^[0-9]+$ ]]; then
-        echo -e "${GREEN} First iteration job submitted: $job_id${NC}" >&2
+        echo -e "${GREEN}✓ First iteration job submitted: $job_id${NC}" >&2
         echo "$job_id"
         return 0
     else
-        echo -e "${RED} Failed to get valid job ID${NC}" >&2
+        echo -e "${RED}✗ Failed to get valid job ID${NC}" >&2
         echo "sbatch output: $job_id" >&2
         return 1
     fi
@@ -230,7 +230,7 @@ submit_cfg_job() {
     # Verify checkpoint exists
     local checkpoint_file="$PROJECT_ROOT/$experiment_dir/checkpoint.json"
     if [ ! -f "$checkpoint_file" ]; then
-        echo -e "${RED} Checkpoint file not found: $checkpoint_file${NC}" >&2
+        echo -e "${RED}✗ Checkpoint file not found: $checkpoint_file${NC}" >&2
         return 1
     fi
     
@@ -246,17 +246,17 @@ submit_cfg_job() {
     local sbatch_exit=$?
     
     if [ $sbatch_exit -ne 0 ]; then
-        echo -e "${RED} Failed to submit CFG version job${NC}" >&2
+        echo -e "${RED}✗ Failed to submit CFG version job${NC}" >&2
         echo "sbatch output: $job_id" >&2
         return 1
     fi
     
     if [[ "$job_id" =~ ^[0-9]+$ ]]; then
-        echo -e "${GREEN} CFG version job submitted: $job_id${NC}" >&2
+        echo -e "${GREEN}✓ CFG version job submitted: $job_id${NC}" >&2
         echo "$job_id"
         return 0
     else
-        echo -e "${RED} Failed to get valid job ID${NC}" >&2
+        echo -e "${RED}✗ Failed to get valid job ID${NC}" >&2
         echo "sbatch output: $job_id" >&2
         return 1
     fi
@@ -268,7 +268,7 @@ main() {
     if [ "$BACKGROUND_MODE" = false ]; then
         if [ -z "${STY:-}" ] && [ -z "${TMUX:-}" ]; then
             echo ""
-            echo -e "${YELLOW} Warning: Not running in screen/tmux session${NC}"
+            echo -e "${YELLOW}⚠ Warning: Not running in screen/tmux session${NC}"
             echo "This script will monitor jobs until completion (may take days)."
             echo "If you disconnect, the script will stop."
             echo ""
@@ -307,7 +307,7 @@ main() {
     fi
     
     if [ -z "$first_job_id" ] || [[ ! "$first_job_id" =~ ^[0-9]+$ ]]; then
-        echo -e "${RED} Failed to get valid job ID${NC}"
+        echo -e "${RED}✗ Failed to get valid job ID${NC}"
         exit 1
     fi
     
@@ -319,7 +319,7 @@ main() {
     local experiment_dir
     experiment_dir=$(get_experiment_dir "$first_job_id")
     if [ $? -ne 0 ]; then
-        echo -e "${RED} Could not determine experiment directory${NC}"
+        echo -e "${RED}✗ Could not determine experiment directory${NC}"
         echo "Please check the job logs and set EXPERIMENT_DIR manually if needed"
         exit 1
     fi
@@ -332,7 +332,7 @@ main() {
     if [ "$exit_code" = "0" ]; then
         echo ""
         echo "=========================================="
-        echo -e "${GREEN} Pipeline Complete!${NC}"
+        echo -e "${GREEN}✓ Pipeline Complete!${NC}"
         echo "=========================================="
         echo "All tasks solved successfully."
         echo "Experiment directory: $EXPERIMENT_DIR"
@@ -355,12 +355,12 @@ main() {
             
             # Submit CFG version job
             if ! cfg_job_id=$(submit_cfg_job "$experiment_dir"); then
-                echo -e "${RED} Failed to submit CFG version job${NC}"
+                echo -e "${RED}✗ Failed to submit CFG version job${NC}"
                 exit 1
             fi
             
             if [ -z "$cfg_job_id" ] || [[ ! "$cfg_job_id" =~ ^[0-9]+$ ]]; then
-                echo -e "${RED} Failed to get valid job ID for CFG version job${NC}"
+                echo -e "${RED}✗ Failed to get valid job ID for CFG version job${NC}"
                 exit 1
             fi
             
@@ -371,7 +371,7 @@ main() {
             if [ "$cfg_exit_code" = "0" ]; then
                 echo ""
                 echo "=========================================="
-                echo -e "${GREEN} Pipeline Complete!${NC}"
+                echo -e "${GREEN}✓ Pipeline Complete!${NC}"
                 echo "=========================================="
                 echo "All tasks solved successfully."
                 echo "Experiment directory: $EXPERIMENT_DIR"
@@ -385,7 +385,7 @@ main() {
             else
                 echo ""
                 echo "=========================================="
-                echo -e "${RED} Pipeline Failed${NC}"
+                echo -e "${RED}✗ Pipeline Failed${NC}"
                 echo "=========================================="
                 echo "CFG version job exited with code: $cfg_exit_code"
                 echo "Experiment directory: $EXPERIMENT_DIR"
@@ -398,7 +398,7 @@ main() {
     else
         echo ""
         echo "=========================================="
-        echo -e "${RED} Pipeline Failed${NC}"
+        echo -e "${RED}✗ Pipeline Failed${NC}"
         echo "=========================================="
         echo "First iteration job exited with code: $exit_code"
         echo "Experiment directory: $experiment_dir"

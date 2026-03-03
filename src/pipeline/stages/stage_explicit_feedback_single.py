@@ -44,13 +44,13 @@ def main():
     # Load CFG
     cfg_path = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
     if not os.path.exists(cfg_path):
-        print(f"✗ CFG file not found: {cfg_path}", file=sys.stderr)
+        print(f" CFG file not found: {cfg_path}", file=sys.stderr)
         return 1
     
     # Load file generation status
     file_gen_status_path = os.path.join(args.experiment_dir, "stage_file_generation_status.json")
     if not os.path.exists(file_gen_status_path):
-        print(f"✗ File generation status not found: {file_gen_status_path}", file=sys.stderr)
+        print(f" File generation status not found: {file_gen_status_path}", file=sys.stderr)
         return 1
     
     with open(file_gen_status_path, 'r') as f:
@@ -60,7 +60,7 @@ def main():
     func_signatures = file_gen_status.get("func_signatures", {})
     
     if args.function_name not in func_files:
-        print(f"✗ Function file not found for {args.function_name}", file=sys.stderr)
+        print(f" Function file not found for {args.function_name}", file=sys.stderr)
         return 1
     
     func_file = func_files[args.function_name]
@@ -72,19 +72,19 @@ def main():
     )
     status_path = funsearch_status_grouped if os.path.exists(funsearch_status_grouped) else funsearch_status_file
     if not os.path.exists(status_path):
-        print(f"✗ FunSearch status not found for {args.function_name}", file=sys.stderr)
+        print(f" FunSearch status not found for {args.function_name}", file=sys.stderr)
         return 1
     
     with open(status_path, 'r') as f:
         funsearch_status = json.load(f)
     
     if funsearch_status.get("status") != "completed":
-        print(f"✗ FunSearch did not complete successfully for {args.function_name}", file=sys.stderr)
+        print(f" FunSearch did not complete successfully for {args.function_name}", file=sys.stderr)
         return 1
     
     # Load specification
     if not os.path.exists(args.spec_file):
-        print(f"✗ Specification file not found: {args.spec_file}", file=sys.stderr)
+        print(f" Specification file not found: {args.spec_file}", file=sys.stderr)
         return 1
     
     with open(args.spec_file, 'r', encoding='utf-8') as f:
@@ -96,9 +96,9 @@ def main():
         try:
             print("\n[Setup] Initializing shared vLLM instance...")
             shared_vllm = vLLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
-            print("✓ Shared vLLM instance created")
+            print(" Shared vLLM instance created")
         except Exception as e:
-            print(f"⚠ Warning: Could not create shared vLLM instance: {e}")
+            print(f" Warning: Could not create shared vLLM instance: {e}")
             shared_vllm = None
     
     # Results directory
@@ -196,7 +196,7 @@ def main():
                 with open(path, 'w') as f:
                     json.dump(stage_status, f, indent=2)
             
-            print(f"[{args.function_name}] ✓ Completed explicit feedback ({args.num_iterations} iterations)")
+            print(f"[{args.function_name}]  Completed explicit feedback ({args.num_iterations} iterations)")
             
             # Decrement explicit feedback counter and check if we should trigger test tasks
             print(f"\n[Chaining] Decrementing explicit feedback count...")
@@ -216,18 +216,18 @@ def main():
                 
                 if not tasks:
                     print(f"\n[Chaining] All explicit feedback jobs completed, but no tasks found in state file.")
-                    print(f"  ⚠ Warning: Test tasks cannot be submitted without a tasks list.")
+                    print(f"   Warning: Test tasks cannot be submitted without a tasks list.")
                     print(f"  Chaining script will check for tasks and handle submission.")
                 else:
                     print(f"\n[Chaining] All explicit feedback jobs completed. Chaining script will submit test task jobs.")
             
             return 0
         else:
-            print(f"[{args.function_name}] ⚠ No final function extracted")
+            print(f"[{args.function_name}]  No final function extracted")
             return 1
     except Exception as e:
         error_msg = str(e)
-        print(f"[{args.function_name}] ✗ Error: {error_msg}", file=sys.stderr)
+        print(f"[{args.function_name}]  Error: {error_msg}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         
@@ -265,7 +265,7 @@ def main():
             
             if not tasks:
                 print(f"\n[Chaining] All explicit feedback jobs completed (some may have failed), but no tasks found.")
-                print(f"  ⚠ Warning: Test tasks cannot be submitted without a tasks list.")
+                print(f"   Warning: Test tasks cannot be submitted without a tasks list.")
                 print(f"  Chaining script will check for tasks and handle submission.")
             else:
                 print(f"\n[Chaining] All explicit feedback jobs completed (some may have failed). Chaining script will submit test task jobs.")

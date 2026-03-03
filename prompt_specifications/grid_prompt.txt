@@ -3,7 +3,8 @@ We want the simplest test possible to check if the generated function is working
 
 Function: <<FUNCTION_NAME>>
 Description: <<DESCRIPTION>>
-Craft description : <<ENV_DESCRIPTION>>
+Craft description :
+<<ENV_DESCRIPTION>>
 Recipes : <<RECIPES>>
 Function Arguments Needed: <<ARGUMENTS>>
 - Include every function argument (excluding env) in arg_values with correct types.
@@ -24,6 +25,7 @@ Return ONLY valid JSON with the following keys:
 - arg_values (object mapping function argument name -> value)
 - pass_check (string Python expression returning true/false)
 - grid (list of 12 rows, each row is a list of 12 strings)
+- test_type (string) REQUIRED: must be one of "negative", "positive", or "edge"
 
 Grid cells must be empty "" or one of these item names:
 <<VALID_ITEMS>>
@@ -34,8 +36,45 @@ The grid and inventory should comply with the task requirement to be valid.
 Use the simplest setup that isolates the function under test.
 Generate exactly ONE test case as a single JSON object.
 If the function has arguments, write pass_check so that the expected outcome reflects the argument values.
+
 <<EXISTING_CASES>>
 If existing test cases are listed above, generate a test case that is DIFFERENT from all of them — use different arg_values, init_pos, init_dir, or grid layout. If no existing cases are listed, generate a straightforward test case that clearly verifies the function's core behavior.
+
+IMPORTANT: Set test_type appropriately based on these definitions:
+
+**"positive"** - Normal successful cases where the function should work as intended:
+- Function called with valid arguments and proper preconditions met
+- Environment state allows the function to execute successfully
+- All required resources/conditions are available
+- Function should complete its intended behavior
+
+**"negative"** - Cases where the function should fail or do nothing due to invalid conditions:
+- Function called with invalid or non-existent arguments
+- Required preconditions are not met (missing resources, blocked paths, etc.)
+- Environment state prevents successful execution
+- Function should reject the operation or leave state unchanged
+
+**"edge"** - Boundary conditions or unusual but valid scenarios that test limits:
+- Function called with technically valid but extreme argument values
+- Minimal or maximal resource conditions that still allow execution
+- Unusual but valid environment states or agent positions
+- Boundary cases that test the limits of the function's behavior
+
+The pass_check should reflect the expected behavior:
+- Positive tests: assert that the intended action succeeded and state changed appropriately
+- Negative tests: assert that nothing changed or the action was properly rejected
+- Edge tests: assert that the boundary condition was handled correctly
+
+TARGET TEST DISTRIBUTION for each function: 5 positive, 3 negative, 2 edge cases (total: 10 test cases)
+
+Based on the existing test cases listed above, prioritize generating the test type that is most needed:
+- If there are fewer than 5 positive test cases, generate a "positive" test
+- If there are fewer than 3 negative test cases, generate a "negative" test  
+- If there are fewer than 2 edge test cases, generate an "edge" test
+- If all targets are met, generate whichever type helps achieve better coverage
+
+IMPORTANT: Negative and edge tests are critical for catching bugs where functions ignore their arguments or violate specifications. Ensure these test types properly validate the function's constraints and failure modes.
+
 Decide whether prerequisites (primitives and crafted items) should be on the grid or in inventory based on
 what the function is supposed to do
 Ensure the chosen task is actually satisfiable:

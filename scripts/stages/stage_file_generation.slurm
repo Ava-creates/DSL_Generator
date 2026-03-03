@@ -16,8 +16,12 @@ source new_dsl_env/bin/activate
 # Set working directory to project root
 cd /home/avani/projects/aip-lelis/avani/DSL_Generator
 
+source scripts/stages/log_chain_context.sh
+
 # Load config (exports USE_EXISTING_GRID_SPECS, GRID_SPEC_DIR, etc.)
 source scripts/load_config.sh
+
+log_chain_context "stage_file_generation"
 
 # Run the stage script
 if [ -n "${FUNC_EVOLUTION_ROUND:-}" ]; then

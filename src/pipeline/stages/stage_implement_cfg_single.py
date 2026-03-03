@@ -71,7 +71,7 @@ def main():
     
     # Use dsl_round from state file if not provided or if it doesn't match
     if args.dsl_round != state_dsl_round:
-        print(f"[Implement CFG] ⚠ Warning: dsl_round mismatch!")
+        print(f"[Implement CFG]  Warning: dsl_round mismatch!")
         print(f"  Command line: {args.dsl_round}, State file: {state_dsl_round}")
         print(f"  Using state file value: {state_dsl_round}")
         args.dsl_round = state_dsl_round
@@ -82,7 +82,7 @@ def main():
         args.func_evolution_round = state_func_round
         print(f"[Implement CFG] Using func_evolution_round={args.func_evolution_round} from state file")
     elif args.func_evolution_round != state_func_round:
-        print(f"[Implement CFG] ⚠ Warning: func_evolution_round mismatch!")
+        print(f"[Implement CFG]  Warning: func_evolution_round mismatch!")
         print(f"  Command line: {args.func_evolution_round}, State file: {state_func_round}")
         print(f"  Using state file value: {state_func_round}")
         args.func_evolution_round = state_func_round
@@ -92,7 +92,7 @@ def main():
     # Load CFG
     cfg_path = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
     if not os.path.exists(cfg_path):
-        print(f"✗ CFG file not found: {cfg_path}", file=sys.stderr)
+        print(f" CFG file not found: {cfg_path}", file=sys.stderr)
         return 1
     
     with open(cfg_path, 'r', encoding='utf-8') as f:
@@ -102,11 +102,11 @@ def main():
     example = cfg_data.get("example", None)
     
     if not cfg or not terminals:
-        print("✗ Invalid CFG data", file=sys.stderr)
+        print(" Invalid CFG data", file=sys.stderr)
         return 1
     
     if args.function_name not in terminals:
-        print(f"✗ Function {args.function_name} not found in terminals", file=sys.stderr)
+        print(f" Function {args.function_name} not found in terminals", file=sys.stderr)
         return 1
     
     description = terminals[args.function_name]
@@ -114,7 +114,7 @@ def main():
     # Load file generation status to get func_files and func_init_files
     file_gen_status_path = os.path.join(args.experiment_dir, "stage_file_generation_status.json")
     if not os.path.exists(file_gen_status_path):
-        print(f"✗ File generation status not found: {file_gen_status_path}", file=sys.stderr)
+        print(f" File generation status not found: {file_gen_status_path}", file=sys.stderr)
         return 1
     
     with open(file_gen_status_path, 'r') as f:
@@ -125,7 +125,7 @@ def main():
     func_signatures = file_gen_status.get("func_signatures", {})
     
     if args.function_name not in func_files or args.function_name not in func_init_files:
-        print(f"✗ Function files not found for {args.function_name}", file=sys.stderr)
+        print(f" Function files not found for {args.function_name}", file=sys.stderr)
         return 1
     
     func_file = func_files[args.function_name]
@@ -133,7 +133,7 @@ def main():
     
     # Load specification
     if not os.path.exists(args.spec_file):
-        print(f"✗ Specification file not found: {args.spec_file}", file=sys.stderr)
+        print(f" Specification file not found: {args.spec_file}", file=sys.stderr)
         return 1
     
     with open(args.spec_file, 'r', encoding='utf-8') as f:
@@ -199,10 +199,10 @@ def main():
                 tensor_parallel_size=4,
                 gpu_memory_utilization=0.75  # Reduced from 0.85 to leave more headroom for parallel jobs
             )
-            print("✓ Shared vLLM instance created - will be reused for both FunSearch and explicit feedback")
+            print(" Shared vLLM instance created - will be reused for both FunSearch and explicit feedback")
         except RuntimeError as e:
             error_msg = str(e)
-            print(f"✗ ERROR: Could not create shared vLLM instance: {error_msg}", file=sys.stderr)
+            print(f" ERROR: Could not create shared vLLM instance: {error_msg}", file=sys.stderr)
             
             # Provide diagnostic information
             try:
@@ -228,7 +228,7 @@ def main():
             print(f"  Shared instance is required to avoid GPU memory issues when running FunSearch and explicit feedback sequentially", file=sys.stderr)
             return 1
         except Exception as e:
-            print(f"✗ ERROR: Unexpected error creating shared vLLM instance: {e}", file=sys.stderr)
+            print(f" ERROR: Unexpected error creating shared vLLM instance: {e}", file=sys.stderr)
             import traceback
             traceback.print_exc(file=sys.stderr)
             return 1
@@ -283,7 +283,7 @@ def main():
         final_funsearch_steps = results_tracker.interactions.get("funsearch", 0)
         steps_taken = final_funsearch_steps - initial_funsearch_steps
         
-        print(f"[{args.function_name}] ✓ Completed FunSearch (env steps: {steps_taken})")
+        print(f"[{args.function_name}]  Completed FunSearch (env steps: {steps_taken})")
         
         # Save FunSearch status
         status_file = os.path.join(args.experiment_dir, f"stage_funsearch_{args.function_name}_status.json")
@@ -316,13 +316,13 @@ def main():
                     function_name=args.function_name,
                 )
             else:
-                print(f"  ⚠ No FunSearch log found for plotting: {args.function_name}")
+                print(f"   No FunSearch log found for plotting: {args.function_name}")
         except Exception as plot_error:
-            print(f"  ⚠ Failed to plot FunSearch metrics: {plot_error}")
+            print(f"   Failed to plot FunSearch metrics: {plot_error}")
         
     except Exception as e:
         error_msg = str(e)
-        print(f"[{args.function_name}] ✗ FunSearch failed: {error_msg}", file=sys.stderr)
+        print(f"[{args.function_name}]  FunSearch failed: {error_msg}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         
@@ -355,7 +355,7 @@ def main():
         with open(func_file, 'r', encoding='utf-8') as f:
             funsearch_result_code = f.read()
     except Exception as e:
-        print(f"  ⚠ Warning: Could not read FunSearch result file: {e}", file=sys.stderr)
+        print(f"   Warning: Could not read FunSearch result file: {e}", file=sys.stderr)
     
     try:
         current_func_file = func_file
@@ -399,7 +399,7 @@ def main():
         # Final fallback: if everything failed, use FunSearch result
         if final_func is None and funsearch_result_code:
             final_func = funsearch_result_code
-            print(f"  ⚠ Using FunSearch result as final function (explicit feedback failed)")
+            print(f"   Using FunSearch result as final function (explicit feedback failed)")
         
         if final_func:
             # Save final function
@@ -458,7 +458,7 @@ def main():
                 with open(path, 'w') as f:
                     json.dump(explicit_fb_status, f, indent=2)
             
-            print(f"[{args.function_name}] ✓ Completed explicit feedback ({args.num_iterations} iterations)")
+            print(f"[{args.function_name}]  Completed explicit feedback ({args.num_iterations} iterations)")
             
             # Plot explicit feedback reward vs interactions and baseline combined plot
             try:
@@ -482,7 +482,7 @@ def main():
                         function_name=args.function_name,
                     )
                 else:
-                    print(f"  ⚠ No explicit feedback file found for plotting: {feedback_file}")
+                    print(f"   No explicit feedback file found for plotting: {feedback_file}")
                 
                 # Combined baseline plot (FunSearch + Explicit Feedback)
                 log_file = find_funsearch_log_file(args.function_name, results_dir)
@@ -497,7 +497,7 @@ def main():
                         function_name=args.function_name,
                     )
             except Exception as plot_error:
-                print(f"  ⚠ Failed to plot explicit feedback/baseline metrics: {plot_error}")
+                print(f"   Failed to plot explicit feedback/baseline metrics: {plot_error}")
             
             # Decrement counter (both FunSearch and Explicit Feedback are part of implement_cfg)
             print(f"\n[Chaining] Decrementing function implementation counter...")
@@ -516,23 +516,23 @@ def main():
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
                         torch.cuda.synchronize()
-                    print("✓ GPU memory freed")
+                    print(" GPU memory freed")
                 except Exception as cleanup_error:
-                    print(f"  ⚠ Warning: Error during cleanup: {cleanup_error}")
+                    print(f"   Warning: Error during cleanup: {cleanup_error}")
             
             return 0
         else:
-            print(f"[{args.function_name}] ⚠ No final function extracted")
+            print(f"[{args.function_name}]  No final function extracted")
             return 1
             
     except Exception as e:
         error_msg = str(e)
-        print(f"[{args.function_name}] ✗ Explicit feedback failed: {error_msg}", file=sys.stderr)
+        print(f"[{args.function_name}]  Explicit feedback failed: {error_msg}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         
         # Extract best function from FunSearch log file as fallback
-        print(f"  ⚠ Extracting best function from FunSearch log as fallback...")
+        print(f"   Extracting best function from FunSearch log as fallback...")
         best_func_from_log = None
         
         try:
@@ -607,13 +607,13 @@ def main():
                     else:
                         best_func_from_log = func_body
                     
-                    print(f"  ✓ Extracted best function from log (score: {best_log_score:.4f})")
+                    print(f"   Extracted best function from log (score: {best_log_score:.4f})")
                 else:
-                    print(f"  ⚠ No functions found in log file")
+                    print(f"   No functions found in log file")
             else:
-                print(f"  ⚠ Could not find log file for {args.function_name}")
+                print(f"   Could not find log file for {args.function_name}")
         except Exception as extract_error:
-            print(f"  ⚠ Failed to extract function from log: {extract_error}", file=sys.stderr)
+            print(f"   Failed to extract function from log: {extract_error}", file=sys.stderr)
             import traceback
             traceback.print_exc()
         
@@ -641,7 +641,7 @@ def main():
                 source = "FunSearch log" if best_func_from_log else "FunSearch result"
                 print(f"  Saved {args.function_name} to {os.path.basename(func_file_path)} ({source})")
             except Exception as save_error:
-                print(f"  ⚠ Failed to save final function: {save_error}", file=sys.stderr)
+                print(f"   Failed to save final function: {save_error}", file=sys.stderr)
         
         # Save failure status
         status_file = os.path.join(args.experiment_dir, f"stage_explicit_feedback_{args.function_name}_status.json")
@@ -675,9 +675,9 @@ def main():
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                     torch.cuda.synchronize()
-                print("✓ GPU memory freed")
+                print(" GPU memory freed")
             except Exception as e:
-                print(f"  ⚠ Warning: Error during cleanup: {e}")
+                print(f"   Warning: Error during cleanup: {e}")
         
         return 1
 

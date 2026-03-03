@@ -46,7 +46,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
             if default_path.exists():
                 config_path = str(default_path)
             elif example_path.exists():
-                print(f"⚠ Warning: Using example config file. Copy to experiment_config.yaml to customize.", file=sys.stderr)
+                print(f" Warning: Using example config file. Copy to experiment_config.yaml to customize.", file=sys.stderr)
                 config_path = str(example_path)
     
     if config_path and os.path.exists(config_path):
@@ -54,12 +54,12 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f) or {}
             # Print to stderr to avoid interfering with bash eval
-            print(f"✓ Loaded config from: {config_path}", file=sys.stderr)
+            print(f" Loaded config from: {config_path}", file=sys.stderr)
         except Exception as e:
-            print(f"⚠ Warning: Failed to load config file {config_path}: {e}", file=sys.stderr)
+            print(f" Warning: Failed to load config file {config_path}: {e}", file=sys.stderr)
             config = {}
     elif config_path:
-        print(f"⚠ Warning: Config file not found: {config_path}", file=sys.stderr)
+        print(f" Warning: Config file not found: {config_path}", file=sys.stderr)
     
     # Environment variable overrides (highest priority)
     # Map environment variable names to config keys
@@ -81,6 +81,8 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "GRID_REGENERATION_ATTEMPTS": "grid_regeneration_attempts",
         "USE_EXISTING_GRID_SPECS": "use_existing_grid_specs",
         "GRID_SPEC_DIR": "grid_spec_dir",
+        "FAILURE_ANALYSIS_PROMPT": "failure_analysis_prompt",
+        "CFG_EVOLUTION_PROMPT": "cfg_evolution_prompt",
     }
     
     for env_var, config_key in env_mappings.items():
@@ -98,7 +100,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
                 config[config_key] = env_value.lower() in ("true", "1", "yes")
             elif config_key == "use_existing_grid_specs":
                 config[config_key] = env_value.lower() in ("true", "1", "yes")
-            elif config_key == "grid_spec_dir":
+            elif config_key in ("grid_spec_dir", "failure_analysis_prompt", "cfg_evolution_prompt"):
                 config[config_key] = env_value
             elif config_key == "tasks":
                 # Handle tasks - can be JSON array or space-separated
@@ -130,6 +132,8 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "grid_regeneration_attempts": 5,
         "use_existing_grid_specs": False,
         "grid_spec_dir": None,
+        "failure_analysis_prompt": "prompt_specifications/failure_analysis.txt",
+        "cfg_evolution_prompt": "prompt_specifications/cfg_evolution.txt",
     }
     
     for key, default_value in defaults.items():
@@ -164,6 +168,8 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
         "grid_regeneration_attempts": "GRID_REGENERATION_ATTEMPTS",
         "use_existing_grid_specs": "USE_EXISTING_GRID_SPECS",
         "grid_spec_dir": "GRID_SPEC_DIR",
+        "failure_analysis_prompt": "FAILURE_ANALYSIS_PROMPT",
+        "cfg_evolution_prompt": "CFG_EVOLUTION_PROMPT",
     }
     
     for config_key, env_var in env_mappings.items():

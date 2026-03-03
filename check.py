@@ -22,6 +22,7 @@ def solve(env, item, workshop, visualise=False):
   grid_before_cells = []
   g = env._current_state.grid
   cookbook = env.world.cookbook
+  print( "cookbook.index", env.world.cookbook.index)
   for y in range(g.shape[1]):
     row = []
     for x in range(g.shape[0]):
