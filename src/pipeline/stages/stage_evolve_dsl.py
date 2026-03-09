@@ -98,11 +98,22 @@ def main():
     
     args = parser.parse_args()
     
-    # Load CFG
+    # Load CFG — convention: cfg_output_N.json = round N, cfg_output.json = fallback for round 0
     cfg_path = os.path.join(args.experiment_dir, "cfg", f"cfg_output_{args.dsl_version}.json")
     if not os.path.exists(cfg_path):
-        print(f" CFG file not found: {cfg_path}", file=sys.stderr)
-        return 1
+        if args.dsl_version == 0:
+            # Backward compat: round-0 CFG was saved as cfg_output.json in older experiments
+            fallback = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
+            if os.path.exists(fallback):
+                import shutil
+                shutil.copy2(fallback, cfg_path)
+                print(f" Created {cfg_path} from cfg_output.json (backward compat)")
+            else:
+                print(f" CFG file not found: {cfg_path}", file=sys.stderr)
+                return 1
+        else:
+            print(f" CFG file not found: {cfg_path}", file=sys.stderr)
+            return 1
     
     with open(cfg_path, 'r', encoding='utf-8') as f:
         cfg_data = json.load(f)
@@ -153,7 +164,8 @@ def main():
             recipes=recipes,
             terminals=terminals,
             shared_vllm=shared_vllm,
-            failed_programs_by_task=failed_programs_by_task
+            failed_programs_by_task=failed_programs_by_task,
+            new_dsl_round=args.dsl_version + 1,
         )
         
         # Check if evolution was successful and CFG is different

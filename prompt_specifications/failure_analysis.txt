@@ -1,18 +1,60 @@
-Here are the tasks that failed to be solved:
+You are an expert in DSL design and program synthesis. Your task is to analyze why a set of DSL programs failed to solve their target tasks, and produce structured guidance for improving the grammar (CFG).
+
+## Failed Tasks
 {failing_tasks}
 
 ## Current CFG (Context-Free Grammar)
 {cfg}
 
-## Terminal function descriptions (intended behavior from DSL)
+## Terminal Function Descriptions (intended behavior)
 {terminal_descriptions}
 
-## Latest final function implementations (actual code)
+## Latest Terminal Function Implementations (actual code)
 {final_function_descriptions}
 
-## Failed programs per task (with inventory changes)
-For each failing task, the following programs were tried (with inventory changes during the program shown). Use this to see what each program actually achieved and why it did not solve the task.
+## Failed Programs Per Task
+For each failing task, the programs below were attempted. State changes observed during execution are shown to help you understand what each program actually achieved and why it did not solve the task.
 
 {failed_programs_per_task}
 
-Give me top three reasons why the DSL might be failing to solve these tasks in bullet points. Remember that these reasons should correspond to the CFG as we are only genrating the grammar and terminal function descriptions using these reasons and do not have control on the implementation at all.
+---
+
+## EXECUTION MODEL — READ BEFORE RESPONDING
+
+The DSL evaluator executes programs as a flat sequence of function calls, one at a time:
+- Programs are a semicolon-separated list of terminal function calls: `FUNC1(ARG); FUNC2(ARG); ...`
+- Each terminal function receives the current environment state and returns a **flat list of primitive actions**
+- The evaluator steps through tokens sequentially: there is NO interpreter support for jumps, branches, or loops at the grammar level
+- `i` always increments by 1 — there is no mechanism to re-execute or skip tokens
+
+**Consequence**: Grammar-level control flow constructs (`WHILE ... END`, `IF ... THEN ... ELSE ... END`, `REPEAT N`) are NOT executable by the evaluator. Do NOT suggest them.
+
+Instead, express looping or conditional behavior as **terminal functions** that inspect the environment internally and return the appropriate action sequence. Examples:
+- Need to keep collecting until enough: suggest `USE_UNTIL LPAR RESOURCE RPAR`
+- Need to check if an item exists before acting: suggest `ENSURE LPAR ITEM RPAR`
+- Need to repeat an action N times: suggest `REPEAT_ACTION LPAR ACTION_TYPE RPAR`
+
+---
+
+## YOUR OUTPUT — Produce Both Sections Below
+
+### Diagnostic Reasons
+Provide exactly 3 bullet points explaining why the CFG is failing to produce successful programs. Focus only on aspects the CFG controls: which terminal functions exist, what parameter values they accept, and how statements are sequenced. Do NOT attribute failures to implementation bugs or environment issues.
+
+- Reason 1: ...
+- Reason 2: ...
+- Reason 3: ...
+
+### CFG Recommendations
+For each recommendation, use exactly one of these directive formats:
+
+- ADD terminal: `FUNCTION_NAME LPAR PARAM RPAR` — purpose: <why this function is needed>
+- ADD terminal (no args): `FUNCTION_NAME` — purpose: <why this function is needed>
+- REMOVE terminal: `FUNCTION_NAME` — reason: <why it is not useful or is misleading>
+- CHANGE parameter set: `PARAM_NAME` — remove `VALUE_X`, add `VALUE_Y` — reason: <why>
+
+**Constraints for recommendations:**
+- Use ONLY UPPERCASE names
+- Every suggested terminal function must be implementable as a pure action-sequence generator returning a flat list of primitive actions — it may inspect the environment (a copy is provided) but must NOT require cross-call shared state
+- Only reference items, values, or concepts present in the domain (do not invent parameters outside what exists in the domain)
+- Do NOT suggest grammar-level loops or conditionals — express those needs as terminal functions instead

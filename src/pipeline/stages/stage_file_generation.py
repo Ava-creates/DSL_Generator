@@ -33,6 +33,9 @@ def main():
     parser.add_argument('--spec_file', type=str, required=True, help='Path to specification file')
     parser.add_argument('--dsl_round', type=int, default=0, help='DSL evolution round number')
     parser.add_argument('--func_evolution_round', type=int, default=None, help='Function evolution round number')
+    parser.add_argument('--grid_prompt', type=str, default='prompt_specifications/grid_prompt.txt', help='Path to grid generation prompt template')
+    parser.add_argument('--require_test_type', type=lambda x: x.lower() != 'false', default=True, help='Whether to require test_type in grid specs (set false for old prompts; defaults test_type to positive)')
+    parser.add_argument('--skip_positive_grids', type=lambda x: x.lower() == 'true', default=False, help='When true, discard LLM-generated positive grids (only save negative/edge); useful for supplementing existing positives with new negative cases')
     
     args = parser.parse_args()
     
@@ -62,7 +65,18 @@ def main():
         args.func_evolution_round = state_func_round
     
     print(f"[File Generation] Using dsl_round={args.dsl_round}, func_evolution_round={args.func_evolution_round}")
-    
+
+    # Create shared vLLM instance
+    shared_vllm = None
+    if vLLM is not None:
+        try:
+            print("\n[Setup] Initializing shared vLLM instance...")
+            shared_vllm = vLLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
+            print(" Shared vLLM instance created")
+        except Exception as e:
+            print(f" Warning: Could not create shared vLLM instance: {e}")
+            shared_vllm = None
+
     # Load CFG
     cfg_path = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
     if not os.path.exists(cfg_path):
@@ -82,10 +96,8 @@ def main():
     # Re-extract terminals from CFG for use during file generation
     # This ensures we use complete terminals even if the file has incomplete ones
     # But we don't modify the file - it stays as-is
-    # Note: shared_vllm is None here since file generation doesn't create vLLM instances
-    # LLM-based description generation will fall back to pattern-based if no vLLM is available
     from src.pipeline.integrated_pipeline import ensure_terminals_match_cfg
-    terminals = ensure_terminals_match_cfg(cfg, terminals, old_terminals=terminals, shared_vllm=None)
+    terminals = ensure_terminals_match_cfg(cfg, terminals, old_terminals=terminals, shared_vllm=shared_vllm)
     
     if not terminals:
         print(" Invalid CFG data: no terminals found after extraction", file=sys.stderr)
@@ -154,7 +166,11 @@ def main():
             func_name, description, cfg, specification,
             experiment_dir=args.experiment_dir,
             dsl_round=args.dsl_round,
-            func_evolution_round=args.func_evolution_round
+            func_evolution_round=args.func_evolution_round,
+            shared_vllm=shared_vllm,
+            grid_prompt_path=args.grid_prompt,
+            require_test_type=args.require_test_type,
+            skip_positive_grids=args.skip_positive_grids
         )
         func_files[func_name] = func_file
         func_signatures[func_name] = func_signature

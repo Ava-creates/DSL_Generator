@@ -65,7 +65,7 @@ The pass_check should reflect the expected behavior:
 - Negative tests: assert that nothing changed or the action was properly rejected
 - Edge tests: assert that the boundary condition was handled correctly
 
-TARGET TEST DISTRIBUTION for each function: 10 positive, 4 negative, 1 edge cases (total: 10 test cases)
+TARGET TEST DISTRIBUTION for each function: 5 positive, 3 negative, 2 edge cases (total: 10 test cases)
 
 Based on the existing test cases listed above, prioritize generating the test type that is most needed:
 - If there are fewer than 5 positive test cases, generate a "positive" test

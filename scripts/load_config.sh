@@ -13,18 +13,16 @@ if [ -f "$CONFIG_FILE" ]; then
 import sys
 import os
 sys.path.insert(0, '/home/avani/projects/aip-lelis/avani/DSL_Generator')
-from src.utils.config_loader import load_config, export_config_to_env
+from src.utils.config_loader import load_config
 
 config = load_config('$CONFIG_FILE')
-export_config_to_env(config)
 
 # Print export statements for bash to evaluate
 for key, value in config.items():
     if key == 'tasks' and isinstance(value, list):
-        # Export as space-separated string (only if not already set in environment)
-        if not os.environ.get('TASKS'):
-            tasks_str = ' '.join(str(t) for t in value)
-            print(f"export TASKS=\"{tasks_str}\"")
+        # Export tasks as space-separated string
+        tasks_str = ' '.join(str(t) for t in value)
+        print(f"export TASKS=\"{tasks_str}\"")
     elif key == 'skip_cfg_generation':
         if not os.environ.get('SKIP_CFG_GENERATION'):
             print(f"export SKIP_CFG_GENERATION=\"{'true' if value else 'false'}\"")
@@ -36,6 +34,8 @@ for key, value in config.items():
         env_mapping = {
             'experiment_dir': 'EXPERIMENT_DIR',
             'spec_file': 'SPEC_FILE',
+            'failure_analysis_prompt': 'FAILURE_ANALYSIS_PROMPT',
+            'cfg_evolution_prompt': 'CFG_EVOLUTION_PROMPT',
             'max_dsl_evolutions': 'MAX_DSL_EVOLUTIONS',
             'max_function_evolutions': 'MAX_FUNCTION_EVOLUTIONS',
             'total_samples': 'TOTAL_SAMPLES',
@@ -49,17 +49,26 @@ for key, value in config.items():
             'grid_regeneration_attempts': 'GRID_REGENERATION_ATTEMPTS',
             'use_existing_grid_specs': 'USE_EXISTING_GRID_SPECS',
             'grid_spec_dir': 'GRID_SPEC_DIR',
+            'grid_prompt_path': 'GRID_PROMPT_PATH',
+            'require_test_type': 'REQUIRE_TEST_TYPE',
+            'skip_positive_grids': 'SKIP_POSITIVE_GRIDS',
         }
         if key == 'use_existing_grid_specs':
             if not os.environ.get('USE_EXISTING_GRID_SPECS'):
                 print(f"export USE_EXISTING_GRID_SPECS=\"{'true' if value else 'false'}\"")
+        elif key == 'require_test_type':
+            if not os.environ.get('REQUIRE_TEST_TYPE'):
+                print(f"export REQUIRE_TEST_TYPE=\"{'true' if value else 'false'}\"")
+        elif key == 'skip_positive_grids':
+            if not os.environ.get('SKIP_POSITIVE_GRIDS'):
+                print(f"export SKIP_POSITIVE_GRIDS=\"{'true' if value else 'false'}\"")
         elif key in env_mapping:
             env_var = env_mapping[key]
             if not os.environ.get(env_var):
                 print(f"export {env_var}=\"{value_str}\"")
 EOF
-)" 2>&1
-    echo "Loaded configuration from: $CONFIG_FILE"
+)" 2>/dev/null
+    echo "Loaded configuration from: $CONFIG_FILE" >&2
 else
     echo "Config file not found: $CONFIG_FILE (using environment variables or defaults)"
 fi

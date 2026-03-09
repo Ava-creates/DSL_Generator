@@ -1728,4 +1728,534 @@ Together, these extensions give the synthesis engine the ability to write progra
 - **GO_TO(target)** – Automatically navigate to the nearest cell containing the given primitive or workshop.  
 - **IF(condition) … ENDIF** – Execute the enclosed block once if the Boolean condition holds.  
 - **WHILE(condition) … ENDWHILE** – Repeatedly execute the block while the condition is true.  
-- **REPEAT … UNTIL(condition)** – Execute the block at least once and stop when the condition becomes true.
+- **REPEAT … UNTIL(condition)** – Execute the block at least once and stop when the condition becomes true.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                |  TURN LPAR DIRECTION RPAR
+                |  PICKUP LPAR ITEM RPAR
+                |  APPLY_TOOL LPAR TOOL COMMA OBSTACLE RPAR
+                |  CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                |  GO_TO LPAR ITEM RPAR
+                |  COLLECT_UNTIL LPAR ITEM COMMA COUNT RPAR
+                |  GOTO_WORKSHOP LPAR WORKSHOP RPAR
+                |  ENSURE_TOOL LPAR TOOL COMMA OBSTACLE RPAR
+
+DIRECTION      ::= NORTH | SOUTH | EAST | WEST
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                |  AXE | SLINGSHOT | ARROW | GOLDARROW | BRIDGE
+                |  BUNDLE | HAMMER | KNIFE | BED | SHEARS | LADDER
+                |  BOW | BENCH | FLAG | PLANK | CLOTH | ROPE | STICK
+
+TOOL           ::= AXE | HAMMER | KNIFE | SHEARS | BOW | LADDER
+
+OBSTACLE       ::= BOUNDARY | WATER | STONE
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+COUNT          ::= '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9'
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar describes a simple imperative DSL for an agent that can move, turn, collect items, use tools, craft objects, and now also perform higher‑level navigation and resource‑gathering actions.
+
+* **program** is the start symbol and consists of a sequence of *statement*s separated by semicolons.  
+* **statement_seq** allows a single statement or a statement followed by more statements, enabling programs of arbitrary length.  
+* **statement** enumerates all executable actions (terminal functions). Each action follows the required syntax of a function name, an opening parenthesis token (`LPAR`), its arguments separated by commas where needed, and a closing parenthesis token (`RPAR`).  
+  * Movement and orientation: `MOVE`, `TURN`.  
+  * Basic interaction: `PICKUP`, `APPLY_TOOL`, `CRAFT`.  
+  * New capabilities introduced to address the failure analysis:  
+    * `GO_TO` automatically navigates to the nearest cell containing a specified *ITEM*.  
+    * `COLLECT_UNTIL` repeatedly moves to and picks up an *ITEM* until the inventory holds at least *COUNT* copies.  
+    * `GOTO_WORKSHOP` moves the agent to the location of a given *WORKSHOP* so that subsequent `CRAFT` calls succeed.  
+    * `ENSURE_TOOL` guarantees that a required *TOOL* is present and applies it to a specified *OBSTACLE* in a single step.  
+* Parameter enumerations (`DIRECTION`, `ITEM`, `TOOL`, `OBSTACLE`, `WORKSHOP`) list all valid symbols the domain supports, ensuring that programs can only reference existing entities.  
+* `COUNT` is defined as a set of digit literals (1‑9), sufficient for the typical small‑quantity collection tasks required by the recipes.  
+* The punctuation symbols (`SEMICOLON`, `LPAR`, `RPAR`, `COMMA`) are defined as single‑character terminals, as required by the format rules.
+
+Together, these rules form a complete, parseable BNF grammar that supports both low‑level actions and the higher‑level abstractions needed for reliable synthesis of successful programs.- **MOVE(DIRECTION)**: Moves the agent one cell in the specified cardinal direction.
+- **TURN(DIRECTION)**: Rotates the agent to face the given direction without changing position.
+- **PICKUP(ITEM)**: Attempts to pick up the specified primitive item from the agent’s current cell.
+- **APPLY_TOOL(TOOL, OBSTACLE)**: Uses the given tool on the indicated obstacle (e.g., chopping a tree, breaking stone).
+- **CRAFT(ITEM, WORKSHOP)**: Crafts the target item at the specified workshop, consuming required ingredients from inventory.
+- **GO_TO(ITEM)**: Path‑finds to the nearest cell containing the indicated item, handling obstacles automatically.
+- **COLLECT_UNTIL(ITEM, COUNT)**: Repeatedly navigates to and picks up the given item until the agent’s inventory holds at least the requested count.
+- **GOTO_WORKSHOP(WORKSHOP)**: Moves the agent directly to the location of the named workshop, preparing for a subsequent `CRAFT`.
+- **ENSURE_TOOL(TOOL, OBSTACLE)**: Checks that the tool is present in inventory and, if the obstacle is reachable, applies the tool in one step.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                |  TURN LPAR DIRECTION RPAR
+                |  PICKUP LPAR PRIMITIVE RPAR
+                |  CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                |  GET_PRIMITIVE LPAR PRIMITIVE RPAR
+                |  GET_TOOL LPAR TOOL RPAR
+                |  GET_ITEM LPAR ITEM RPAR
+                |  REPEAT_MOVE LPAR DIRECTION COMMA COUNT RPAR
+                |  ENSURE_RESOURCE LPAR PRIMITIVE COMMA COUNT RPAR
+
+DIRECTION      ::= NORTH | SOUTH | EAST | WEST
+
+PRIMITIVE      ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+
+TOOL           ::= AXE | HAMMER | KNIFE | SHEARS | BOW | OTHER_TOOL
+
+ITEM           ::= AXE | SLINGSHOT | ARROW | GOLDARROW | BRIDGE | BUNDLE
+                |  HAMMER | KNIFE | BED | SHEARS | LADDER | BOW
+                |  BENCH | FLAG | PLANK | CLOTH | ROPE | STICK
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+COUNT          ::= ONE | TWO | THREE | FOUR | FIVE | SIX | SEVEN | EIGHT | NINE | TEN
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a `program` as a sequence of `statement`s separated by semicolons.  
+Each `statement` is a call to one of the terminal functions that the agent can execute.  
+
+*Movement and orientation* are performed with `MOVE` and `TURN`, each taking a `DIRECTION` (`NORTH`, `SOUTH`, `EAST`, `WEST`).  
+
+*Resource handling* is expressed with several higher‑level primitives:  
+
+- `PICKUP` directly collects a specific `PRIMITIVE` (e.g., `WOOD`).  
+- `GET_PRIMITIVE` automatically navigates to the nearest instance of the requested primitive and picks it up, abstracting away explicit navigation.  
+- `ENSURE_RESOURCE` repeatedly collects a primitive until at least the requested `COUNT` is held, removing the need for manual loops.  
+
+*Tool and item management* is covered by:  
+
+- `GET_TOOL`, which guarantees the requested `TOOL` is present in inventory, crafting it if necessary.  
+- `GET_ITEM`, which ensures a composite `ITEM` (such as `GOLDARROW`) is available, handling all prerequisite collection and crafting steps automatically.  
+
+*Repeated motion* can be compactly expressed with `REPEAT_MOVE`, which moves the agent in a given `DIRECTION` a fixed number of steps (`COUNT`).  
+
+*Crafting* of new objects is performed with `CRAFT`, which takes an `ITEM` to produce and the `WORKSHOP` where the recipe must be applied.  
+
+Parameter enumerations (`DIRECTION`, `PRIMITIVE`, `TOOL`, `ITEM`, `WORKSHOP`, `COUNT`) list all permissible values in uppercase, matching the domain’s allowed symbols. The punctuation symbols (`SEMICOLON`, `LPAR`, `RPAR`, `COMMA`) are defined as quoted single characters, satisfying the required format.  
+
+Overall, the grammar supplies both low‑level actions and high‑level abstractions, enabling concise, robust programs for tasks such as retrieving wood or gold and crafting a gold‑arrow without hard‑coded navigation or manual loops.- **MOVE** `( DIRECTION )` – Move one tile in the specified cardinal direction.  
+- **TURN** `( DIRECTION )` – Rotate the agent to face the given direction without changing position.  
+- **PICKUP** `( PRIMITIVE )` – Pick up a single instance of the specified primitive resource located on the current tile.  
+- **CRAFT** `( ITEM , WORKSHOP )` – Create the specified composite item at the given workshop, consuming required ingredients.  
+- **GET_PRIMITIVE** `( PRIMITIVE )` – Automatically navigate to the nearest instance of the primitive, face it, and pick it up.  
+- **GET_TOOL** `( TOOL )` – Ensure the requested tool is in inventory; if absent, locate a workshop, gather needed primitives, craft the tool, and return.  
+- **GET_ITEM** `( ITEM )` – Guarantee the composite item is available by recursively obtaining its prerequisites and crafting it at the nearest appropriate workshop.  
+- **REPEAT_MOVE** `( DIRECTION , COUNT )` – Move repeatedly in the same direction the number of steps indicated by `COUNT`.  
+- **ENSURE_RESOURCE** `( PRIMITIVE , COUNT )` – Collect the given primitive until at least `COUNT` copies are held in inventory, handling repeated pickups internally.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                |  TURN LPAR DIRECTION RPAR
+                |  PICKUP LPAR PRIMITIVE RPAR
+                |  APPLY_TOOL LPAR TOOL COMMA OBSTACLE RPAR
+                |  CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                |  GATHER LPAR PRIMITIVE COMMA COUNT RPAR
+                |  USE_TOOL_UNTIL LPAR TOOL COMMA OBSTACLE RPAR
+                |  ENSURE_WORKSHOP LPAR WORKSHOP RPAR
+                |  REPEAT_ACTION LPAR ACTION_TYPE COMMA COUNT RPAR
+                |  CHECK_INVENTORY LPAR ITEM COMMA COUNT RPAR
+
+DIRECTION      ::= NORTH | SOUTH | EAST | WEST
+
+PRIMITIVE      ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+
+TOOL           ::= AXE | HAMMER | KNIFE | SHEARS | BOW
+
+OBSTACLE       ::= BOUNDARY | WATER | STONE
+
+ITEM           ::= AXE | SLINGSHOT | ARROW | GOLDARROW | BRIDGE | BUNDLE
+                |  HAMMER | KNIFE | BED | SHEARS | LADDER | BOW
+                |  BENCH | FLAG | PLANK | CLOTH | ROPE | STICK
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+ACTION_TYPE    ::= MOVE | TURN | PICKUP | APPLY_TOOL | CRAFT
+
+COUNT          ::= DIGIT
+                |  COUNT DIGIT
+
+DIGIT          ::= '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9'
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a `program` as a sequence of `statement`s separated by semicolons.  
+Each `statement` is one of several *terminal functions* that the agent can execute:
+
+* Movement and orientation: `MOVE` and `TURN`, each taking a `DIRECTION`.  
+* Resource handling: `PICKUP` (single primitive) and `GATHER` (repeatedly collect a primitive until a numeric `COUNT` is reached).  
+* Tool usage: `APPLY_TOOL` (single application) and `USE_TOOL_UNTIL` (apply a tool repeatedly until a specified `OBSTACLE` disappears).  
+* Crafting: `CRAFT` (creates an `ITEM` at a given `WORKSHOP`).  
+* Environment preparation: `ENSURE_WORKSHOP` (locates and moves to the nearest reachable workshop of the requested type).  
+* Programmatic helpers: `REPEAT_ACTION` (produces a flat list of identical actions such as `MOVE` or `TURN` a given number of times) and `CHECK_INVENTORY` (verifies that the agent already holds at least a certain number of a specified `ITEM`).  
+
+Parameter enumerations list all admissible values for directions, primitives, tools, obstacles, items, and workshops, all drawn from the domain specification.  
+`ACTION_TYPE` enumerates the actions that can be repeated by `REPEAT_ACTION`.  
+
+Numeric literals are expressed with the non‑terminal `COUNT`, built from one or more `DIGIT`s (characters `'0'`‑`'9'`).  
+
+Special punctuation symbols (`SEMICOLON`, `LPAR`, `RPAR`, `COMMA`) are defined as single‑character terminals, as required by the format rules.- **MOVE(LPAR DIRECTION RPAR)**: Moves the agent one cell forward in the specified direction.  
+- **TURN(LPAR DIRECTION RPAR)**: Rotates the agent to face the given direction without changing position.  
+- **PICKUP(LPAR PRIMITIVE RPAR)**: Picks up a single instance of the specified primitive from the current cell.  
+- **APPLY_TOOL(LPAR TOOL COMMA OBSTACLE RPAR)**: Uses the given tool once on the indicated obstacle (e.g., clears a water tile).  
+- **CRAFT(LPAR ITEM COMMA WORKSHOP RPAR)**: Crafts the listed item at the nearest reachable workshop of the given type, consuming required resources.  
+- **GATHER(LPAR PRIMITIVE COMMA COUNT RPAR)**: Repeatedly moves to and picks up the specified primitive until the agent’s inventory contains the requested count.  
+- **USE_TOOL_UNTIL(LPAR TOOL COMMA OBSTACLE RPAR)**: Continuously applies the tool on the obstacle until the obstacle no longer exists in the world.  
+- **ENSURE_WORKSHOP(LPAR WORKSHOP RPAR)**: Verifies that a workshop of the indicated type exists, moves the agent to the closest reachable neighbour, and orients the agent toward it.  
+- **REPEAT_ACTION(LPAR ACTION_TYPE COMMA COUNT RPAR)**: Generates a flat list of `COUNT` identical actions (e.g., multiple `MOVE(NORTH)` or `TURN(EAST)`) to simplify repetitive sequences.  
+- **CHECK_INVENTORY(LPAR ITEM COMMA COUNT RPAR)**: Checks that the agent currently holds at least `COUNT` of the specified item; can be used to conditionally skip gathering or crafting steps.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                |  PICKUP LPAR PRIMITIVE RPAR
+                |  APPLY_TOOL LPAR TOOL COMMA OBSTACLE RPAR
+                |  CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                |  MOVE_TO LPAR PRIMITIVE RPAR
+                |  COLLECT LPAR PRIMITIVE RPAR
+                |  APPLY_TOOL_UNTIL LPAR TOOL COMMA OBSTACLE RPAR
+                |  CRAFT_IF_HAVE LPAR ITEM COMMA WORKSHOP RPAR
+                |  REPEAT_ACTION LPAR ACTION_TYPE COMMA COUNT RPAR
+
+DIRECTION      ::= NORTH | SOUTH | EAST | WEST
+
+PRIMITIVE      ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+
+TOOL           ::= AXE | HAMMER | KNIFE | SHEARS | BOW | OTHER_TOOL
+
+OBSTACLE       ::= BOUNDARY | WATER | STONE
+
+ITEM           ::= AXE | SLINGSHOT | ARROW | GOLDARROW | BRIDGE | BUNDLE
+                |  HAMMER | KNIFE | BED | SHEARS | LADDER | BOW
+                |  BENCH | FLAG | PLANK | CLOTH | ROPE | STICK
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+ACTION_TYPE    ::= MOVE | PICKUP | APPLY_TOOL | CRAFT
+
+COUNT          ::= ONE | TWO | THREE | FOUR | FIVE | SIX | SEVEN | EIGHT | NINE | TEN
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a `program` as a sequence of `statement`s separated by semicolons.  
+Each `statement` corresponds to a callable action in the DSL. The original basic actions (`MOVE`, `PICKUP`, `APPLY_TOOL`, `CRAFT`) are retained, allowing direct low‑level control when needed.  
+
+To address the identified shortcomings, five higher‑level action terminals are introduced:
+
+* `MOVE_TO` automatically computes a shortest path to the nearest cell adjacent to a specified primitive and emits the full movement sequence.  
+* `COLLECT` repeatedly moves to the nearest instance of a primitive, picks it up, and continues until none remain or a preset limit is reached.  
+* `APPLY_TOOL_UNTIL` repeatedly applies a tool on a given obstacle until the obstacle is cleared, removing the need for manual repetition.  
+* `CRAFT_IF_HAVE` checks the agent’s inventory for the required materials before issuing a craft command, preventing futile craft attempts.  
+* `REPEAT_ACTION` expands a single basic action (`MOVE`, `PICKUP`, `APPLY_TOOL`, or `CRAFT`) into a specified number of repetitions, providing concise syntax for repeated steps.
+
+The grammar enumerates all allowed parameter values: directions, primitives, tools, obstacles, items, workshops, action types, and repetition counts. All punctuation symbols (`SEMICOLON`, `LPAR`, `RPAR`, `COMMA`) are defined as single‑character terminals. The grammar follows strict BNF conventions, uses only uppercase symbols for non‑terminals and enumeration values, and omits the previously problematic `TURN` terminal.
+
+**Changes in CFG**
+- Removed the `TURN` terminal function and its associated production.
+- Added new terminal functions: `MOVE_TO`, `COLLECT`, `APPLY_TOOL_UNTIL`, `CRAFT_IF_HAVE`, `REPEAT_ACTION`.
+- Introduced enumerations for `ACTION_TYPE` and `COUNT` to support the new terminals.
+- Retained original basic actions (`MOVE`, `PICKUP`, `APPLY_TOOL`, `CRAFT`) for low‑level control.
+- Updated the `statement` rule to include the new terminals alongside the existing ones.
+
+**Terminal Functions**
+- **MOVE** `( DIRECTION )`: Move one cell in the specified cardinal direction.
+- **PICKUP** `( PRIMITIVE )`: Pick up a single instance of the given primitive from the current cell.
+- **APPLY_TOOL** `( TOOL , OBSTACLE )`: Apply the specified tool once to the indicated obstacle.
+- **CRAFT** `( ITEM , WORKSHOP )`: Attempt to craft the given item at the specified workshop.
+- **MOVE_TO** `( PRIMITIVE )`: Compute and execute a shortest‑path movement sequence to a cell adjacent to the nearest instance of the primitive.
+- **COLLECT** `( PRIMITIVE )`: Repeatedly move to and pick up the nearest instances of the primitive until none remain or a limit is reached.
+- **APPLY_TOOL_UNTIL** `( TOOL , OBSTACLE )`: Repeatedly apply the tool on the obstacle until the obstacle is cleared.
+- **CRAFT_IF_HAVE** `( ITEM , WORKSHOP )`: Craft the item only if all required materials are present in the inventory; otherwise emit no actions.
+- **REPEAT_ACTION** `( ACTION_TYPE , COUNT )`: Generate a sequence that repeats the specified basic action the given number of times.- **MOVE** `( DIRECTION )`: Move one cell in the specified cardinal direction.
+- **PICKUP** `( PRIMITIVE )`: Pick up a single instance of the given primitive from the current cell.
+- **APPLY_TOOL** `( TOOL , OBSTACLE )`: Apply the specified tool once to the indicated obstacle.
+- **CRAFT** `( ITEM , WORKSHOP )`: Attempt to craft the given item at the specified workshop.
+- **MOVE_TO** `( PRIMITIVE )`: Compute and execute a shortest‑path movement sequence to a cell adjacent to the nearest instance of the primitive.
+- **COLLECT** `( PRIMITIVE )`: Repeatedly move to and pick up the nearest instances of the primitive until none remain or a limit is reached.
+- **APPLY_TOOL_UNTIL** `( TOOL , OBSTACLE )`: Repeatedly apply the tool on the obstacle until the obstacle is cleared.
+- **CRAFT_IF_HAVE** `( ITEM , WORKSHOP )`: Craft the item only if all required materials are present in the inventory; otherwise emit no actions.
+- **REPEAT_ACTION** `( ACTION_TYPE , COUNT )`: Generate a sequence that repeats the specified basic action the given number of times.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                |  TURN LPAR DIRECTION RPAR
+                |  PICKUP LPAR PRIMITIVE RPAR
+                |  APPLY_TOOL LPAR TOOL COMMA OBSTACLE RPAR
+                |  CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                |  GATHER LPAR PRIMITIVE RPAR
+                |  GATHER LPAR PRIMITIVE COMMA COUNT RPAR
+                |  MOVE_TO LPAR PRIMITIVE RPAR
+                |  APPLY_TOOL_UNTIL LPAR TOOL COMMA OBSTACLE RPAR
+                |  CRAFT_IF_HAVE LPAR ITEM COMMA WORKSHOP RPAR
+                |  TURN_TOWARDS LPAR PRIMITIVE RPAR
+
+DIRECTION      ::= NORTH | SOUTH | EAST | WEST
+
+PRIMITIVE      ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+
+TOOL           ::= AXE | HAMMER | KNIFE | SHEARS | BOW | OTHER_TOOL
+
+OBSTACLE       ::= BOUNDARY | WATER | STONE
+
+ITEM           ::= AXE | SLINGSHOT | ARROW | GOLDARROW | BRIDGE | BUNDLE
+                | HAMMER | KNIFE | BED | SHEARS | LADDER | BOW
+                | BENCH | FLAG | PLANK | CLOTH | ROPE | STICK
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+COUNT          ::= ONE | TWO | THREE | FOUR | FIVE
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a `program` as a sequence of `statement`s separated by semicolons.  
+Each `statement` is a call to one of the DSL’s **terminal functions**, optionally supplied with arguments enclosed in parentheses.
+
+*Movement and orientation* are expressed with `MOVE` and `TURN`, each taking a `DIRECTION` (`NORTH`, `SOUTH`, `EAST`, `WEST`).  
+
+*Resource acquisition* can be performed with the low‑level `PICKUP` (takes a single `PRIMITIVE`) or the higher‑level `GATHER`. `GATHER` automatically locates the nearest instance of the requested `PRIMITIVE` and repeats the pickup until at least one unit is obtained; an overloaded form also accepts a `COUNT` (`ONE` … `FIVE`) to collect multiple units.
+
+*Navigation* is simplified by `MOVE_TO`, which computes a shortest path to the nearest cell containing the specified `PRIMITIVE` and moves the agent there, handling obstacles internally.
+
+*Tool usage* is available through the original `APPLY_TOOL` (single use) and the new `APPLY_TOOL_UNTIL`, which repeatedly applies a `TOOL` on a given `OBSTACLE` until the obstacle is removed.
+
+*Crafting* can be invoked directly with `CRAFT`, or conditionally with `CRAFT_IF_HAVE`. The conditional version checks the current inventory; if all ingredients for the requested `ITEM` are present, it generates the necessary crafting actions, otherwise it produces no steps, preventing wasted actions.
+
+*Orientation towards resources* is provided by `TURN_TOWARDS`, which turns the agent to face the nearest instance of a given `PRIMITIVE` before a pickup or interaction.
+
+Parameter non‑terminals (`DIRECTION`, `PRIMITIVE`, `TOOL`, `OBSTACLE`, `ITEM`, `WORKSHOP`, `COUNT`) enumerate all allowed values, ensuring only valid domain symbols appear in programs. The punctuation symbols (`SEMICOLON`, `LPAR`, `RPAR`, `COMMA`) are defined as single‑character terminals.
+
+Together, these constructs give the synthesiser expressive, high‑level actions that hide navigation, repetition, and conditional logic, enabling reliable programs for tasks such as `get[wood]`, `get[gold]`, and `make[goldarrow]`.- **MOVE** (LPAR DIRECTION RPAR): Move the agent one step in the specified cardinal direction.
+- **TURN** (LPAR DIRECTION RPAR): Rotate the agent to face the given cardinal direction.
+- **PICKUP** (LPAR PRIMITIVE RPAR): Pick up the primitive that is directly in front of the agent.
+- **APPLY_TOOL** (LPAR TOOL COMMA OBSTACLE RPAR): Use the specified tool once on the given obstacle.
+- **CRAFT** (LPAR ITEM COMMA WORKSHOP RPAR): Craft the indicated item at the specified workshop, assuming required ingredients are present.
+- **GATHER** (LPAR PRIMITIVE RPAR): Locate the nearest instance of the primitive, move adjacent, face it, and pick it up; repeat until at least one unit is obtained.
+- **GATHER** (LPAR PRIMITIVE COMMA COUNT RPAR): Same as `GATHER`, but repeat until the requested count of the primitive is collected.
+- **MOVE_TO** (LPAR PRIMITIVE RPAR): Compute and follow a shortest path to the nearest cell containing the primitive, handling obstacles automatically.
+- **APPLY_TOOL_UNTIL** (LPAR TOOL COMMA OBSTACLE RPAR): Repeatedly apply the tool on the obstacle until the obstacle is cleared, returning the minimal sequence of actions.
+- **CRAFT_IF_HAVE** (LPAR ITEM COMMA WORKSHOP RPAR): Craft the item only if all required ingredients are already in the inventory; otherwise produce no actions.
+- **TURN_TOWARDS** (LPAR PRIMITIVE RPAR): Turn the agent to face the nearest instance of the specified primitive.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                |  TURN LPAR DIRECTION RPAR
+                |  PICKUP LPAR ITEM RPAR
+                |  USE LPAR TOOL RPAR
+                |  CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                |  GOTO LPAR ITEM RPAR
+                |  COLLECT LPAR ITEM RPAR
+                |  USE_ON LPAR TOOL COMMA ITEM RPAR
+
+DIRECTION      ::= NORTH | SOUTH | EAST | WEST
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                | AXE | SLINGSHOT | ARROW | GOLDARROW | BRIDGE
+                | BUNDLE | HAMMER | KNIFE | BED | SHEARS | LADDER
+                | BOW | BENCH | FLAG | PLANK | CLOTH | ROPE | STICK
+
+TOOL           ::= AXE | HAMMER | KNIFE | SHEARS
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a simple, flat‑sequence DSL for controlling an agent in the crafting world.
+
+* **program** is the start symbol and consists of a `statement_seq`, i.e., one or more statements separated by semicolons.  
+* **statement_seq** is a left‑recursive list that allows any number of `statement` entries, each optionally followed by a semicolon and another sequence.  
+* **statement** enumerates all executable actions (terminal functions). Each action is written in the form `FUNCTION LPAR … RPAR`, with arguments supplied as enumerated non‑terminals. The eight actions are:  
+  * `MOVE` – step one cell in a cardinal `DIRECTION`.  
+  * `TURN` – rotate the agent to face a given `DIRECTION`.  
+  * `PICKUP` – take the object described by `ITEM` that is currently adjacent to the agent.  
+  * `USE` – apply a `TOOL` to the adjacent cell (e.g., hammer a block).  
+  * `CRAFT` – combine resources at a specific `WORKSHOP` to produce an `ITEM`.  
+  * `GOTO` – automatically navigate the agent to a cell adjacent to the named `ITEM`.  
+  * `COLLECT` – combines `GOTO` and `PICKUP`; it moves the agent next to the nearest instance of `ITEM` and picks it up.  
+  * `USE_ON` – uses a `TOOL` on a specific target identified by `ITEM`, allowing precise interaction with non‑adjacent or uniquely identified objects.  
+
+* **DIRECTION**, **ITEM**, **TOOL**, and **WORKSHOP** are enumerations that list all permissible parameter values, matching the domain’s primitive resources, crafted objects, tools, and workshop locations.  
+
+* The punctuation symbols (`SEMICOLON`, `LPAR`, `RPAR`, `COMMA`) are defined as single‑character terminals, as required by the format rules.
+
+Together, these rules enable concise programs that can navigate, collect, craft, and manipulate objects without manually encoding long movement sequences or repetitive logic.
+
+**Changes in CFG**
+- Added three new terminal functions: `GOTO`, `COLLECT`, `USE_ON`.
+- Integrated the new functions into the `statement` production.
+- No removal of existing symbols; existing terminals and enumerations retained.
+
+**Terminal Functions**
+- **MOVE(LPAR DIRECTION RPAR)**: Moves the agent one step forward in the specified cardinal direction.
+- **TURN(LPAR DIRECTION RPAR)**: Rotates the agent to face the given direction without changing position.
+- **PICKUP(LPAR ITEM RPAR)**: Picks up an item that is directly adjacent to the agent.
+- **USE(LPAR TOOL RPAR)**: Uses a tool on the cell directly in front of the agent (e.g., hammer a block).
+- **CRAFT(LPAR ITEM COMMA WORKSHOP RPAR)**: Crafts the specified item at the indicated workshop, consuming required resources.
+- **GOTO(LPAR ITEM RPAR)**: Automatically navigates the agent to a location adjacent to the nearest instance of the specified item.
+- **COLLECT(LPAR ITEM RPAR)**: Performs a `GOTO` to the nearest item and immediately picks it up.
+- **USE_ON(LPAR TOOL COMMA ITEM RPAR)**: Uses the given tool on a specifically named target item, ensuring the correct object is acted upon.- **MOVE(LPAR DIRECTION RPAR)**: Moves the agent one step forward in the specified cardinal direction.
+- **TURN(LPAR DIRECTION RPAR)**: Rotates the agent to face the given direction without changing position.
+- **PICKUP(LPAR ITEM RPAR)**: Picks up an item that is directly adjacent to the agent.
+- **USE(LPAR TOOL RPAR)**: Uses a tool on the cell directly in front of the agent (e.g., hammer a block).
+- **CRAFT(LPAR ITEM COMMA WORKSHOP RPAR)**: Crafts the specified item at the indicated workshop, consuming required resources.
+- **GOTO(LPAR ITEM RPAR)**: Automatically navigates the agent to a location adjacent to the nearest instance of the specified item.
+- **COLLECT(LPAR ITEM RPAR)**: Performs a `GOTO` to the nearest item and immediately picks it up.
+- **USE_ON(LPAR TOOL COMMA ITEM RPAR)**: Uses the given tool on a specifically named target item, ensuring the correct object is acted upon.program        ::= stmt_seq
+
+stmt_seq       ::= stmt
+                | stmt SEMICOLON stmt_seq
+
+stmt           ::= MOVE LPAR DIRECTION RPAR
+                | TURN LPAR DIRECTION RPAR
+                | PICK LPAR ITEM RPAR
+                | USE LPAR ITEM COMMA OBSTACLE RPAR
+                | CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                | GATHER LPAR ITEM RPAR
+                | ENSURE LPAR ITEM RPAR
+                | MOVE_TO LPAR TARGET RPAR
+                | CLEAR_OBSTACLE LPAR OBSTACLE RPAR
+                | CRAFT_ALL LPAR ITEM RPAR
+
+DIRECTION      ::= NORTH | SOUTH | EAST | WEST
+
+ITEM           ::= IRON | GRASS | WOOD | ROCK | GOLD | GEM
+                | AXE | SLINGSHOT | ARROW | GOLDARROW | BRIDGE | BUNDLE
+                | HAMMER | KNIFE | BED | SHEARS | LADDER | BOW
+                | BENCH | FLAG | PLANK | CLOTH | ROPE | STICK
+
+OBSTACLE       ::= OBSTACLE1 | OBSTACLE2 | OBSTACLE3
+
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+
+TARGET         ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+                | OBSTACLE1 | OBSTACLE2 | OBSTACLE3
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a `program` as a sequence of statements (`stmt_seq`). Statements are separated by semicolons. Each statement is a call to a terminal function that performs an action in the environment.  
+
+The original movement and manipulation actions (`MOVE`, `TURN`, `PICK`, `USE`, `CRAFT`) are retained, allowing low‑level control when needed. To address the failure analysis, five higher‑level terminal functions have been introduced:
+
+* `GATHER ITEM` – automatically navigates to the nearest cell containing the specified primitive `ITEM` and picks it up.  
+* `ENSURE ITEM` – repeatedly invokes `GATHER` until the agent’s inventory contains at least one unit of `ITEM` (or the amount required by a later recipe).  
+* `MOVE_TO TARGET` – moves the agent to an adjacent free cell next to the nearest location matching `TARGET` (any workshop or obstacle).  
+* `CLEAR_OBSTACLE OBSTACLE` – selects an appropriate tool from the inventory and repeatedly uses it on the designated `OBSTACLE` until the obstacle is removed.  
+* `CRAFT_ALL ITEM` – guarantees that every primitive required by the recipe for `ITEM` is present (by internally calling `ENSURE` for each) and then performs the craft operation at the correct workshop.
+
+Parameter enumerations (`DIRECTION`, `ITEM`, `OBSTACLE`, `WORKSHOP`, `TARGET`) list every admissible constant in uppercase, matching the domain’s allowed values. The punctuation symbols (`SEMICOLON`, `LPAR`, `RPAR`, `COMMA`) are defined as single‑character terminals, as required by the format rules.
+
+Together, these productions let a synthesizer generate concise, robust programs that adapt to varied map layouts, automatically handle repeated collection, and clear obstacles without hard‑coding step‑by‑step navigation.- **MOVE** `LPAR DIRECTION RPAR` – Move one cell forward in the specified cardinal direction.  
+- **TURN** `LPAR DIRECTION RPAR` – Rotate the agent to face the given direction without changing position.  
+- **PICK** `LPAR ITEM RPAR` – Pick up a primitive `ITEM` from the agent’s current cell.  
+- **USE** `LPAR ITEM COMMA OBSTACLE RPAR` – Apply a tool `ITEM` to an `OBSTACLE` in the adjacent cell.  
+- **CRAFT** `LPAR ITEM COMMA WORKSHOP RPAR` – Craft `ITEM` at the specified `WORKSHOP`, assuming required primitives are in inventory.  
+- **GATHER** `LPAR ITEM RPAR` – Locate the nearest cell containing `ITEM`, move adjacent to it, and pick it up.  
+- **ENSURE** `LPAR ITEM RPAR` – Repeatedly execute `GATHER ITEM` until the inventory holds at least one unit of `ITEM`.  
+- **MOVE_TO** `LPAR TARGET RPAR` – Navigate to the nearest cell matching `TARGET` (workshop or obstacle) and stop on an adjacent free cell.  
+- **CLEAR_OBSTACLE** `LPAR OBSTACLE RPAR` – Choose a suitable tool from inventory and repeatedly `USE` it on the given `OBSTACLE` until cleared.  
+- **CRAFT_ALL** `LPAR ITEM RPAR` – Automatically ensure all recipe prerequisites for `ITEM` are present and then perform the craft at the appropriate workshop.program        ::= statement_seq
+
+statement_seq  ::= statement
+                |  statement SEMICOLON statement_seq
+
+statement      ::= MOVE LPAR DIRECTION RPAR
+                |  TURN LPAR TURN_DIR RPAR
+                |  PICKUP
+                |  USE_TOOL LPAR TOOL RPAR
+                |  CRAFT LPAR ITEM COMMA WORKSHOP RPAR
+                |  MOVE_TO LPAR TARGET RPAR
+                |  GATHER LPAR RESOURCE RPAR
+                |  ENSURE LPAR ITEM RPAR
+                |  CRAFT_IF_HAVE LPAR ITEM COMMA WORKSHOP RPAR
+                |  USE_TOOL_ON LPAR TOOL COMMA DIRECTION RPAR
+
+DIRECTION      ::= NORTH | SOUTH | EAST | WEST
+TURN_DIR       ::= LEFT | RIGHT | NORTH | SOUTH | EAST | WEST
+TOOL           ::= AXE | SHOVEL | PICKAXE | HAMMER | KNIFE
+ITEM           ::= AXE | SLINGSHOT | ARROW | GOLDARROW | BRIDGE | BUNDLE
+                |  HAMMER | KNIFE | BED | SHEARS | LADDER | BOW
+                |  BENCH | FLAG | PLANK | CLOTH | ROPE | STICK
+WORKSHOP       ::= WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+TARGET         ::= GEM | GRASS | GOLD | IRON | WOOD | ROCK
+                |  WORKSHOP0 | WORKSHOP1 | WORKSHOP2
+RESOURCE       ::= GEM | GRASS | GOLD | IRON | WOOD | ROCK
+
+SEMICOLON      ::= ';'
+LPAR           ::= '('
+RPAR           ::= ')'
+COMMA          ::= ','
+The grammar defines a `program` as a sequence of `statement`s separated by semicolons.  
+Each `statement` corresponds to an executable action in the DSL. The original primitive actions are retained:
+
+* `MOVE(DIRECTION)` – step one cell forward in the given cardinal direction.  
+* `TURN(TURN_DIR)` – rotate the agent; `TURN_DIR` now supports both relative turns (`LEFT`, `RIGHT`) and absolute facing (`NORTH`, `SOUTH`, `EAST`, `WEST`).  
+* `PICKUP` – collect any resource present on the current cell.  
+* `USE_TOOL(TOOL)` – apply a tool to the cell directly in front of the agent.  
+* `CRAFT(ITEM, WORKSHOP)` – attempt to craft an item at a specified workshop.
+
+To address the failure analysis, five higher‑level actions are introduced:
+
+* `MOVE_TO(TARGET)` – automatically path‑find to a named target (resource cell or workshop), removing the need for hard‑coded step sequences.  
+* `GATHER(RESOURCE)` – repeatedly use the appropriate tool and `PICKUP` until the agent’s inventory contains a sufficient amount of the specified resource.  
+* `ENSURE(ITEM)` – guarantees that the required item exists in the inventory; if it does not, the function internally performs the necessary moves and gathers.  
+* `CRAFT_IF_HAVE(ITEM, WORKSHOP)` – attempts crafting only when the current inventory already satisfies the recipe, preventing wasted attempts.  
+* `USE_TOOL_ON(TOOL, DIRECTION)` – applies a tool to an adjacent cell in a specified absolute direction, eliminating the need for separate `TURN` and `USE_TOOL` calls.
+
+Parameter enumerations constrain the allowable arguments:
+
+* `DIRECTION` and `TURN_DIR` list the four cardinal directions plus relative turn options.  
+* `TOOL`, `ITEM`, and `WORKSHOP` enumerate all tools, craftable items, and workshop identifiers defined in the domain.  
+* `TARGET` and `RESOURCE` enumerate the primitive resources and workshop locations that can be referenced by the new high‑level actions.
+
+Special punctuation symbols (`SEMICOLON`, `LPAR`, `RPAR`, `COMMA`) are defined as single‑character terminals, as required by the format rules.
+
+**Changes in CFG**
+- Added the high‑level terminal functions `MOVE_TO`, `GATHER`, `ENSURE`, `CRAFT_IF_HAVE`, and `USE_TOOL_ON`.
+- Extended `TURN_DIR` enumeration to include absolute directions (`NORTH`, `SOUTH`, `EAST`, `WEST`).
+- Introduced new parameter non‑terminals `TARGET` and `RESOURCE` with appropriate value sets.
+- Updated `statement` production to include alternatives for the new terminal functions.
+- Retained all original functions and enumerations for backward compatibility.
+
+**Terminal Functions**
+- **MOVE** `(DIRECTION)`: Move one cell forward in the specified cardinal direction.  
+- **TURN** `(TURN_DIR)`: Rotate the agent; can be a relative turn (`LEFT`, `RIGHT`) or set an absolute facing direction.  
+- **PICKUP**: Collect any resource present on the agent’s current cell.  
+- **USE_TOOL** `(TOOL)`: Apply the given tool to the cell directly ahead of the agent.  
+- **CRAFT** `(ITEM, WORKSHOP)`: Attempt to craft the specified item at the indicated workshop.  
+- **MOVE_TO** `(TARGET)`: Automatically navigate to a named target (resource cell or workshop).  
+- **GATHER** `(RESOURCE)`: Repeatedly use the appropriate tool and pick up until the required amount of the resource is in inventory.  
+- **ENSURE** `(ITEM)`: Ensure the specified item is present in inventory, performing movement and gathering as needed.  
+- **CRAFT_IF_HAVE** `(ITEM, WORKSHOP)`: Craft the item only if the current inventory already fulfills the recipe requirements.  
+- **USE_TOOL_ON** `(TOOL, DIRECTION)`: Apply a tool to the adjacent cell in the given absolute direction, combining turning and using into a single action.- **MOVE** `(DIRECTION)`: Move one cell forward in the specified cardinal direction.  
+- **TURN** `(TURN_DIR)`: Rotate the agent; can be a relative turn (`LEFT`, `RIGHT`) or set an absolute facing direction.  
+- **PICKUP**: Collect any resource present on the agent’s current cell.  
+- **USE_TOOL** `(TOOL)`: Apply the given tool to the cell directly ahead of the agent.  
+- **CRAFT** `(ITEM, WORKSHOP)`: Attempt to craft the specified item at the indicated workshop.  
+- **MOVE_TO** `(TARGET)`: Automatically navigate to a named target (resource cell or workshop).  
+- **GATHER** `(RESOURCE)`: Repeatedly use the appropriate tool and pick up until the required amount of the resource is in inventory.  
+- **ENSURE** `(ITEM)`: Ensure the specified item is present in inventory, performing movement and gathering as needed.  
+- **CRAFT_IF_HAVE** `(ITEM, WORKSHOP)`: Craft the item only if the current inventory already fulfills the recipe requirements.  
+- **USE_TOOL_ON** `(TOOL, DIRECTION)`: Apply a tool to the adjacent cell in the given absolute direction, combining turning and using into a single action.

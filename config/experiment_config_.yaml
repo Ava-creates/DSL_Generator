@@ -20,20 +20,20 @@ tasks:
   - make[shears]
   - make[ladder]
   - make[goldarrow]
-max_dsl_evolutions: 2
+max_dsl_evolutions: 0
 max_function_evolutions: 0
-total_samples: 2000
+total_samples: 1000
 num_explicit_feedback_iterations: 30
 max_attempts: 30
 model_type: huggingface
 recipes_path: craft/resources/recipes.yaml
 hints_path: craft/resources/hints.yaml
-skip_cfg_generation: false
-cfg_output_file:
+skip_cfg_generation: true
+cfg_output_file: experiments/experiment_20260305_161332_5380/cfg/cfg_output_0.json #generates the new experiemnt with this cfg 
 max_cfg_retries: 10
 grid_regeneration_attempts: 15
 use_existing_grid_specs: false
 # grid_spec_dir: experiments/experiment_success/grids
 grid_prompt_path: prompt_specifications/grid_prompt.txt
-require_test_type: true
-skip_positive_grids: false
+require_test_type: true #if true then we are using ld test script and that does not have test type so this flag forces the pipeline to add test type positive to the grids generated
+skip_positive_grids: true  #helps skip generation of positive grids

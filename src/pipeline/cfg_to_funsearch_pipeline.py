@@ -443,7 +443,11 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
                              func_dir: str = "function_specific_prompts",
                              experiment_dir: Optional[str] = None,
                              dsl_round: Optional[int] = None,
-                             func_evolution_round: Optional[int] = None) -> tuple[str, str]:
+                             func_evolution_round: Optional[int] = None,
+                             shared_vllm=None,
+                             grid_prompt_path: str = "prompt_specifications/grid_prompt.txt",
+                             require_test_type: bool = True,
+                             skip_positive_grids: bool = False) -> tuple[str, str]:
     """Generate a function-specific prompt file for funsearch.
     
     Args:
@@ -531,7 +535,7 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
     default_task_name = None
     recipes_path = "craft/resources/recipes.yaml"
     hints_path = "craft/resources/hints.yaml"
-    grid_prompt_path = "prompt_specifications/grid_prompt.txt"
+    # grid_prompt_path is passed as a parameter (default: prompt_specifications/grid_prompt.txt)
     # Load env description (absolute path to avoid cwd issues)
     env_description = ""
     _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -559,7 +563,7 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
     grid_dir_override = os.environ.get("GRID_SPEC_DIR")
     grid_dir = grid_dir_override if grid_dir_override else (os.path.join(experiment_dir, "grids") if experiment_dir else "grids")
     os.makedirs(grid_dir, exist_ok=True)
-    num_grid_tests = 10
+    num_grid_tests = 5 if skip_positive_grids else 10
     total_grid_generation_attempts = 200
     grid_spec_paths = []
     grid_spec = None
@@ -596,10 +600,50 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
                 print(f"  Warning: could not load first grid spec {grid_spec_paths[0]}: {e}")
 
     if not grid_spec_paths and shared_vllm is not None:
-        generated_cases = []
+        generated_cases = []  # all cases including positives, used for LLM context
+        saved_count = 0  # only saved (non-positive when skip_positive_grids=True) cases
         attempts_for_case = max(1, total_grid_generation_attempts // max(1, num_grid_tests))
-        while len(generated_cases) < num_grid_tests:  #basically kepp on repeating till we get num_grid_tests cases
-            generated_count = len(generated_cases)
+        max_total_iters = num_grid_tests * 8 if skip_positive_grids else num_grid_tests * 2
+        total_iters = 0
+        # Count existing files so new cases don't overwrite them
+        if dsl_round is not None:
+            _prefix = f"{safe_name}_dsl{dsl_round}_case"
+        else:
+            _prefix = f"{safe_name}_case"
+        _existing_count = len([f for f in os.listdir(grid_dir)
+                                if f.startswith(_prefix) and f.endswith(".json")]) if os.path.isdir(grid_dir) else 0
+        # Preload existing files as LLM context
+        if _existing_count > 0:
+            for _ef in sorted(os.listdir(grid_dir)):
+                if _ef.startswith(_prefix) and _ef.endswith(".json"):
+                    try:
+                        with open(os.path.join(grid_dir, _ef), "r", encoding="utf-8") as _fh:
+                            _loaded = json.load(_fh)
+                            generated_cases.append(_loaded)
+                        # Always add ALL existing files to grid_spec_paths so the evaluate
+                        # loop runs on every case (positive + negative/edge).
+                        grid_spec_paths.append(os.path.join(grid_dir, _ef))
+                        # Only count saved (non-positive) cases toward the quota when
+                        # skip_positive_grids is True so we know how many more to generate.
+                        if skip_positive_grids and _loaded.get("test_type") != "positive":
+                            saved_count += 1
+                        elif not skip_positive_grids:
+                            saved_count += 1
+                    except Exception as _e:
+                        print(f"  Warning: could not preload existing grid {_ef}: {_e}")
+            # Use the first grid to set grid_spec (for task_name extraction below)
+            if grid_spec_paths and grid_spec is None:
+                try:
+                    with open(grid_spec_paths[0], "r", encoding="utf-8") as _fh:
+                        grid_spec = json.load(_fh)
+                except Exception as _e:
+                    print(f"  Warning: could not load first preloaded grid {grid_spec_paths[0]}: {_e}")
+        if saved_count >= num_grid_tests:
+            print(f"[grid_generation] Already have {saved_count} saved cases for {func_name}; skipping generation.")
+        _new_saved_count = 0  # count of newly written cases in this run (offset for filenames)
+        while saved_count < num_grid_tests and total_iters < max_total_iters:
+            total_iters += 1
+            generated_count = _existing_count + _new_saved_count  # always append after existing files
             if dsl_round is not None:
                 grid_filename = f"{safe_name}_dsl{dsl_round}_case{generated_count}.json"
             else:
@@ -620,12 +664,21 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
                 existing_cases=generated_cases if generated_cases else None,
                 cfg_text=cfg,
                 codebase_text=codebase_text,
+                require_test_type=require_test_type,
+                skip_positive_grids=skip_positive_grids,
             )
             if isinstance(grid_spec, dict):
                 generated_cases.append(grid_spec)
-                grid_spec_paths.append(grid_spec_path)
+                if skip_positive_grids and grid_spec.get('test_type') == 'positive':
+                    print(f"[grid_generation] Skipping positive case for {func_name} (skip_positive_grids=True); using as LLM context only.")
+                else:
+                    grid_spec_paths.append(grid_spec_path)
+                    saved_count += 1
+                    _new_saved_count += 1
             else:
                 print(f"[grid_generation] No valid grid for {func_name} case {generated_count} (see grid_generation logs above); will retry.")
+        if total_iters >= max_total_iters and saved_count < num_grid_tests:
+            print(f"[grid_generation] Warning: hit max iterations ({max_total_iters}) for {func_name}; only {saved_count}/{num_grid_tests} cases saved.")
 
     if not grid_spec_paths:
         raise ValueError(
@@ -647,6 +700,7 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
         func_call_args=func_call_args,
     )
     solve_func = solve_func_basic
+    solve_func_custom = None
 
     seed_body = _load_seed_body(experiment_dir, safe_name, dsl_round, func_evolution_round)
     if seed_body:
@@ -659,7 +713,8 @@ def {safe_name}({func_params}):
   Args:
       env: The current environment instance.
   {args_docstring}  
-      Returns: List[int]: A sequence of encoded actions the agent should execute.
+      Returns: List[int]: A sequence of raw integer action codes accepted by env.step().
+
   """
 '''
     
@@ -1235,6 +1290,15 @@ def get_cfg(
             return "", {}, None, False
         else:
             print(f" {validation_msg}")
+            # Write to experiment's cfg_output.json and cfg_output_0.json so downstream stages can find it
+            os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
+            with open(cfg_path, 'w', encoding='utf-8') as f:
+                json.dump(cfg_data, f, indent=2, ensure_ascii=False)
+            print(f" Wrote CFG to {cfg_path}")
+            versioned_path = os.path.join(os.path.dirname(cfg_path), "cfg_output_0.json")
+            with open(versioned_path, 'w', encoding='utf-8') as f:
+                json.dump(cfg_data, f, indent=2, ensure_ascii=False)
+            print(f" Wrote versioned CFG to {versioned_path}")
             return cfg, terminals, example, True
     elif skip_cfg_generation and os.path.exists(cfg_path):
         print(f"\n[Loading CFG] Loading from {cfg_path}...")
@@ -1308,6 +1372,15 @@ def get_cfg(
                     with open(cfg_path, 'w', encoding='utf-8') as f:
                         json.dump(cfg_data, f, indent=2, ensure_ascii=False)
                     print(f" Saved CFG to {cfg_path}")
+
+                    # Also save as cfg_output_0.json so stage_evolve_dsl.py can find it
+                    # (convention: cfg_output_N.json = CFG at dsl_round N; cfg_output.json = latest)
+                    versioned_path_0 = os.path.join(experiment_dir, "cfg", "cfg_output_0.json")
+                    if not os.path.exists(versioned_path_0):
+                        import shutil
+                        shutil.copy2(cfg_path, versioned_path_0)
+                        print(f" Also saved CFG as {versioned_path_0}")
+
                     return cfg, terminals, example, True
                 else:
                     print(f" CFG validation failed: {validation_msg}")

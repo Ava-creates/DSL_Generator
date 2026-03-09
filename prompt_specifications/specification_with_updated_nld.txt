@@ -381,6 +381,9 @@ This is just an example, do not use the example function.
 The individual functions cannot call other functions of the cfg. They are completely independent of each other.
 Avoid adding fallbacks assumed you get the a validated grid always so no fallbacks required.
 CRITICAL: The function generated MUST use the arguments passed to it.
+CRITICAL: Return ONLY a list of integer action codes. Do NOT return strings, DSL tokens, or calls to other DSL functions.
+Terminal functions are the leaves of the DSL; they interact with env.step() directly.
+Returning DSL strings will cause a hard runtime error.
 ## Return only the python code
 '''
 

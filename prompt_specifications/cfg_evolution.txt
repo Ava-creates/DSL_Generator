@@ -1,14 +1,19 @@
-The following is the failure analysis for the unsuccessful DSL programs:
+The following failure analysis was produced for unsuccessful DSL programs on tasks: {failing_tasks}.
+
+It contains two sections:
+1. **Diagnostic Reasons** — why the current CFG is insufficient
+2. **CFG Recommendations** — specific ADD / REMOVE / CHANGE directives for terminal functions and parameter sets
+
+Use the **CFG Recommendations** as your primary guide. Each recommendation is already constrained to be compatible with the evaluator and the domain.
 
 {failure_analysis}
 
-Use this failure analysis to improve the current CFG for the DSL in order to synthesise better programs that can solve the tasks: {failing_tasks}.
 ---
 
-### Current CFG (Context-Free Grammar) for the current DSL:
+### Current CFG (Context-Free Grammar)
 {cfg}
 
-### Here are the recipes for the domain, only these items can be used in the programs. You cannot propose any new items that are not in the recipes:
+### Domain items available — only these values may appear as parameters. Do not introduce any item not present here:
 {recipes}
 
 ---
@@ -118,10 +123,10 @@ reader has never seen any earlier version.>
 Changes in CFG
 (bullet point list of specific changes made to the CFG)
 
-Terminal Functions
+**Terminal Functions**
 FUNCTION_NAME(args): description of purpose and usage
 
-**CRITICAL - READ CAREFULLY**: In the "Terminal Functions" section, you MUST list ALL actual terminal function names that appear directly in statement productions. Every function that appears at the start of a statement production alternative MUST be included with a clear description. Do not omit any terminal functions - completeness is essential for the system to work correctly.
+**CRITICAL - READ CAREFULLY**: In the "**Terminal Functions**" section, you MUST list ALL actual terminal function names that appear directly in statement productions. Every function that appears at the start of a statement production alternative MUST be included with a clear description. Do not omit any terminal functions - completeness is essential for the system to work correctly.
 
 **What ARE terminal functions:**
 - Terminal functions are the ACTION WORDS that appear at the START of statement rules

@@ -34,6 +34,9 @@ python src/pipeline/stages/stage_file_generation.py \
     --experiment_dir "$EXPERIMENT_DIR" \
     --spec_file "${SPEC_FILE:-prompt_specifications/specification_with_updated_nld.txt}" \
     --dsl_round "${DSL_ROUND:-0}" \
+    --grid_prompt "${GRID_PROMPT_PATH:-prompt_specifications/grid_prompt.txt}" \
+    --require_test_type "${REQUIRE_TEST_TYPE:-true}" \
+    --skip_positive_grids "${SKIP_POSITIVE_GRIDS:-false}" \
     $FUNC_ROUND_ARG
 
 # Chain to next stage based on state

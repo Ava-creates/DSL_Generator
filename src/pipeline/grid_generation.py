@@ -274,6 +274,7 @@ def _normalize_grid_spec(
     valid_items: set[str],
     cookbook: Cookbook,
     default_task_name: str,
+    require_test_type: bool = True,
 ) -> Dict:
     normalized = {}
     grid = spec.get("grid")
@@ -344,12 +345,18 @@ def _normalize_grid_spec(
     else:
         normalized["arg_values"] = {}
     
-    # Add test_type field - REQUIRED
+    # Add test_type field
     test_type = spec.get("test_type")
     if test_type is None:
-        raise ValueError("test_type is required and must be one of: negative, positive, edge")
-    if test_type not in ["negative", "positive", "edge"]:
-        raise ValueError(f"test_type must be one of 'negative', 'positive', 'edge', got: {test_type}")
+        if require_test_type:
+            raise ValueError("test_type is required and must be one of: negative, positive, edge")
+        else:
+            test_type = "positive"  # default for old prompts that don't include test_type
+    elif test_type not in ["negative", "positive", "edge"]:
+        if require_test_type:
+            raise ValueError(f"test_type must be one of 'negative', 'positive', 'edge', got: {test_type}")
+        else:
+            test_type = "positive"
     normalized["test_type"] = test_type
     
     return normalized
@@ -370,6 +377,8 @@ def ensure_function_grid_spec(
     existing_cases: list[Dict] | None = None,
     cfg_text: str = "",
     codebase_text: str = "",
+    require_test_type: bool = True,
+    skip_positive_grids: bool = False,
 ) -> Optional[Dict]:
     cookbook = _get_cookbook(recipes_path)
     if cookbook is None:
@@ -432,7 +441,9 @@ def ensure_function_grid_spec(
                 last_error = "response is not a JSON object"
                 print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
                 continue
-            required_keys = {"task_name", "width", "height", "grid", "test_type"}
+            required_keys = {"task_name", "width", "height", "grid"}
+            if require_test_type:
+                required_keys.add("test_type")
             if not required_keys.issubset(spec.keys()):
                 last_error = f"missing required keys: {sorted(required_keys - set(spec.keys()))}"
                 print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
@@ -444,6 +455,7 @@ def ensure_function_grid_spec(
                 valid_items=valid_items,
                 cookbook=cookbook,
                 default_task_name=default_task_name,
+                require_test_type=require_test_type,
             )
             args_ok, args_error = _validate_arg_values_against_cfg(
                 normalized.get("arg_values", {}),
@@ -460,6 +472,9 @@ def ensure_function_grid_spec(
             if not is_valid:
                 print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed (validate_grid_spec): {last_error}")
             if is_valid:
+                if skip_positive_grids and normalized.get('test_type') == 'positive':
+                    # Don't write to disk; return spec so caller can use it as LLM context
+                    return normalized
                 output_dir = os.path.dirname(output_path)
                 if output_dir:
                     os.makedirs(output_dir, exist_ok=True)

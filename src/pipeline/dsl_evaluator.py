@@ -243,7 +243,22 @@ class DSLEvaluator:
                         actions = func(env_for_func, *normalized_args)
                     else:
                         actions = func(env_for_func)
-                    
+
+                    # Validate actions: terminal functions must return integer env action codes,
+                    # NOT DSL strings like "MOVE(NORTH)" or "PICKUP(IRON)".
+                    # Returning DSL strings is a design violation — terminal functions are the
+                    # leaves of the DSL and must interact with the environment directly.
+                    _action_list = actions if isinstance(actions, list) else [actions]
+                    _bad = [a for a in _action_list if isinstance(a, str)]
+                    if _bad:
+                        raise ValueError(
+                            f"Terminal function '{func_name}' returned DSL string tokens "
+                            f"{_bad!r} instead of integer environment action codes. "
+                            f"Terminal functions are the leaves of the DSL; they must return "
+                            f"raw integer action codes accepted by env.step(), not DSL program "
+                            f"tokens. Fix the implementation of '{func_name}' to return integers."
+                        )
+
                     # Execute actions
                     if isinstance(actions, list):
                         for action in actions:

@@ -5,7 +5,7 @@
 set -e
 
 # Get config file path
-CONFIG_FILE="${1:-config/experiment_config.yaml}"
+CONFIG_FILE="${1:-config/experiment_config_.yaml}"
 
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "Error: Config file not found: $CONFIG_FILE"

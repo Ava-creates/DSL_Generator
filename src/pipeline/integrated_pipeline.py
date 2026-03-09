@@ -492,8 +492,9 @@ def extract_and_save_cfg(output_text, cfg_dir="cfg"):
         re.IGNORECASE,
     )
     # --- Extract Terminal Functions block ---
+    # Handles both "**Terminal Functions**" (bold) and plain "Terminal Functions"
     term_match = re.search(
-        r"(?:[#*]+\s*)?Terminal Functions\*\*(.*?)(?:\n---|\Z)",
+        r"(?:[#*]+\s*)?Terminal Functions\**\s*\n(.*?)(?:\n---|\Z)",
         output_text,
         re.DOTALL | re.IGNORECASE
     )
@@ -747,11 +748,11 @@ def synthesize_and_test_programs(
     print("Synthesizing and Testing Programs")
     print(f"{'='*80}")
     
-    if cfg_version != -1:
-        dynamic_cfg_filename = f"cfg_output_{cfg_version}.json"
-        cfg_path = os.path.join(experiment_dir, "cfg", dynamic_cfg_filename)  
-    else:
-        cfg_path = os.path.join(experiment_dir, "cfg", "cfg_output.json")
+    if cfg_path is None:
+        if cfg_version != -1:
+            cfg_path = os.path.join(experiment_dir, "cfg", f"cfg_output_{cfg_version}.json")
+        else:
+            cfg_path = os.path.join(experiment_dir, "cfg", "cfg_output.json")
 
     # Load CFG
     cfg_example = None
@@ -1841,10 +1842,7 @@ def test_cfg_on_tasks(
     print("Testing CFG on Tasks")
     print(f"{'='*80}")
     
-    if cfg_version is None:
-        cfg_path = os.path.join(experiment_dir, "cfg", "cfg_output.json")
-    else:
-        cfg_path = os.path.join(experiment_dir, "cfg", f"cfg_output_{cfg_version}.json")
+    cfg_path = os.path.join(experiment_dir, "cfg", "cfg_output.json")
     
     # Test programs using synthesize_and_test_programs
     task_results, _ = synthesize_and_test_programs(
@@ -1870,6 +1868,7 @@ def evolve_dsl(
     terminals: Dict[str, str],
     shared_vllm=None,
     failed_programs_by_task: Optional[Dict[str, List[str]]] = None,
+    new_dsl_round: Optional[int] = None,
 ) -> Tuple[str, Dict[str, str], bool]:
     """Evolve the DSL based on failing tasks (without implementing).
     
@@ -2047,8 +2046,9 @@ def evolve_dsl(
                         # Fallback: try regex patterns if parser didn't work
                         if not term_descriptions:
                             # Pattern: FUNCTION_NAME(args): description or FUNCTION_NAME: description
-                            # Try multiple patterns to catch different formats
+                            # Also handles bolded markdown: - **FUNC_NAME(args)**: description
                             patterns = [
+                                r'\*{0,2}([A-Z_][A-Z0-9_]*)(?:\([^)]*\))?\*{0,2}\s*[:\-–]\s*(.+?)(?=\n|$)',  # **FUNC_NAME(args)**: or plain
                                 r'([A-Z_][A-Z0-9_()]*)\s*[:\-–]\s*(.+?)(?=\n|$)',  # FUNCTION_NAME: description
                                 r'([A-Z_][A-Z0-9_()]*)\s*\([^)]*\)\s*[:\-–]\s*(.+?)(?=\n|$)',  # FUNCTION_NAME(args): description
                             ]
@@ -2138,7 +2138,15 @@ def evolve_dsl(
                 json.dump(cfg_data, f, indent=2, ensure_ascii=False)
             print(f"   Saved new CFG to {cfg_path}")
             print(f"   New CFG has {len(new_terminals)} terminal functions: {list(new_terminals.keys())}")
-            
+
+            # Also save as cfg_output_{new_dsl_round}.json for explicit versioned access
+            # Convention: cfg_output_N.json = CFG after dsl_round N; cfg_output.json = latest
+            if new_dsl_round is not None:
+                versioned_path = os.path.join(experiment_dir, "cfg", f"cfg_output_{new_dsl_round}.json")
+                import shutil
+                shutil.copy2(cfg_path, versioned_path)
+                print(f"   Also saved as {versioned_path}")
+
             return cfg_text, new_terminals, True
         else:
             print(" Could not extract new CFG, using original")

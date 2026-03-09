@@ -16,7 +16,11 @@ source new_dsl_env/bin/activate
 # Set working directory to project root
 cd /home/avani/projects/aip-lelis/avani/DSL_Generator
 
+# Ensure log directory exists
+mkdir -p scripts/log
+
 source scripts/stages/log_chain_context.sh
+log_chain_context "stage_get_cfg"
 
 # Load configuration from YAML file (if EXPERIMENT_CONFIG is set)
 # Environment variables take precedence over config file
@@ -32,8 +36,6 @@ if [ -z "${EXPERIMENT_DIR:-}" ]; then
     echo "EXPERIMENT_DIR not set, using: $EXPERIMENT_DIR"
 fi
 
-log_chain_context "stage_get_cfg"
-
 # Run the stage script
 if [ "${SKIP_CFG_GENERATION:-false}" = "true" ]; then
     SKIP_FLAG="--skip_cfg_generation"
@@ -48,9 +50,13 @@ python src/pipeline/stages/stage_get_cfg.py \
     ${CFG_OUTPUT_FILE:+--cfg_output_file "$CFG_OUTPUT_FILE"} \
     --max_cfg_retries "${MAX_CFG_RETRIES:-10}"
 
-# Chain to next stage based on state
-if [ $? -eq 0 ]; then
-    source scripts/stages/chain_next_stage.sh
-    chain_based_on_state
+# Chain to next stage based on state (run in background so job exits immediately)
+if [ $? -eq 0 ] || [ $? -eq 1 ]; then
+    (
+        source scripts/stages/chain_next_stage.sh
+        chain_based_on_state
+    ) &
+    # Give chaining a brief moment to submit jobs
+    sleep 30
 fi
 

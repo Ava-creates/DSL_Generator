@@ -127,13 +127,14 @@ def craft_solve_template_basic(func_name: str, func_params: str, func_call_args:
       'inventory_after': inventory_after,
       'grid_before_cells': grid_before_cells,
       'grid_after_cells': grid_after_cells,
-      'actions_count': actions_count,
       'dir_before': dir_before,
       'dir_after': dir_after,
     }})
   else:
     passed = False
-  total_reward += 1.0 if passed else 0.0
+  test_type = spec.get('test_type', 'positive') if spec is not None else 'positive'
+  if passed:
+    total_reward += 100.0 if test_type == 'positive' else 1.0
   grid_before = None
   grid_after = None
 
@@ -163,9 +164,10 @@ def evaluate():
   total_actions = 0
   grid_before = None
   grid_after = None
-  ans =[0]*10  #tracking what testcases pass or failed - 0 for failed 1 for passed
+  _grid_spec_paths = {grid_spec_paths_var}
+  ans = [0]*len(_grid_spec_paths)  #tracking what testcases pass or failed - 0 for failed 1 for passed
   i = 0 
-  for grid_spec_path in {grid_spec_paths_var}:
+  for grid_spec_path in _grid_spec_paths:
 {env_setup_in_loop}
     env.reset()
     # arg_values = grid_spec.get("arg_values", {{}}) if isinstance(grid_spec, dict) else {{}}

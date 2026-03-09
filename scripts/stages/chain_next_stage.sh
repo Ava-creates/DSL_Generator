@@ -266,9 +266,12 @@ EOF
 # Returns: 0 if done, 1 if not done
 test_tasks_already_done() {
     local func_evolution_round="$1"
+    local current_dsl_round=$(get_state_value "dsl_round")
+    current_dsl_round="${current_dsl_round:-0}"
     if [ -f "$EXPERIMENT_DIR/stage_test_tasks_status.json" ]; then
         local status_func_round=$(python3 -c "import json; f=open('$EXPERIMENT_DIR/stage_test_tasks_status.json'); d=json.load(f); print(d.get('func_evolution_round') if d.get('func_evolution_round') is not None else 0)" 2>/dev/null || echo "0")
-        if [ "$status_func_round" = "$func_evolution_round" ]; then
+        local status_dsl_round=$(python3 -c "import json; f=open('$EXPERIMENT_DIR/stage_test_tasks_status.json'); d=json.load(f); print(d.get('dsl_round', 0))" 2>/dev/null || echo "0")
+        if [ "$status_func_round" = "$func_evolution_round" ] && [ "$status_dsl_round" = "$current_dsl_round" ]; then
             return 0
         fi
     fi
@@ -600,7 +603,7 @@ print('1' if all_solved else '0')
         
         # Get evolution limits
         local max_func_evolutions=$(get_state_value "max_function_evolutions")
-        if [ -z "$max_func_evolutions" ] || [ "$max_func_evolutions" = "0" ]; then
+        if [ -z "$max_func_evolutions" ]; then
             max_func_evolutions="${MAX_FUNCTION_EVOLUTIONS:-1}"
         fi
         # Only set default for dsl_evolutions_remaining if it's truly unset (empty)
@@ -618,10 +621,11 @@ print('1' if all_solved else '0')
         echo "  dsl_evolutions_remaining=$dsl_evolutions_remaining"
         
         # SAFEGUARD: Ensure function evolution is attempted at least once
+        # (only applies when max_function_evolutions > 0)
         local func_evolution_ever_attempted=$(get_state_value "function_evolution_submitted")
         func_evolution_ever_attempted="${func_evolution_ever_attempted:-0}"
         
-        if [ "$func_evolution_ever_attempted" -eq 0 ]; then
+        if [ "$max_func_evolutions" -gt 0 ] && [ "$func_evolution_ever_attempted" -eq 0 ]; then
             echo "   SAFEGUARD: Function evolution has never been attempted!"
             echo "  Forcing function evolution attempt..."
             if [ "$func_evolution_round" -ge "$max_func_evolutions" ]; then
@@ -637,9 +641,6 @@ if current_round >= ${max_func_evolutions}:
 EOF
                 func_evolution_round=$(get_state_value "func_evolution_round")
                 func_evolution_round="${func_evolution_round:-0}"
-            fi
-            if [ "$max_func_evolutions" -lt 1 ]; then
-                max_func_evolutions=1
             fi
         fi
         
@@ -747,7 +748,7 @@ EOF
         # - func_evolution_round >= max_func_evolutions (function evolution exhausted)
         # - dsl_evolutions_remaining > 0 (DSL evolution rounds remaining)
         if [ "$func_evolution_round" -ge "$max_func_evolutions" ] && [ "$dsl_evolutions_remaining" -gt 0 ]; then
-            if [ "$func_evolution_ever_attempted" -eq 0 ]; then
+            if [ "$func_evolution_ever_attempted" -eq 0 ] && [ "$max_func_evolutions" -gt 0 ]; then
                 echo "   ERROR: DSL evolution requested but function evolution never attempted!"
                 return
             fi
