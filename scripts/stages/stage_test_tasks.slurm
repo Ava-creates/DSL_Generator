@@ -33,6 +33,12 @@ else
     FUNC_ROUND_ARG=""
 fi
 
+if [ -n "${SYNTHESIS_PROMPT:-}" ]; then
+    SYNTH_PROMPT_ARG="--synthesis_prompt $SYNTHESIS_PROMPT"
+else
+    SYNTH_PROMPT_ARG=""
+fi
+
 python src/pipeline/stages/stage_test_tasks.py \
     --experiment_dir "$EXPERIMENT_DIR" \
     --tasks $TASKS_ARGS \
@@ -40,7 +46,8 @@ python src/pipeline/stages/stage_test_tasks.py \
     --hints_path "${HINTS_PATH:-craft/resources/hints.yaml}" \
     --max_attempts "${MAX_ATTEMPTS:-30}" \
     --dsl_round "${DSL_ROUND:-0}" \
-    $FUNC_ROUND_ARG
+    $FUNC_ROUND_ARG \
+    $SYNTH_PROMPT_ARG
 
 # Chain to next stage based on state (run in background so job exits immediately)
 # sbatch commands are non-blocking and submit jobs immediately, so chaining should be fast

@@ -100,7 +100,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
                 config[config_key] = env_value.lower() in ("true", "1", "yes")
             elif config_key == "use_existing_grid_specs":
                 config[config_key] = env_value.lower() in ("true", "1", "yes")
-            elif config_key in ("grid_spec_dir", "failure_analysis_prompt", "cfg_evolution_prompt"):
+            elif config_key in ("grid_spec_dir", "failure_analysis_prompt", "cfg_evolution_prompt", "synthesis_prompt"):
                 config[config_key] = env_value
             elif config_key == "tasks":
                 # Handle tasks - can be JSON array or space-separated
@@ -134,6 +134,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "grid_spec_dir": None,
         "failure_analysis_prompt": "prompt_specifications/failure_analysis.txt",
         "cfg_evolution_prompt": "prompt_specifications/cfg_evolution.txt",
+        "synthesis_prompt": "prompt_specifications/prompt_synth_with_grid_and_failures.txt",
     }
     
     for key, default_value in defaults.items():
@@ -170,6 +171,7 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
         "grid_spec_dir": "GRID_SPEC_DIR",
         "failure_analysis_prompt": "FAILURE_ANALYSIS_PROMPT",
         "cfg_evolution_prompt": "CFG_EVOLUTION_PROMPT",
+        "synthesis_prompt": "SYNTHESIS_PROMPT",
     }
     
     for config_key, env_var in env_mappings.items():

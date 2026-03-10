@@ -36,6 +36,7 @@ for key, value in config.items():
             'spec_file': 'SPEC_FILE',
             'failure_analysis_prompt': 'FAILURE_ANALYSIS_PROMPT',
             'cfg_evolution_prompt': 'CFG_EVOLUTION_PROMPT',
+            'synthesis_prompt': 'SYNTHESIS_PROMPT',
             'max_dsl_evolutions': 'MAX_DSL_EVOLUTIONS',
             'max_function_evolutions': 'MAX_FUNCTION_EVOLUTIONS',
             'total_samples': 'TOTAL_SAMPLES',

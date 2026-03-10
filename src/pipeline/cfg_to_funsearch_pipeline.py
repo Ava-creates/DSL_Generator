@@ -563,7 +563,7 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
     grid_dir_override = os.environ.get("GRID_SPEC_DIR")
     grid_dir = grid_dir_override if grid_dir_override else (os.path.join(experiment_dir, "grids") if experiment_dir else "grids")
     os.makedirs(grid_dir, exist_ok=True)
-    num_grid_tests = 5 if skip_positive_grids else 10
+    num_grid_tests = 5 if skip_positive_grids else 15
     total_grid_generation_attempts = 200
     grid_spec_paths = []
     grid_spec = None

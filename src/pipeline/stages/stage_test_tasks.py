@@ -33,6 +33,7 @@ def main():
     parser.add_argument('--recipes_path', type=str, default="craft/resources/recipes.yaml", help='Path to recipes YAML')
     parser.add_argument('--hints_path', type=str, default="craft/resources/hints.yaml", help='Path to hints YAML')
     parser.add_argument('--max_attempts', type=int, default=30, help='Maximum attempts per task')
+    parser.add_argument('--synthesis_prompt', type=str, default=None, help='Path to synthesis prompt template file (default: prompt_specifications/prompt_synth_with_grid_and_failures.txt)')
     parser.add_argument('--dsl_round', type=int, default=int(os.environ.get("DSL_ROUND", "0")), help='DSL evolution round number')
     parser.add_argument('--func_evolution_round', type=int, default=None, help='Function evolution round number')
     
@@ -180,7 +181,8 @@ def main():
         shared_vllm=shared_vllm,
         results_tracker=results_tracker,
         cfg_version=args.dsl_round,
-        func_evolution_round=args.func_evolution_round
+        func_evolution_round=args.func_evolution_round,
+        synthesis_prompt_path=args.synthesis_prompt
     )
     
     all_solved = all(task_results.values())

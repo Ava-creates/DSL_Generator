@@ -32,6 +32,7 @@ skip_cfg_generation: true
 cfg_output_file: experiments/experiment_20260305_161332_5380/cfg/cfg_output_0.json #generates the new experiemnt with this cfg 
 max_cfg_retries: 10
 grid_regeneration_attempts: 15
+## so use existing_grid_specs is set to true, then we will not generate new grids and instead use the existing grids in the grid_spec_dir
 use_existing_grid_specs: false
 # grid_spec_dir: experiments/experiment_success/grids
 grid_prompt_path: prompt_specifications/grid_prompt.txt

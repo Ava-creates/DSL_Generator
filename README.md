@@ -111,37 +111,9 @@ python src/pipeline/stages/stage_evolve_function_single.py \
 - `results_tracking/interactions.json` - Environment interaction counts
 - `results_tracking/explicit_feedback/` - Explicit feedback results and plots
 
-## Common Workflows
-
-### Testing a New DSL Version
-1. Generate function implementations: `stage_file_generation.py --dsl_round 1 --func_evolution_round 0`
-2. Test tasks with latest CFG: `stage_test_tasks.py --dsl_round 1 --func_evolution_round 0`
-3. Analyze results and evolve if needed
-
-### Experimenting with Test Tasks (Prompt/CFG A-B Testing)
-Use this when you want to compare prompt changes on a specific DSL version.
-
-1. Use the same dsl_round to test different function versions:
-    - `stage_test_tasks.py --dsl_round 2 --func_evolution_round 0 ...`
-    - `stage_test_tasks.py --dsl_round 2 --func_evolution_round 1 ...`
-2. Compare outputs in:
-    - `results_tracking/synthesis_results.json`
-    - `stage_test_tasks_status.json`
-
-### Evolving Functions for Current DSL
-1. Identify failing tasks from test results
-2. Evolve functions: `stage_evolve_functions.py --dsl_round 0 --func_evolution_round 0`
-3. Test with evolved functions: `stage_test_tasks.py --dsl_round 0 --func_evolution_round 1`
-
-### Evolving DSL Based on Failures
-1. Identify failing tasks across all function versions
-2. Evolve DSL: `stage_evolve_dsl.py --dsl_version 0` (creates version 1)
-3. Generate new function implementations: `stage_file_generation.py --dsl_round 1 --func_evolution_round 0`
-4. Test new DSL: `stage_test_tasks.py --dsl_round 1 --func_evolution_round 0`
 
 
-
-### To run individual programs generated during the pipelien and to see grid at each step use this - 
+### To run individual programs generated during the pipeline and to see grid at each step use this - 
 
 ```bash
 cd /home/avani/projects/aip-lelis/avani/DSL_Generator && source new_dsl_env/bin/activate && python scripts/run_program_with_inventory.py \
@@ -154,3 +126,5 @@ cd /home/avani/projects/aip-lelis/avani/DSL_Generator && source new_dsl_env/bin/
  `--experiment_dir` is where the cfg is read from and that is the directory where the grid logs would be stored 
 
 
+## Things hardcoded - 
+`target` for number of grids in 

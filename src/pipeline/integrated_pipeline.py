@@ -735,7 +735,8 @@ def synthesize_and_test_programs(
     shared_vllm=None,
     results_tracker=None,
     cfg_version: int = -1,
-    func_evolution_round: Optional[int] = None
+    func_evolution_round: Optional[int] = None,
+    synthesis_prompt_path: str = None
 ) -> Tuple[Dict[str, bool], Dict[str, List[str]]]:
     """Synthesize programs for each task and test if they solve the task.
     
@@ -815,7 +816,14 @@ def synthesize_and_test_programs(
     # Load recipes
     with open(recipes_path, 'r') as f:
         recipes = f.read()
-    
+
+    # Load synthesis prompt template from file
+    config = load_config()
+    _prompt_rel = synthesis_prompt_path or config.get("synthesis_prompt", "prompt_specifications/prompt_synth_with_grid_and_failures.txt")
+    _prompt_abs = _prompt_rel if os.path.isabs(_prompt_rel) else os.path.join(_project_root, _prompt_rel)
+    with open(_prompt_abs, "r", encoding="utf-8") as _f:
+        synthesis_prompt_template = _f.read()
+
     # Use shared vLLM instance if provided, otherwise create new one
     if shared_vllm is not None:
         llm = shared_vllm
@@ -924,48 +932,14 @@ def synthesize_and_test_programs(
             # if "knife" in task:
             print("markdown", markdown)
             programs_str = "\n\n---\n\n".join(programs_tried)
-            prompt = f"""
-You are a Domain Specific Language (DSL) program generator for the Craft domain. 
-
-### Start State
-{markdown}
-
-## Natural Language Description
-Craft is a single-agent game in a pre-specified environment. 
-The environment of craft is a grid world of size n * n. Each cell can be empty, contain an item, or part of natural terrain or functional structures. When the cell is nonempty, it is considered as blocked. A agent can move around the environment freely through empty cells. At each step, the agent can either move or perform a specific actions, such as collect or craft, towards the immediate cell that it is facing towards. 
-At the beginning of each episode, the agent is placed at a starting cell and a distribution of items across the grid is initialized. The agent's tasks involve either collecting primitives (raw resources) or crafting items. A item can only be crafted at the specific workshop mentioned in the recipes. 
-The item to be craft are produced from primitives (or other crafted items) by following recipes. Each recipe specifies which items are required and at which workshop the crafting must occur. A primitive item might not need to be crafted but just collected. More complex items, such as arrow, bridge, hammer, axe or flag, require intermediate items along with primitives. This all is specified in the recipe file of the environment. Please note a item can only be crafted at the specific workshop mentioned in the recipes. 
-In this domain, primitives may sometimes be blocked by obstacles. Obstacles are entities that are part of the recipe but are not primitives, workshops, or boundaries. To reach the blocked primitives, the agent must identify and use appropriate tools to remove or bypass these obstacles.
-The correspondence between tools and obstacles is not predefined or known a priori. It cannot be inferred from real-world knowledge or semantic associations. Instead, the correct relationships must be discovered empirically through exploration and interaction within the environment, by observing which tools succeed or fail when applied to different obstacles.
-Primitives used to craft an item has no relation to it being the tool that helps pass an obstacle.
-
-## Available Recipes
-Here are the recipes for the domain:
-{recipes}
-
-## Context Free Grammar (CFG)
-Here is the context-free grammar (CFG) that defines the DSL. Strictly follow this CFG when synthesising programs:
-
-{cfg}
-
-## Task
-Generate a program that solves the following task:
-
-**{task}**
-
-## Output Format Instructions
-Return ONLY the program string delimited by $ signs. Do not include any explanations, comments, or additional text outside the $ delimiters.
-Example output ->
-${example_program}$
-
-## Previous programs that FAILED to solve the task:
-{programs_str}
-
-Each failed program is shown with the inventory changes during the program; the whole inventory after each function where a change happened is shown. Use this to see what the program actually achieved and why it did not solve the task. These programs are syntactically correct but did not solve the task. When generating a new program, avoid repeating the mistakes made in these failed programs, and generate semantically different programs.
-
-Also always ensure that the the information provided in this prompt is facts and always correct and cannot be changed so please adhere to it strictly.
-##Return a program that is able to solve the task that is different from the previous failed programs.
-"""
+            prompt = synthesis_prompt_template.format(
+                markdown=markdown,
+                recipes=recipes,
+                cfg=cfg,
+                task=task,
+                example_program=example_program,
+                programs_str=programs_str,
+            )
             print(f"\n[{task}] === PROG SYNTH PROMPT (attempt {attempt + 1}) ===\n{prompt}\n=== END PROG SYNTH PROMPT ===\n")
             
             try:
@@ -1822,7 +1796,8 @@ def test_cfg_on_tasks(
     shared_vllm=None,
     results_tracker=None,
     cfg_version: Optional[int] = None,
-    func_evolution_round: Optional[int] = None
+    func_evolution_round: Optional[int] = None,
+    synthesis_prompt_path: str = None
 ) -> Dict[str, bool]:
     """Test the current CFG and functions on the given tasks.
     
@@ -1849,7 +1824,7 @@ def test_cfg_on_tasks(
         experiment_dir, tasks, cfg_path=cfg_path, terminals=terminals,
         recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
         shared_vllm=shared_vllm, results_tracker=results_tracker, cfg_version=cfg_version,
-        func_evolution_round=func_evolution_round
+        func_evolution_round=func_evolution_round, synthesis_prompt_path=synthesis_prompt_path
     )
     
     print(f"\nTask Results:")
@@ -2273,7 +2248,8 @@ def run_integrated_pipeline(
     recipes_path: str = "craft/resources/recipes.yaml",
     hints_path: str = "craft/resources/hints.yaml",
     max_attempts: int = 1,
-    shared_vllm=None
+    shared_vllm=None,
+    synthesis_prompt_path: str = None
 ) -> int:
     """Run the complete integrated pipeline.
     
@@ -2383,7 +2359,7 @@ def run_integrated_pipeline(
     task_results, failed_programs_by_task = synthesize_and_test_programs(
         experiment_dir, tasks, cfg_path=cfg_path, terminals=terminals,
         recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
-        shared_vllm=shared_vllm
+        shared_vllm=shared_vllm, synthesis_prompt_path=synthesis_prompt_path
     )
     
     all_solved = all(task_results.values())
@@ -2430,7 +2406,7 @@ def run_integrated_pipeline(
             task_results, failed_programs_by_task = synthesize_and_test_programs(
                 experiment_dir, failing_tasks, cfg_path=cfg_path, terminals=terminals,
                 recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
-                shared_vllm=shared_vllm
+                shared_vllm=shared_vllm, synthesis_prompt_path=synthesis_prompt_path
             )
             
             all_solved = all(task_results.values())
@@ -2494,7 +2470,7 @@ def run_integrated_pipeline(
         task_results, failed_programs_by_task = synthesize_and_test_programs(
             experiment_dir, failing_tasks, cfg_path=cfg_path, terminals=current_terminals,
             recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
-            shared_vllm=shared_vllm
+            shared_vllm=shared_vllm, synthesis_prompt_path=synthesis_prompt_path
         )
         
         all_solved = all(task_results.values())
@@ -2575,6 +2551,12 @@ def main():
         default=1,
         help='Maximum number of attempts to synthesize a program for each task (default: 1)'
     )
+    parser.add_argument(
+        '--synthesis_prompt',
+        type=str,
+        default=None,
+        help='Path to synthesis prompt template file (default: prompt_specifications/prompt_synth_with_grid_and_failures.txt)'
+    )
     
     args = parser.parse_args()
     
@@ -2600,7 +2582,8 @@ def main():
         max_dsl_evolutions=args.max_dsl_evolutions,
         recipes_path=args.recipes_path,
         hints_path=args.hints_path,
-        max_attempts=args.max_attempts
+        max_attempts=args.max_attempts,
+        synthesis_prompt_path=args.synthesis_prompt
     )
 
 
