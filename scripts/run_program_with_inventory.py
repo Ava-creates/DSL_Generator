@@ -130,15 +130,29 @@ def run_program_with_inventory(
     steps = 0
     actions_taken: List[int] = []
 
+    def _get_grid_md(env):
+        state = getattr(env, "_current_state", None)
+        world = getattr(env, "world", None)
+        if state is not None and world is not None and hasattr(world, "cookbook"):
+            return grid_to_markdown(state.grid, world.cookbook, getattr(state, "pos", None))
+        return None
+
+    safe_task = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in task)
+    log_path = os.path.join(experiment_dir, f"craft_grids_{safe_task}.md")
+
+    # Truncate/create fresh log file
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write(f"# Program trace: {task}\n\n")
+        f.write(f"**Program:** `{program}`\n\n")
+        f.write("---\n\n")
+
     print(f"Task: {task}")
     print(f"Program:\n  {program}")
-    print("\nInitial inventory:")
-    print("  " + ", ".join(_format_inventory(env)) or "  <empty>")
-    print("-" * 80)
+    print(f"\nLog: {log_path}")
+    print("\nInitial inventory: " + (", ".join(_format_inventory(env)) or "<empty>"))
+    print("=" * 80)
 
-    # Prepare optional grid log file for CRAFT steps
-    safe_task = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in task)
-    craft_log_path = os.path.join(experiment_dir, f"craft_grids_{safe_task}.md")
+    global_action_num = 0
 
     for idx, token in enumerate(tokens, start=1):
         if done:
@@ -149,25 +163,11 @@ def run_program_with_inventory(
             continue
 
         func_name, args = func_call
-        upper_name = func_name.upper()
         normalized_args = [
             arg.lower() if isinstance(arg, str) else arg for arg in args
         ]
 
-        # Capture grid before for CRAFT only
-        grid_md_before = None
-        if upper_name == "CRAFT":
-            state_before = getattr(env, "_current_state", None)
-            world = getattr(env, "world", None)
-            if state_before is not None and world is not None and hasattr(world, "cookbook"):
-                grid_md_before = grid_to_markdown(
-                    state_before.grid,
-                    world.cookbook,
-                    getattr(state_before, "pos", None),
-                )
-
         safe_name = evaluator._sanitize_function_name(func_name)
-
         impl = implementations.get(safe_name)
         if impl is None:
             impl = implementations.get(func_name.lower())
@@ -178,6 +178,10 @@ def run_program_with_inventory(
                 f"No implementation found for function {func_name} (sanitized: {safe_name})"
             )
 
+        # Capture grid before calling function
+        grid_before_call = _get_grid_md(env)
+
+        # Call function — capture which actions it returns
         if normalized_args:
             actions = impl(env, *normalized_args)
         else:
@@ -186,99 +190,58 @@ def run_program_with_inventory(
         if not isinstance(actions, list):
             actions = [actions]
 
-        # Execute low-level actions
-        if upper_name == "CRAFT":
-            # For CRAFT, log grid before/after each low-level step to file
-            for local_step, action in enumerate(actions, start=1):
-                if done:
-                    break
+        header = f"## Token {idx}: `{token}`  →  actions from `{func_name}`: {actions}"
+        print(header)
 
-                # Grid before this low-level step
-                state_before_step = getattr(env, "_current_state", None)
-                world = getattr(env, "world", None)
-                grid_before_step = None
-                grid_after_step = None
-                if state_before_step is not None and world is not None and hasattr(world, "cookbook"):
-                    grid_before_step = grid_to_markdown(
-                        state_before_step.grid,
-                        world.cookbook,
-                        getattr(state_before_step, "pos", None),
-                    )
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(header + "\n\n")
+            if grid_before_call:
+                f.write("### Grid before function call\n\n")
+                f.write(grid_before_call + "\n\n")
 
-                reward, done, _obs = _step_env(env, action)
-                if reward is not None:
-                    total_reward += float(reward)
-                steps += 1
-                actions_taken.append(action)
+        # Execute each low-level action, logging grid after each one
+        for local_step, action in enumerate(actions, start=1):
+            if done:
+                break
 
-                # Grid after this low-level step
-                state_after_step = getattr(env, "_current_state", None)
-                if state_after_step is not None and world is not None and hasattr(world, "cookbook"):
-                    grid_after_step = grid_to_markdown(
-                        state_after_step.grid,
-                        world.cookbook,
-                        getattr(state_after_step, "pos", None),
-                    )
+            global_action_num += 1
+            grid_pre = _get_grid_md(env)
 
-                # Append per-step grids to markdown file
-                with open(craft_log_path, "a", encoding="utf-8") as f:
-                    f.write(f"## CRAFT step {idx}.{local_step} (action={action})\n\n")
-                    if grid_before_step is not None:
-                        f.write("### Grid before low-level step\n\n")
-                        f.write(grid_before_step + "\n\n")
-                    if grid_after_step is not None:
-                        f.write("### Grid after low-level step\n\n")
-                        f.write(grid_after_step + "\n\n")
-                    f.write("---\n\n")
+            reward, done, _obs = _step_env(env, action)
+            if reward is not None:
+                total_reward += float(reward)
+            steps += 1
+            actions_taken.append(action)
 
-            # After all low-level steps, also log summary inventory and final grids once
-            grid_md_after = None
-            state_after = getattr(env, "_current_state", None)
-            world = getattr(env, "world", None)
-            if state_after is not None and world is not None and hasattr(world, "cookbook"):
-                grid_md_after = grid_to_markdown(
-                    state_after.grid,
-                    world.cookbook,
-                    getattr(state_after, "pos", None),
-                )
-
+            grid_post = _get_grid_md(env)
             inv_items = _format_inventory(env)
+            inv_str = ", ".join(inv_items) if inv_items else "<empty>"
 
-            print(f"Step {idx}: {token}")
-            if grid_md_before is not None:
-                print("  Grid before craft (markdown):")
-                print(grid_md_before)
-            if grid_md_after is not None:
-                print("  Grid after craft (markdown):")
-                print(grid_md_after)
-            print("  Inventory: " + (", ".join(inv_items) if inv_items else "<empty>"))
-            print("-" * 80)
+            step_line = (
+                f"  action {global_action_num} ({local_step}/{len(actions)} from {func_name}): "
+                f"code={action}  reward={reward}  done={done}  inv=[{inv_str}]"
+            )
+            print(step_line)
 
-            with open(craft_log_path, "a", encoding="utf-8") as f:
-                f.write(f"## Step {idx}: {token} (summary)\n\n")
-                if grid_md_before is not None:
-                    f.write("### Grid before craft (summary)\n\n")
-                    f.write(grid_md_before + "\n\n")
-                if grid_md_after is not None:
-                    f.write("### Grid after craft (summary)\n\n")
-                    f.write(grid_md_after + "\n\n")
-                f.write("### Inventory after craft\n\n")
-                f.write((", ".join(inv_items) if inv_items else "<empty>") + "\n\n")
-                f.write("====\n\n")
-        else:
-            # Non-CRAFT terminals: just execute actions normally
-            for action in actions:
-                if done:
-                    break
-                reward, done, _obs = _step_env(env, action)
-                if reward is not None:
-                    total_reward += float(reward)
-                steps += 1
-                actions_taken.append(action)
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"### Action {global_action_num} ({local_step}/{len(actions)}) — code `{action}` from `{func_name}`\n\n")
+                f.write(f"reward={reward}  done={done}  inventory: {inv_str}\n\n")
+                if grid_pre:
+                    f.write("**Grid before:**\n\n" + grid_pre + "\n\n")
+                if grid_post:
+                    f.write("**Grid after:**\n\n" + grid_post + "\n\n")
+                f.write("---\n\n")
 
-    print(f"Finished. total_reward={total_reward}, steps={steps}, done={done}")
+        print("-" * 80)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write("====\n\n")
+
+    summary = f"Finished. total_reward={total_reward}, steps={steps}, done={done}"
+    print(summary)
     print("Actions taken:")
     print(f"  {actions_taken}")
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"## Summary\n\n{summary}\n\nActions: {actions_taken}\n")
 
 
 def main() -> None:

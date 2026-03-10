@@ -138,3 +138,19 @@ Use this when you want to compare prompt changes on a specific DSL version.
 2. Evolve DSL: `stage_evolve_dsl.py --dsl_version 0` (creates version 1)
 3. Generate new function implementations: `stage_file_generation.py --dsl_round 1 --func_evolution_round 0`
 4. Test new DSL: `stage_test_tasks.py --dsl_round 1 --func_evolution_round 0`
+
+
+
+### To run individual programs generated during the pipelien and to see grid at each step use this - 
+
+```bash
+cd /home/avani/projects/aip-lelis/avani/DSL_Generator && source new_dsl_env/bin/activate && python scripts/run_program_with_inventory.py \
+  --experiment_dir experiments/experiment_20260308_124523_15556 \
+  --task "make[flag]" \
+  --program "TURN(RIGHT);PICKUP;TURN(LEFT);MOVE(NORTH);TURN(RIGHT);PICKUP;TURN(LEFT);TURN(LEFT);PICKUP;TURN(RIGHT);TURN(RIGHT);MOVE(EAST);MOVE(EAST);MOVE(EAST);MOVE(EAST);MOVE(EAST);MOVE(EAST);TURN(LEFT);MOVE(NORTH);MOVE(NORTH);MOVE(NORTH);MOVE(NORTH);TURN(LEFT);MOVE(WEST);TURN(RIGHT);MOVE(NORTH);MOVE(NORTH);TURN(RIGHT);MOVE(EAST);CRAFT(STICK,WORKSHOP2);CRAFT(CLOTH,WORKSHOP2);TURN(LEFT);MOVE(WEST);MOVE(WEST);TURN(LEFT);MOVE(SOUTH);MOVE(SOUTH);MOVE(SOUTH);MOVE(SOUTH);MOVE(SOUTH);MOVE(SOUTH);MOVE(SOUTH);CRAFT(FLAG,WORKSHOP0)"
+```
+#### Arguments - 
+
+ `--experiment_dir` is where the cfg is read from and that is the directory where the grid logs would be stored 
+
+

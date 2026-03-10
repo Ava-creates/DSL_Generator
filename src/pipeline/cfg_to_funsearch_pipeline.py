@@ -613,8 +613,14 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
         _existing_count = len([f for f in os.listdir(grid_dir)
                                 if f.startswith(_prefix) and f.endswith(".json")]) if os.path.isdir(grid_dir) else 0
         # Preload existing files as LLM context
+        def _case_num(fname):
+            """Extract numeric case index for natural sort (case2 < case10)."""
+            import re as _re
+            m = _re.search(r'_case(\d+)\.json$', fname)
+            return int(m.group(1)) if m else -1
+
         if _existing_count > 0:
-            for _ef in sorted(os.listdir(grid_dir)):
+            for _ef in sorted(os.listdir(grid_dir), key=_case_num):
                 if _ef.startswith(_prefix) and _ef.endswith(".json"):
                     try:
                         with open(os.path.join(grid_dir, _ef), "r", encoding="utf-8") as _fh:
