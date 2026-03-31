@@ -9,14 +9,14 @@ import glob
 import sys
 import json
 import argparse
-from typing import Dict, Optional
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, _project_root)
 
 from src.pipeline.cfg_to_funsearch_pipeline import run_explicit_feedback_generation, sanitize_function_name
-from src.utils.pipeline_state import decrement_function_implementation, read_state, mark_test_tasks_submitted
+from src.utils.pipeline_state import decrement_function_implementation, read_state
+from src.utils.status_manager import read_status, read_function_status, write_function_status
 
 # Import vLLM for shared instance
 try:
@@ -48,13 +48,10 @@ def main():
         return 1
     
     # Load file generation status
-    file_gen_status_path = os.path.join(args.experiment_dir, "stage_file_generation_status.json")
-    if not os.path.exists(file_gen_status_path):
-        print(f" File generation status not found: {file_gen_status_path}", file=sys.stderr)
+    file_gen_status = read_status(args.experiment_dir, args.dsl_round, "file_generation")
+    if file_gen_status is None:
+        print(" File generation status not found at dsl<round>/file_generation/status", file=sys.stderr)
         return 1
-    
-    with open(file_gen_status_path, 'r') as f:
-        file_gen_status = json.load(f)
     
     func_files = file_gen_status.get("func_files", {})
     func_signatures = file_gen_status.get("func_signatures", {})
@@ -65,18 +62,11 @@ def main():
     
     func_file = func_files[args.function_name]
     
-    # Check if FunSearch completed for this function (prefer grouped status, fallback to legacy)
-    funsearch_status_file = os.path.join(args.experiment_dir, f"stage_funsearch_{args.function_name}_status.json")
-    funsearch_status_grouped = os.path.join(
-        args.experiment_dir, "status", "funsearch", f"{args.function_name}.json"
-    )
-    status_path = funsearch_status_grouped if os.path.exists(funsearch_status_grouped) else funsearch_status_file
-    if not os.path.exists(status_path):
+    # Check if FunSearch completed for this function
+    funsearch_status = read_function_status(args.experiment_dir, args.dsl_round, "funsearch", args.function_name)
+    if funsearch_status is None:
         print(f" FunSearch status not found for {args.function_name}", file=sys.stderr)
         return 1
-    
-    with open(status_path, 'r') as f:
-        funsearch_status = json.load(f)
     
     if funsearch_status.get("status") != "completed":
         print(f" FunSearch did not complete successfully for {args.function_name}", file=sys.stderr)
@@ -103,7 +93,8 @@ def main():
     
     # Results directory
     results_dir = os.path.join(args.experiment_dir, "results", "funsearch")
-    explicit_feedback_dir = os.path.join(args.experiment_dir, "explicit_feedback")
+    dsl_folder = f"dsl{args.dsl_round}" if args.dsl_round is not None else "dsl_unknown"
+    explicit_feedback_dir = os.path.join(args.experiment_dir, "explicit_feedback", dsl_folder)
     os.makedirs(explicit_feedback_dir, exist_ok=True)
     
     # Run explicit feedback for this function
@@ -179,12 +170,7 @@ def main():
                     except OSError:
                         pass
             
-            # Save stage completion marker (legacy flat path + grouped folder path)
-            status_file = os.path.join(args.experiment_dir, f"stage_explicit_feedback_{args.function_name}_status.json")
-            status_dir_file = os.path.join(
-                args.experiment_dir, "status", "explicit_feedback", f"{args.function_name}.json"
-            )
-            os.makedirs(os.path.dirname(status_dir_file), exist_ok=True)
+            # Save stage completion marker
             stage_status = {
                 "stage": "explicit_feedback",
                 "function_name": args.function_name,
@@ -192,14 +178,12 @@ def main():
                 "dsl_round": args.dsl_round,
                 "func_evolution_round": args.func_evolution_round
             }
-            for path in (status_file, status_dir_file):
-                with open(path, 'w') as f:
-                    json.dump(stage_status, f, indent=2)
+            write_function_status(args.experiment_dir, args.dsl_round, "explicit_feedback", args.function_name, stage_status)
             
             print(f"[{args.function_name}]  Completed explicit feedback ({args.num_iterations} iterations)")
             
             # Decrement explicit feedback counter and check if we should trigger test tasks
-            print(f"\n[Chaining] Decrementing explicit feedback count...")
+            print("\n[Chaining] Decrementing explicit feedback count...")
             remaining = decrement_function_implementation(args.experiment_dir)
             print(f"  Remaining explicit feedback jobs: {remaining}")
             
@@ -215,11 +199,11 @@ def main():
                     tasks = os.environ.get("TASKS", "").split() if os.environ.get("TASKS") else []
                 
                 if not tasks:
-                    print(f"\n[Chaining] All explicit feedback jobs completed, but no tasks found in state file.")
-                    print(f"   Warning: Test tasks cannot be submitted without a tasks list.")
-                    print(f"  Chaining script will check for tasks and handle submission.")
+                    print("\n[Chaining] All explicit feedback jobs completed, but no tasks found in state file.")
+                    print("   Warning: Test tasks cannot be submitted without a tasks list.")
+                    print("  Chaining script will check for tasks and handle submission.")
                 else:
-                    print(f"\n[Chaining] All explicit feedback jobs completed. Chaining script will submit test task jobs.")
+                    print("\n[Chaining] All explicit feedback jobs completed. Chaining script will submit test task jobs.")
             
             return 0
         else:
@@ -231,12 +215,7 @@ def main():
         import traceback
         traceback.print_exc()
         
-        # Save failure status (legacy + grouped folder path)
-        status_file = os.path.join(args.experiment_dir, f"stage_explicit_feedback_{args.function_name}_status.json")
-        status_dir_file = os.path.join(
-            args.experiment_dir, "status", "explicit_feedback", f"{args.function_name}.json"
-        )
-        os.makedirs(os.path.dirname(status_dir_file), exist_ok=True)
+        # Save failure status
         stage_status = {
             "stage": "explicit_feedback",
             "function_name": args.function_name,
@@ -245,12 +224,10 @@ def main():
             "dsl_round": args.dsl_round,
             "func_evolution_round": args.func_evolution_round
         }
-        for path in (status_file, status_dir_file):
-            with open(path, 'w') as f:
-                json.dump(stage_status, f, indent=2)
+        write_function_status(args.experiment_dir, args.dsl_round, "explicit_feedback", args.function_name, stage_status)
         
         # Still decrement even on failure
-        print(f"\n[Chaining] Decrementing explicit feedback count (after failure)...")
+        print("\n[Chaining] Decrementing explicit feedback count (after failure)...")
         remaining = decrement_explicit_feedback(args.experiment_dir)
         print(f"  Remaining explicit feedback jobs: {remaining}")
         
@@ -264,11 +241,11 @@ def main():
                 tasks = os.environ.get("TASKS", "").split() if os.environ.get("TASKS") else []
             
             if not tasks:
-                print(f"\n[Chaining] All explicit feedback jobs completed (some may have failed), but no tasks found.")
-                print(f"   Warning: Test tasks cannot be submitted without a tasks list.")
-                print(f"  Chaining script will check for tasks and handle submission.")
+                print("\n[Chaining] All explicit feedback jobs completed (some may have failed), but no tasks found.")
+                print("   Warning: Test tasks cannot be submitted without a tasks list.")
+                print("  Chaining script will check for tasks and handle submission.")
             else:
-                print(f"\n[Chaining] All explicit feedback jobs completed (some may have failed). Chaining script will submit test task jobs.")
+                print("\n[Chaining] All explicit feedback jobs completed (some may have failed). Chaining script will submit test task jobs.")
         
         return 1
 

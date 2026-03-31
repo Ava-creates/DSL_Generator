@@ -8,7 +8,7 @@ import os
 import sys
 import json
 import argparse
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -17,6 +17,7 @@ sys.path.insert(0, _project_root)
 from src.pipeline.integrated_pipeline import evolve_dsl
 from src.utils.pipeline_state import read_state, update_state
 from src.utils.file_utils import version_file
+from src.utils.status_manager import write_status
 
 # Import vLLM for shared instance
 try:
@@ -25,8 +26,19 @@ except ImportError:
     vLLM = None
 
 
-def extract_failed_programs_from_synthesis_results(experiment_dir: str, failing_tasks: List[str], dsl_version: int = 0) -> Dict[str, List[str]]:
-    """Extract failed programs for failing tasks from synthesis_results.json"""
+def extract_failed_programs_from_synthesis_results(
+    experiment_dir: str,
+    failing_tasks: List[str],
+    dsl_version: int = 0,
+    max_programs_per_task: int = 30,
+) -> Dict[str, List[str]]:
+    """Extract failed programs for failing tasks from synthesis_results.json.
+
+    Uses only results from:
+    - the current DSL version being evolved (cfg_version == dsl_version)
+    - the latest function evolution round observed for that DSL version
+    Then caps programs per task to max_programs_per_task (most recent entries).
+    """
     synthesis_results_path = os.path.join(experiment_dir, "results_tracking", "synthesis_results.json")
     
     if not os.path.exists(synthesis_results_path):
@@ -42,48 +54,90 @@ def extract_failed_programs_from_synthesis_results(experiment_dir: str, failing_
         print(f"Warning: Could not read synthesis_results.json: {e}")
         return {}
     
+    source_cfg_version = dsl_version
+
+    relevant_results = [
+        r for r in synthesis_results
+        if r.get("cfg_version", 0) == source_cfg_version and r.get("task") in failing_tasks
+    ]
+
+    if not relevant_results:
+        print(
+            "Warning: No synthesis results found for "
+            f"source cfg_version={source_cfg_version} (requested dsl_version={dsl_version}) "
+            "and requested failing tasks"
+        )
+        return {}
+
+    latest_func_round = max(r.get("func_evolution_round", 0) for r in relevant_results)
+    print(
+        f"Using source cfg_version={source_cfg_version} "
+        f"(requested dsl_version={dsl_version}), "
+        f"latest func_evolution_round={latest_func_round}"
+    )
+
+    latest_round_results = [
+        r for r in relevant_results
+        if r.get("func_evolution_round", 0) == latest_func_round
+    ]
+
     for task in failing_tasks:
         failed_programs = []
-        
-        # Find all failed attempts for this task from the specified DSL version
-        for result in synthesis_results:
-            if (result.get("task") == task and 
-                not result.get("success", False) and 
-                result.get("cfg_version", 0) == dsl_version):
-                program = result.get("program", "")
-                reward = result.get("total_reward", 0)
-                steps = result.get("interactions", [])
-                failure_reason = result.get("failure_reason", "Unknown")
-                
-                # Try to extract inventory information from different possible fields
-                inventory_before = result.get("inventory_before", {})
-                inventory_after = result.get("inventory_after", {})
-                inventory_trace = result.get("inventory_trace", [])
-                
-                # Format program information with available inventory data
-                lines = [f"Program:\n{program}"]
-                lines.append(f"Reward: {reward}")
-                lines.append(f"Steps: {sum(steps) if isinstance(steps, list) else steps}")
-                
-                # Add inventory information if available
-                if inventory_trace:
-                    lines.append("Inventory changes during the program (whole inventory after the function where the change happened):")
-                    for entry in inventory_trace:
-                        token = entry.get("token", "?")
-                        inv = entry.get("inventory", [])
-                        inv_str = ", ".join(inv) if inv else "<empty>"
-                        lines.append(f"  {token} -> {inv_str}")
-                elif inventory_before or inventory_after:
-                    lines.append(f"Inventory before: {inventory_before}")
-                    lines.append(f"Inventory after: {inventory_after}")
-                
+        seen_program_keys = set()
+        duplicate_skips = 0
+
+        task_failed_results = [
+            r for r in latest_round_results
+            if r.get("task") == task and not r.get("success", False)
+        ]
+
+        # Keep most recent unique programs first (reverse assumes synthesis_results append order)
+        for result in reversed(task_failed_results):
+            program = result.get("program", "")
+            program_key = " ".join(str(program).split()).strip().lower()
+            if program_key in seen_program_keys:
+                duplicate_skips += 1
+                continue
+            seen_program_keys.add(program_key)
+
+            failure_reason = result.get("failure_reason", "Unknown")
+
+            # Try to extract inventory information from different possible fields
+            inventory_before = result.get("inventory_before", {})
+            inventory_after = result.get("inventory_after", {})
+            inventory_trace = result.get("inventory_trace", [])
+
+            # Format program information with available inventory data
+            lines = [f"Program:\n{program}"]
+
+            # Add inventory information if available
+            if inventory_trace:
+                lines.append("Inventory changes during the program (whole inventory after the function where the change happened):")
+                for entry in inventory_trace:
+                    token = entry.get("token", "?")
+                    inv = entry.get("inventory", [])
+                    inv_str = ", ".join(inv) if inv else "<empty>"
+                    lines.append(f"  {token} -> {inv_str}")
+            elif inventory_before or inventory_after:
+                lines.append(f"Inventory before: {inventory_before}")
+                lines.append(f"Inventory after: {inventory_after}")
+
+            if failure_reason and str(failure_reason).strip().lower() != "unknown":
                 lines.append(f"Failure: {failure_reason}")
-                program_info = "\n".join(lines)
-                failed_programs.append(program_info)
-        
+            failed_programs.append("\n".join(lines))
+
+            if max_programs_per_task > 0 and len(failed_programs) >= max_programs_per_task:
+                break
+
+        # restore chronological order in prompt context
+        failed_programs.reverse()
+
         if failed_programs:
             failed_programs_by_task[task] = failed_programs
-            print(f"Found {len(failed_programs)} failed programs for task: {task}")
+            print(
+                f"Found {len(failed_programs)} failed programs for task: {task} "
+                f"(capped at {max_programs_per_task}, latest func round only, duplicates skipped={duplicate_skips})"
+            )
     
     return failed_programs_by_task
 
@@ -95,6 +149,7 @@ def main():
     parser.add_argument('--recipes_path', type=str, default="craft/resources/recipes.yaml", help='Path to recipes YAML')
     parser.add_argument('--max_retries', type=int, default=10, help='Maximum retries for DSL evolution')
     parser.add_argument('--dsl_version', type=int, default=0, help='DSL version to load (e.g., 0 for cfg_output_0.json)')
+    parser.add_argument('--max_failed_programs', type=int, default=30, help='Maximum failed programs per task for failure-analysis context')
     
     args = parser.parse_args()
     
@@ -183,14 +238,14 @@ def main():
         # Note: evolve_dsl() in integrated_pipeline.py already versions and saves the CFG file
         # So we don't need to do it again here - just verify it was saved
         if os.path.exists(cfg_path):
-            print(f" Evolved CFG already saved by evolve_dsl() function")
+            print(" Evolved CFG already saved by evolve_dsl() function")
         else:
-            print(f" Warning: CFG file not found after evolution, saving manually...")
+            print(" Warning: CFG file not found after evolution, saving manually...")
             # Version existing file before saving new one (if it exists)
             if os.path.exists(cfg_path):
                 try:
                     version_file(cfg_path, keep_original=False)
-                    print(f"   Versioned previous CFG file")
+                    print("   Versioned previous CFG file")
                 except Exception as e:
                     print(f"   Warning: Failed to version CFG file: {e}")
             
@@ -207,20 +262,22 @@ def main():
                 json.dump(cfg_data, f, indent=2, ensure_ascii=False)
             print(f" Saved evolved CFG to {output_cfg_path}")
         
-        # Save stage completion marker (legacy + grouped folder path)
+        # Save stage completion marker with DSL versioning
         stage_status = {
             "stage": "evolve_dsl",
             "status": "completed",
             "failing_tasks": args.failing_tasks,
             "evolved": True,
-            "attempt": dsl_attempt
+            "attempt": dsl_attempt,
+            "dsl_round": args.dsl_version + 1
         }
-        status_file = os.path.join(args.experiment_dir, "stage_evolve_dsl_status.json")
-        status_dir_file = os.path.join(args.experiment_dir, "status", "evolve_dsl", "status.json")
-        os.makedirs(os.path.dirname(status_dir_file), exist_ok=True)
-        for path in (status_file, status_dir_file):
-            with open(path, 'w') as f:
-                json.dump(stage_status, f, indent=2)
+        # Write to versioned location: status/evolve_dsl/dsl{N}/status.json
+        write_status(
+            args.experiment_dir, 
+            args.dsl_version,  # Save status for the current DSL round being evolved
+            "evolve_dsl", 
+            stage_status
+        )
         
         # Update state and chain back to file generation
         state = read_state(args.experiment_dir)
@@ -261,19 +318,12 @@ def main():
         
         # Submit file generation job
         scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "scripts", "stages")
-        spec_file = os.environ.get("SPEC_FILE", "prompt_specifications/specification_with_updated_nld.txt")
-        
-        env_vars = {
-            "EXPERIMENT_DIR": args.experiment_dir,
-            "SPEC_FILE": spec_file,
-            "DSL_ROUND": str(new_dsl_round)
-        }
         
         try:
             file_gen_script = os.path.join(scripts_dir, "stage_file_generation.slurm")
             if os.path.exists(file_gen_script):
                 # Chaining will be handled by the SLURM script
-                print(f"   Will submit file generation job")
+                print("   Will submit file generation job")
             else:
                 print(f"   Warning: File generation script not found: {file_gen_script}")
         except Exception as e:
@@ -283,20 +333,22 @@ def main():
     else:
         print(f"\n DSL evolution failed after {args.max_retries} attempts")
         
-        # Save stage completion marker
+        # Save stage completion marker with DSL versioning
         stage_status = {
             "stage": "evolve_dsl",
             "status": "failed",
             "failing_tasks": args.failing_tasks,
             "evolved": False,
-            "attempts": args.max_retries
+            "attempts": args.max_retries,
+            "dsl_round": args.dsl_version
         }
-        status_file = os.path.join(args.experiment_dir, "stage_evolve_dsl_status.json")
-        status_dir_file = os.path.join(args.experiment_dir, "status", "evolve_dsl", "status.json")
-        os.makedirs(os.path.dirname(status_dir_file), exist_ok=True)
-        for path in (status_file, status_dir_file):
-            with open(path, 'w') as f:
-                json.dump(stage_status, f, indent=2)
+        # Write to versioned location: status/evolve_dsl/dsl{N}/status.json
+        write_status(
+            args.experiment_dir, 
+            args.dsl_version,
+            "evolve_dsl", 
+            stage_status
+        )
         
         return 1
 

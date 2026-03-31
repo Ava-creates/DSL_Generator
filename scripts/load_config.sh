@@ -53,6 +53,8 @@ for key, value in config.items():
             'grid_prompt_path': 'GRID_PROMPT_PATH',
             'require_test_type': 'REQUIRE_TEST_TYPE',
             'skip_positive_grids': 'SKIP_POSITIVE_GRIDS',
+            'cfg_generator_prompt_path': 'CFG_GENERATOR_PROMPT_PATH',
+            'domain_context_template_path': 'DOMAIN_CONTEXT_TEMPLATE_PATH',
         }
         if key == 'use_existing_grid_specs':
             if not os.environ.get('USE_EXISTING_GRID_SPECS'):

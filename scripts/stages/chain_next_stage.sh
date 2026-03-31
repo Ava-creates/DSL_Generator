@@ -36,6 +36,24 @@ get_state_value() {
     fi
 }
 
+# Resolve stage-level status file path.
+# Layout: status/dsl{N}/{stage}/status (preferred), fallback: status.json
+resolve_stage_status_file() {
+    local stage_name="$1"
+    local dsl_round="$2"
+    local preferred="$EXPERIMENT_DIR/status/dsl${dsl_round}/${stage_name}/status"
+    local fallback="$EXPERIMENT_DIR/status/dsl${dsl_round}/${stage_name}/status.json"
+
+    if [ -f "$preferred" ]; then
+        echo "$preferred"
+    elif [ -f "$fallback" ]; then
+        echo "$fallback"
+    else
+        # Default to preferred path for future writes/checks
+        echo "$preferred"
+    fi
+}
+
 # Helper function to verify all status files are complete
 # Usage: verify_all_status_complete "status_type" "dsl_round" "func_evolution_round"
 # Returns: 0 if all complete, 1 otherwise
@@ -75,14 +93,10 @@ try:
     for func_name in terminals.keys():
         # Determine status file paths based on type
         if status_type == "explicit_feedback":
-            status_file = f"{experiment_dir}/status/explicit_feedback/{func_name}.json"
-            if not os.path.exists(status_file):
-                status_file = f"{experiment_dir}/stage_explicit_feedback_{func_name}_status.json"
+            status_file = f"{experiment_dir}/status/dsl{dsl_round}/explicit_feedback/{func_name}.json"
             check_dsl_only = True
         elif status_type == "evolve_function":
-            status_file = f"{experiment_dir}/status/evolve_function/{func_name}.json"
-            if not os.path.exists(status_file):
-                status_file = f"{experiment_dir}/stage_evolve_function_{func_name}_status.json"
+            status_file = f"{experiment_dir}/status/dsl{dsl_round}/evolve_function/{func_name}.json"
             check_dsl_only = False
         else:
             sys.exit(1)
@@ -194,7 +208,7 @@ if mark_test_tasks_submitted("$EXPERIMENT_DIR"):
                 sys.exit(0)
     
     # Check if already completed for this round
-    status_file = f"$EXPERIMENT_DIR/stage_test_tasks_status.json"
+    status_file = f"$EXPERIMENT_DIR/status/dsl{dsl_round}/test_tasks/status"
     if os.path.exists(status_file):
         try:
             with open(status_file, 'r') as f:
@@ -268,9 +282,11 @@ test_tasks_already_done() {
     local func_evolution_round="$1"
     local current_dsl_round=$(get_state_value "dsl_round")
     current_dsl_round="${current_dsl_round:-0}"
-    if [ -f "$EXPERIMENT_DIR/stage_test_tasks_status.json" ]; then
-        local status_func_round=$(python3 -c "import json; f=open('$EXPERIMENT_DIR/stage_test_tasks_status.json'); d=json.load(f); print(d.get('func_evolution_round') if d.get('func_evolution_round') is not None else 0)" 2>/dev/null || echo "0")
-        local status_dsl_round=$(python3 -c "import json; f=open('$EXPERIMENT_DIR/stage_test_tasks_status.json'); d=json.load(f); print(d.get('dsl_round', 0))" 2>/dev/null || echo "0")
+    local test_tasks_status_file
+    test_tasks_status_file=$(resolve_stage_status_file "test_tasks" "$current_dsl_round")
+    if [ -f "$test_tasks_status_file" ]; then
+        local status_func_round=$(python3 -c "import json; f=open('$test_tasks_status_file'); d=json.load(f); print(d.get('func_evolution_round') if d.get('func_evolution_round') is not None else 0)" 2>/dev/null || echo "0")
+        local status_dsl_round=$(python3 -c "import json; f=open('$test_tasks_status_file'); d=json.load(f); print(d.get('dsl_round', 0))" 2>/dev/null || echo "0")
         if [ "$status_func_round" = "$func_evolution_round" ] && [ "$status_dsl_round" = "$current_dsl_round" ]; then
             return 0
         fi
@@ -281,7 +297,10 @@ test_tasks_already_done() {
 # Helper function to verify test_tasks actually completed
 # Returns: 0 if complete, 1 if not
 verify_test_tasks_complete() {
-    local test_tasks_status_file="$EXPERIMENT_DIR/stage_test_tasks_status.json"
+    local current_dsl_round=$(get_state_value "dsl_round")
+    current_dsl_round="${current_dsl_round:-0}"
+    local test_tasks_status_file
+    test_tasks_status_file=$(resolve_stage_status_file "test_tasks" "$current_dsl_round")
     if [ -f "$test_tasks_status_file" ]; then
         local test_status=$(python3 -c "import json; f=open('$test_tasks_status_file'); d=json.load(f); print(d.get('status', ''))" 2>/dev/null || echo "")
         if [ "$test_status" = "completed" ]; then
@@ -323,40 +342,44 @@ chain_based_on_state() {
     # Read all state values
     local phase=$(get_state_value "phase")
     local function_impl_remaining=$(get_state_value "function_implementation_remaining")
-    # Support backward compatibility with old names
-    if [ -z "$function_impl_remaining" ] || [ "$function_impl_remaining" = "0" ]; then
-        local terminal_remaining=$(get_state_value "terminal_functions_remaining")
-        local explicit_fb_remaining=$(get_state_value "explicit_feedback_remaining")
-        # Use the minimum of the two old counters if both exist
-        if [ -n "$terminal_remaining" ] && [ -n "$explicit_fb_remaining" ]; then
-            function_impl_remaining=$((terminal_remaining < explicit_fb_remaining ? terminal_remaining : explicit_fb_remaining))
-        elif [ -n "$terminal_remaining" ]; then
-            function_impl_remaining=$terminal_remaining
-        elif [ -n "$explicit_fb_remaining" ]; then
-            function_impl_remaining=$explicit_fb_remaining
-        else
-            function_impl_remaining=0
-        fi
-    fi
     local function_impl_total=$(get_state_value "function_implementation_total")
-    function_impl_total="${function_impl_total:-0}"
-    # test_tasks_remaining removed - test_tasks runs in single job, check status file instead
     local func_evolution_remaining=$(get_state_value "function_evolution_remaining")
     local test_tasks_submitted=$(get_state_value "test_tasks_submitted")
     local func_evolution_submitted=$(get_state_value "function_evolution_submitted")
     local file_generation_submitted=$(get_state_value "file_generation_submitted")
-    # implement_cfg_submitted removed - use status files as source of truth
     local dsl_evolutions_remaining=$(get_state_value "dsl_evolutions_remaining")
-    dsl_evolutions_remaining="${dsl_evolutions_remaining:-2}"
     local dsl_round=$(get_state_value "dsl_round")
-    dsl_round="${dsl_round:-0}"
     local func_evolution_round=$(get_state_value "func_evolution_round")
-    func_evolution_round="${func_evolution_round:-0}"
-            
+    local max_function_evolutions=$(get_state_value "max_function_evolutions")
+    local max_dsl_evolutions=$(get_state_value "max_dsl_evolutions")
+    local phase_print="Phase: $phase"
+    local function_impl_remaining_print="function_implementation_remaining: $function_impl_remaining"
+    local function_impl_total_print="function_implementation_total: $function_impl_total"
+    local func_evolution_remaining_print="function_evolution_remaining: $func_evolution_remaining"
+    local test_tasks_submitted_print="test_tasks_submitted: $test_tasks_submitted"
+    local func_evolution_submitted_print="function_evolution_submitted: $func_evolution_submitted"
+    local file_generation_submitted_print="file_generation_submitted: $file_generation_submitted"
+    local dsl_evolutions_remaining_print="dsl_evolutions_remaining: $dsl_evolutions_remaining"
+    local dsl_round_print="dsl_round: $dsl_round"
+    local func_evolution_round_print="func_evolution_round: $func_evolution_round"
+    local max_function_evolutions_print="max_function_evolutions: $max_function_evolutions"
+    local max_dsl_evolutions_print="max_dsl_evolutions: $max_dsl_evolutions"
+    echo "[DEBUG] Pipeline state variables:"
+    echo "  $phase_print"
+    echo "  $function_impl_remaining_print"
+    echo "  $function_impl_total_print"
+    echo "  $func_evolution_remaining_print"
+    echo "  $test_tasks_submitted_print"
+    echo "  $func_evolution_submitted_print"
+    echo "  $file_generation_submitted_print"
+    echo "  $dsl_evolutions_remaining_print"
+    echo "  $dsl_round_print"
+    echo "  $func_evolution_round_print"
+    echo "  $max_function_evolutions_print"
+    echo "  $max_dsl_evolutions_print"
     # Generate job prefix
     local exp_name=$(basename "$EXPERIMENT_DIR")
     local job_prefix="${exp_name:0:20}"
-    
     echo "Checking pipeline state for chaining..."
     echo "  Phase: $phase, DSL round: $dsl_round, Func evolution round: $func_evolution_round"
     echo "  Function implementation remaining: $function_impl_remaining"
@@ -406,48 +429,53 @@ EOF
     # ========================================================================
     # STAGE 2: After File Generation -> Submit implement_cfg jobs (one per function)
     # ========================================================================
-    local current_job_name="${SLURM_JOB_NAME:-}"
-    local is_file_gen_stage=false
-    if [[ "$current_job_name" == *"file_gen"* ]] || [[ "$current_job_name" == *"stage_file_gen"* ]]; then
-        is_file_gen_stage=true
-    fi
-    
     local file_gen_status=""
-    if [ -f "$EXPERIMENT_DIR/stage_file_generation_status.json" ]; then
-        file_gen_status=$(python3 -c "import json; f=open('$EXPERIMENT_DIR/stage_file_generation_status.json'); d=json.load(f); print(d.get('status', ''))" 2>/dev/null || echo "")
+    local file_gen_status_file
+    file_gen_status_file=$(resolve_stage_status_file "file_generation" "${dsl_round:-0}")
+    if [ -f "$file_gen_status_file" ]; then
+        file_gen_status=$(python3 -c "import json; f=open('$file_gen_status_file'); d=json.load(f); print(d.get('status', ''))" 2>/dev/null || echo "")
     fi
     
-    # Check if implement_cfg jobs have already been submitted by checking status files
-    # If any explicit_feedback status files exist, jobs were already submitted
+    # Check if implement_cfg jobs have already been submitted for THIS round.
+    # Ignore stale status files from previous DSL/function rounds.
     local implement_cfg_already_submitted=false
-    if [ -f "$EXPERIMENT_DIR/cfg/cfg_output.json" ]; then
-        local has_status_files=$(python3 -c "
-import sys
+    local has_status_files=$(python3 -c "
 import os
+import glob
 import json
-sys.path.insert(0, '/home/avani/projects/aip-lelis/avani/DSL_Generator')
-cfg_file = '$EXPERIMENT_DIR/cfg/cfg_output.json'
-try:
-    with open(cfg_file, 'r') as f:
-        cfg_data = json.load(f)
-    terminals = cfg_data.get('terminals', {})
-    for func_name in terminals.keys():
-        status_file = os.path.join('$EXPERIMENT_DIR', 'status', 'explicit_feedback', f'{func_name}.json')
-        if not os.path.exists(status_file):
-            status_file = os.path.join('$EXPERIMENT_DIR', f'stage_explicit_feedback_{func_name}_status.json')
-        if os.path.exists(status_file):
-            print('true')
-            sys.exit(0)
-    print('false')
-    except:
-    print('false')
+
+exp_dir = '$EXPERIMENT_DIR'
+dsl_round = int('${dsl_round:-0}')
+func_round = int('${func_evolution_round:-0}')
+
+status_files = []
+status_files.extend(glob.glob(os.path.join(exp_dir, 'status', f'dsl{dsl_round}', 'explicit_feedback', '*.json')))
+
+found_for_current_round = False
+for path in status_files:
+    try:
+        with open(path, 'r') as f:
+            st = json.load(f)
+        st_dsl = st.get('dsl_round', 0)
+        st_func = st.get('func_evolution_round', 0)
+        st_dsl = 0 if st_dsl is None else int(st_dsl)
+        st_func = 0 if st_func is None else int(st_func)
+        if st_dsl == dsl_round and st_func == func_round:
+            found_for_current_round = True
+            break
+    except Exception:
+        continue
+
+print('true' if found_for_current_round else 'false')
 " 2>/dev/null || echo "false")
-        if [ "$has_status_files" = "true" ]; then
-            implement_cfg_already_submitted=true
-        fi
+    if [ "$has_status_files" = "true" ]; then
+        implement_cfg_already_submitted=true
     fi
     
-    if [ "$is_file_gen_stage" = true ] && [ "$phase" = "initial" ] && [ "$file_gen_status" = "completed" ] && [ "$implement_cfg_already_submitted" = false ] && [ "$func_evolution_round" -eq 0 ]; then
+    # Trigger implement_cfg submission when file_generation completes and implement_cfg hasn't been submitted yet
+    # Don't rely on SLURM_JOB_NAME matching since SLURM truncates job names
+    # PATCH: Always allow implement_cfg jobs after file_generation, even if max_function_evolutions=0
+    if [ "$phase" = "initial" ] && [ "$file_gen_status" = "completed" ] && [ "$implement_cfg_already_submitted" = false ] && [ "$function_impl_remaining" -eq "$function_impl_total" ]; then
         echo "File generation complete. Submitting implement_cfg package jobs (one per function, in parallel)..."
         ensure_log_dir
         LOG_DIR="$(get_log_dir)"
@@ -587,7 +615,10 @@ try:
     tasks = json.loads(tasks_str)
 except:
     tasks = []
-status_file = f'$EXPERIMENT_DIR/stage_test_tasks_status.json'
+status_candidates = [
+    f"$EXPERIMENT_DIR/status/dsl${dsl_round:-0}/test_tasks/status",
+]
+status_file = next((p for p in status_candidates if os.path.exists(p)), status_candidates[0])
 all_solved = False
 if os.path.exists(status_file):
     with open(status_file, 'r') as f:
@@ -684,7 +715,10 @@ if mark_function_evolution_submitted("$EXPERIMENT_DIR"):
     except:
         tasks = []
 
-    status_file = f"$EXPERIMENT_DIR/stage_test_tasks_status.json"
+    status_candidates = [
+        f"$EXPERIMENT_DIR/status/dsl${dsl_round:-0}/test_tasks/status",
+    ]
+    status_file = next((p for p in status_candidates if os.path.exists(p)), status_candidates[0])
     failing_tasks = []
     if os.path.exists(status_file):
         try:
@@ -774,7 +808,10 @@ if mark_dsl_evolution_submitted("$EXPERIMENT_DIR"):
     except:
         tasks = []
 
-    status_file = f"$EXPERIMENT_DIR/stage_test_tasks_status.json"
+    status_candidates = [
+        f"$EXPERIMENT_DIR/status/dsl${dsl_round:-0}/test_tasks/status",
+    ]
+    status_file = next((p for p in status_candidates if os.path.exists(p)), status_candidates[0])
     failing_tasks = []
     if os.path.exists(status_file):
         try:
@@ -791,7 +828,8 @@ if mark_dsl_evolution_submitted("$EXPERIMENT_DIR"):
         "EXPERIMENT_DIR": "$EXPERIMENT_DIR",
         "FAILING_TASKS": failing_tasks_str,
         "RECIPES_PATH": "${RECIPES_PATH:-craft/resources/recipes.yaml}",
-        "MAX_DSL_RETRIES": "10"
+        "MAX_DSL_RETRIES": "10",
+        "DSL_VERSION": "$dsl_round"
     }
     env_str = ",".join([f"{k}={v}" for k, v in env_vars.items()])
     # Include EXPERIMENT_CONFIG if set
@@ -840,7 +878,7 @@ with open('$cfg_file', 'r') as f:
     cfg_data = json.load(f)
 terminals = cfg_data.get('terminals', {})
 for func_name in terminals.keys():
-    status_file = os.path.join('$EXPERIMENT_DIR', f'stage_evolve_function_{func_name}_status.json')
+    status_file = os.path.join('$EXPERIMENT_DIR', f"dsl${dsl_round:-0}", 'evolve_function', f"{func_name}.json")
     if os.path.exists(status_file):
         print('true')
         sys.exit(0)
@@ -882,14 +920,7 @@ print('false')
     # ========================================================================
     # STAGE 6: After DSL Evolution -> Submit file generation
     # ========================================================================
-    local dsl_status_file="$EXPERIMENT_DIR/status/evolve_dsl/status.json"
-    local dsl_status_file_legacy="$EXPERIMENT_DIR/stage_evolve_dsl_status.json"
-    local dsl_status_file_to_check=""
-    if [ -f "$dsl_status_file" ]; then
-        dsl_status_file_to_check="$dsl_status_file"
-    elif [ -f "$dsl_status_file_legacy" ]; then
-        dsl_status_file_to_check="$dsl_status_file_legacy"
-    fi
+    local dsl_status_file_to_check="$EXPERIMENT_DIR/status/dsl${dsl_round:-0}/evolve_dsl/status"
     
     if [ -n "$dsl_status_file_to_check" ]; then
         local dsl_status=$(python3 -c "import json; f=open('$dsl_status_file_to_check'); d=json.load(f); print(d.get('evolved', False))" 2>/dev/null || echo "False")

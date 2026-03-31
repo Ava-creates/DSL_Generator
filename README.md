@@ -116,7 +116,7 @@ python src/pipeline/stages/stage_evolve_function_single.py \
 ### To run individual programs generated during the pipeline and to see grid at each step use this - 
 
 ```bash
-cd /home/avani/projects/aip-lelis/avani/DSL_Generator && source new_dsl_env/bin/activate && python scripts/run_program_with_inventory.py \
+cd /home/avani/projects/aip-lelis/avani/DSL_Generator && source new_dsl_env/bin/activate && python tests/run_program_with_inventory.py \
   --experiment_dir experiments/experiment_20260308_124523_15556 \
   --task "make[flag]" \
   --program "TURN(RIGHT);PICKUP;TURN(LEFT);MOVE(NORTH);TURN(RIGHT);PICKUP;TURN(LEFT);TURN(LEFT);PICKUP;TURN(RIGHT);TURN(RIGHT);MOVE(EAST);MOVE(EAST);MOVE(EAST);MOVE(EAST);MOVE(EAST);MOVE(EAST);TURN(LEFT);MOVE(NORTH);MOVE(NORTH);MOVE(NORTH);MOVE(NORTH);TURN(LEFT);MOVE(WEST);TURN(RIGHT);MOVE(NORTH);MOVE(NORTH);TURN(RIGHT);MOVE(EAST);CRAFT(STICK,WORKSHOP2);CRAFT(CLOTH,WORKSHOP2);TURN(LEFT);MOVE(WEST);MOVE(WEST);TURN(LEFT);MOVE(SOUTH);MOVE(SOUTH);MOVE(SOUTH);MOVE(SOUTH);MOVE(SOUTH);MOVE(SOUTH);MOVE(SOUTH);CRAFT(FLAG,WORKSHOP0)"
@@ -128,3 +128,42 @@ cd /home/avani/projects/aip-lelis/avani/DSL_Generator && source new_dsl_env/bin/
 
 ## Things hardcoded - 
 `target` for number of grids in 
+
+
+
+### Testing dsl prompts-
+`python tests/test_dsl_evolution_prompts.py \
+  --failure-prompts \
+    prompt_specifications/failure_analysis.txt \
+    prompt_specifications/failure_analysis_v2.txt \
+    prompt_specifications/failure_analysis_v3.txt \
+  --cfg-prompts \
+    prompt_specifications/cfg_evolution.txt \
+    prompt_specifications/cfg_evolution_v2.txt
+
+
+python tests/test_dsl_evolution_prompts.py \
+  --failure-prompts \
+    prompt_specifications/failure_analysis.txt \
+    prompt_specifications/failure_analysis_1.txt \
+  --cfg-prompts \
+    prompt_specifications/cfg_evolution.txt 
+
+##NLD
+
+`
+python /home/avani/projects/aip-lelis/avani/DSL_Generator/tests/test_dsl_evolution_prompts.py \
+  --failure-prompts \
+    /home/avani/projects/aip-lelis/avani/DSL_Generator/prompt_specifications/failure_analysis_nld.txt \
+  --cfg-prompts \
+    /home/avani/projects/aip-lelis/avani/DSL_Generator/prompt_specifications/cfg_evolution.txt \
+  --nld-paths \
+    /home/avani/projects/aip-lelis/avani/DSL_Generator/prompt_specifications/nld.txt \
+    /home/avani/projects/aip-lelis/avani/DSL_Generator/prompt_specifications/nld_wihtitemistool.txt \
+  --recipes-path \
+    /home/avani/projects/aip-lelis/avani/DSL_Generator/craft/resources/recipes.yaml \
+  --failed-programs-path \
+    /home/avani/projects/aip-lelis/avani/DSL_Generator/scripts/data/dsl0_failed_programs.txt \
+  --out-dir \
+    /home/avani/projects/aip-lelis/avani/DSL_Generator/experiments/prompt_tests/failure_analysis_nld_compare
+`

@@ -8,7 +8,6 @@ import os
 import sys
 import json
 import argparse
-from typing import Dict, Optional
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -18,7 +17,8 @@ from src.pipeline.cfg_to_funsearch_pipeline import determine_inputs
 from funsearch.implementation.funsearch import FunSearch
 from funsearch.implementation import config as config_lib
 from src.utils.results_tracker import ResultsTracker
-from src.utils.pipeline_state import decrement_function_implementation, read_state
+from src.utils.pipeline_state import decrement_function_implementation
+from src.utils.status_manager import read_status, write_function_status
 
 # Import vLLM for shared instance
 try:
@@ -67,13 +67,10 @@ def main():
     description = terminals[args.function_name]
     
     # Load file generation status to get func_files and func_init_files
-    file_gen_status_path = os.path.join(args.experiment_dir, "stage_file_generation_status.json")
-    if not os.path.exists(file_gen_status_path):
-        print(f" File generation status not found: {file_gen_status_path}", file=sys.stderr)
+    file_gen_status = read_status(args.experiment_dir, args.dsl_round, "file_generation")
+    if file_gen_status is None:
+        print(" File generation status not found at dsl<round>/file_generation/status", file=sys.stderr)
         return 1
-    
-    with open(file_gen_status_path, 'r') as f:
-        file_gen_status = json.load(f)
     
     func_files = file_gen_status.get("func_files", {})
     func_init_files = file_gen_status.get("func_init_files", {})
@@ -182,11 +179,6 @@ def main():
         print(f"[{args.function_name}] Environment steps taken: {steps_taken}")
         
         # Save stage completion marker for this function with tracking info
-        status_file = os.path.join(args.experiment_dir, f"stage_funsearch_{args.function_name}_status.json")
-        status_dir_file = os.path.join(
-            args.experiment_dir, "status", "funsearch", f"{args.function_name}.json"
-        )
-        os.makedirs(os.path.dirname(status_dir_file), exist_ok=True)
         stage_status = {
             "stage": "funsearch",
             "function_name": args.function_name,
@@ -196,19 +188,17 @@ def main():
             "config": config_info,
             "env_steps": steps_taken
         }
-        for path in (status_file, status_dir_file):
-            with open(path, 'w') as f:
-                json.dump(stage_status, f, indent=2)
+        write_function_status(args.experiment_dir, args.dsl_round, "funsearch", args.function_name, stage_status)
         
         # Decrement terminal function count and check if we should trigger explicit feedback
-        print(f"\n[Chaining] Decrementing terminal function count...")
+        print("\n[Chaining] Decrementing terminal function count...")
         remaining = decrement_function_implementation(args.experiment_dir)
         print(f"  Remaining terminal functions: {remaining}")
         
         # If this was the last funsearch job (remaining is now 0), let the SLURM chaining
         # script submit explicit feedback jobs. We avoid setting submission flags here.
         if remaining == 0:
-            print(f"\n[Chaining] All FunSearch jobs completed. Chaining script will submit explicit feedback jobs.")
+            print("\n[Chaining] All FunSearch jobs completed. Chaining script will submit explicit feedback jobs.")
         
         return 0
     except Exception as e:
@@ -222,11 +212,6 @@ def main():
         steps_taken = final_funsearch_steps - initial_funsearch_steps
         
         # Save failure status with config info
-        status_file = os.path.join(args.experiment_dir, f"stage_funsearch_{args.function_name}_status.json")
-        status_dir_file = os.path.join(
-            args.experiment_dir, "status", "funsearch", f"{args.function_name}.json"
-        )
-        os.makedirs(os.path.dirname(status_dir_file), exist_ok=True)
         stage_status = {
             "stage": "funsearch",
             "function_name": args.function_name,
@@ -237,13 +222,11 @@ def main():
             "config": config_info,
             "env_steps": steps_taken
         }
-        for path in (status_file, status_dir_file):
-            with open(path, 'w') as f:
-                json.dump(stage_status, f, indent=2)
+        write_function_status(args.experiment_dir, args.dsl_round, "funsearch", args.function_name, stage_status)
         
         # Still decrement terminal function count even on failure
         # This ensures the pipeline can continue even if some jobs fail
-        print(f"\n[Chaining] Decrementing terminal function count (after failure)...")
+        print("\n[Chaining] Decrementing terminal function count (after failure)...")
         remaining = decrement_function_implementation(args.experiment_dir)
         print(f"  Remaining terminal functions: {remaining}")
         
@@ -251,9 +234,9 @@ def main():
         # Use atomic flag to prevent duplicate submissions
         if remaining == 0:
             if not mark_explicit_feedback_submitted(args.experiment_dir):
-                print(f"  Explicit feedback jobs already submitted by another process")
+                print("  Explicit feedback jobs already submitted by another process")
             else:
-                print(f"\n[Chaining] All FunSearch jobs completed (some may have failed). Submitting explicit feedback jobs...")
+                print("\n[Chaining] All FunSearch jobs completed (some may have failed). Submitting explicit feedback jobs...")
                 
                 # Load terminals to get all function names
                 cfg_path = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
@@ -262,7 +245,7 @@ def main():
                 terminals = cfg_data.get("terminals", {})
                 
                 # Chaining will be handled by the SLURM script after this Python script completes
-                print(f"\n[Chaining] State file updated. SLURM script will handle chaining to explicit feedback jobs.")
+                print("\n[Chaining] State file updated. SLURM script will handle chaining to explicit feedback jobs.")
         
         return 1
 

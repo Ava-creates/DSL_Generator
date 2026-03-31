@@ -3,9 +3,8 @@
 Helper functions for generating evaluation function arguments that are actually present on the grid.
 """
 
-import re
 import yaml
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Optional, Set, Tuple
 
 try:
     import numpy as np
@@ -123,8 +122,10 @@ def get_valid_test_argument(
 ) -> Tuple[Optional[str], str]:
     """Get a valid test argument value.
     
-    For item-related arguments (item, primitive, tool, obstacle), uses grid methods.
-    For other arguments (direction, workshop, etc.), uses CFG.
+    Selection strategy is domain-agnostic:
+    1) Prefer CFG leaf values for this argument symbol.
+    2) If possible, prefer CFG values that are also present on the current grid.
+    3) Fall back to type-based defaults.
     
     Args:
         arg_name: Name of the argument (e.g., "item", "direction")
@@ -139,56 +140,25 @@ def get_valid_test_argument(
         - argument_value: The value to use (quoted if string, or None if not found)
         - explanation: Explanation of how the value was chosen
     """
-    def _quote_if_string(value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        is_quoted = (isinstance(value, str) and 
-                    len(value) >= 2 and 
-                    value.startswith('"') and value.endswith('"'))
-        if is_quoted:
-            return value
-        # If the type is explicitly string, always quote.
+    def _format_value(value: str) -> str:
         if arg_type == "str":
-            return f'"{value}"'
-        # If type inference was off, still quote enum-like identifiers.
-        if arg_type not in ["int", "float"] and re.match(r'^[A-Z_][A-Z0-9_]*$', value):
             return f'"{value}"'
         return value
 
-    # Determine if this is an item-related argument that should use grid methods
-    arg_name_lower = arg_name.lower()
-    is_item_related = arg_name_lower in ['item', 'primitive', 'tool', 'obstacle']
-    
-    # First, try to get value from CFG
-    arg_value = None
+    # Expand allowed leaf values for this argument from CFG (domain-agnostic).
+    allowed_values: set[str] = set()
     if cfg:
         try:
-            # Lazy import to avoid dependency issues
-            from src.pipeline.cfg_to_funsearch_pipeline import resolve_to_terminal_value
-            arg_value = resolve_to_terminal_value(arg_name.upper(), cfg)
-        except (ImportError, ModuleNotFoundError):
-            # If we can't import, skip CFG-based resolution
-            pass
-    
-    # For non-item-related arguments (like direction, workshop), use CFG directly
-    if not is_item_related:
-        if arg_value:
-            arg_value = _quote_if_string(arg_value)
-            return arg_value, "# Argument value from CFG"
-        else:
-            # Last resort: type-based defaults
-            if arg_type == "str":
-                return '"test_input"', "# Default test value"
-            elif arg_type == "int":
-                return "0", "# Default integer value"
-            elif arg_type == "float":
-                return "0.0", "# Default float value"
-            else:
-                return '"test_input"', "# Default test value"
-    
-    # For item-related arguments, use grid methods
-    # If we have recipes and task_name, try to get related items
-    candidate_items = set()
+            from src.pipeline.cfg_symbol_utils import build_cfg_rule_map, expand_symbol_to_terminals
+            rule_map = build_cfg_rule_map(cfg)
+            symbol = arg_name.strip().upper()
+            if symbol in rule_map:
+                allowed_values = expand_symbol_to_terminals(symbol, rule_map)
+        except Exception:
+            allowed_values = set()
+
+    # If we have recipes and task_name, collect task-related candidates.
+    candidate_items: set[str] = set()
     
     if recipes and task_name:
         # Extract item name from task (e.g., "make[goldarrow]" -> "goldarrow")
@@ -204,37 +174,40 @@ def get_valid_test_argument(
                 candidate_items.add(task_item)
     
     # If we have an environment, check what's actually on the grid
-    items_on_grid = set()
+    items_on_grid: set[str] = set()
     if env:
         items_on_grid = get_items_on_grid(env)
-        # Filter candidates to only those on the grid
-        candidate_items = candidate_items.intersection(items_on_grid) if candidate_items else items_on_grid
-    
-    # If we found items on grid, prefer those
-    if items_on_grid:
-        # Prefer items that match the argument name or are related to the task
-        preferred = None
-        if candidate_items:
-            preferred = list(candidate_items)[0]  # Use first candidate
-        else:
-            # Use any item on grid
-            preferred = list(items_on_grid)[0]
-        
-        if preferred:
-            # Quote if string type
-            if arg_type == "str":
-                return f'"{preferred}"', f"# Item '{preferred}' is present on the grid"
-            else:
-                return preferred, f"# Item '{preferred}' is present on the grid"
-    
-    # Fallback to CFG value if found
-    if arg_value:
-        arg_value = _quote_if_string(arg_value)
-        return arg_value, "# Argument value from CFG"
+
+    allowed_upper = {v.upper() for v in allowed_values}
+    allowed_lower_to_value = {v.lower(): v for v in allowed_values}
+    task_candidates_lower = {str(v).strip().lower() for v in candidate_items if str(v).strip()}
+    grid_items_lower = {str(v).strip().lower() for v in items_on_grid if str(v).strip()}
+
+    # Prefer task-relevant values that are both allowed by CFG and on-grid.
+    if allowed_values and task_candidates_lower and grid_items_lower:
+        overlap = sorted(task_candidates_lower.intersection(grid_items_lower))
+        for candidate_lower in overlap:
+            candidate_upper = candidate_lower.upper()
+            if candidate_upper in allowed_upper:
+                chosen = allowed_lower_to_value.get(candidate_lower, candidate_upper)
+                return _format_value(chosen), f"# CFG value '{chosen}' is task-relevant and present on grid"
+
+    # Otherwise prefer allowed CFG values that are present on-grid.
+    if allowed_values and grid_items_lower:
+        for candidate_lower in sorted(grid_items_lower):
+            candidate_upper = candidate_lower.upper()
+            if candidate_upper in allowed_upper:
+                chosen = allowed_lower_to_value.get(candidate_lower, candidate_upper)
+                return _format_value(chosen), f"# CFG value '{chosen}' is present on the grid"
+
+    # Fall back to any allowed CFG leaf value.
+    if allowed_values:
+        chosen = sorted(allowed_values)[0]
+        return _format_value(chosen), "# Argument value from CFG leaf set"
     
     # Last resort: type-based defaults
     if arg_type == "str":
-        return '"test_input"', "# Default test value (item may not be on grid)"
+        return '"test_input"', "# Default test value"
     elif arg_type == "int":
         return "0", "# Default integer value"
     elif arg_type == "float":
@@ -247,30 +220,31 @@ def create_test_environment_for_item(
     item_name: str,
     recipes_path: str,
     hints_path: str,
-    env_factory_module
+    env_factory_module,
+    task_name: Optional[str] = None
 ) -> Optional[object]:
-    """Create a test environment that contains the given item or its primitives on the grid.
+    """Create a test environment for a specific task.
     
     Args:
-        item_name: Name of item to test (e.g., "goldarrow")
+        item_name: Name of item for fallback task construction
         recipes_path: Path to recipes YAML
         hints_path: Path to hints YAML
         env_factory_module: Environment factory module (e.g., env_factory)
+        task_name: Optional explicit task name (e.g., "get[grass]" or "make[goldarrow]")
         
     Returns:
         Environment instance or None if creation failed
     """
     try:
-        # Create environment with a task related to this item
-        task_name = f"make[{item_name}]"
+        effective_task_name = task_name or f"make[{item_name}]"
         env_sampler = env_factory_module.EnvironmentFactory(
             recipes_path, hints_path, 7, max_steps=400,
             reuse_environments=False, visualise=False
         )
-        env = env_sampler.sample_environment(task_name=task_name)
+        env = env_sampler.sample_environment(task_name=effective_task_name)
         env.reset()
         return env
     except Exception as e:
-        print(f"Warning: Could not create test environment for {item_name}: {e}")
+        print(f"Warning: Could not create test environment for task {task_name or f'make[{item_name}]'}: {e}")
         return None
 

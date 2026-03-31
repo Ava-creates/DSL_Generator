@@ -8,10 +8,14 @@ scripts/log/*
 scripts/log_archive/*
 scripts/log_old/*
 experiments_*/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
 *$py.class
+.claude/*
+.github/*
+.reports/*
 
 # C extensions
 *.so

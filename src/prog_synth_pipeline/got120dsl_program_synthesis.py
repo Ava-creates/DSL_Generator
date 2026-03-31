@@ -1,11 +1,7 @@
 from datetime import date
-import datetime
 import textwrap
 from typing import List
-from collections import deque
 from .cfg_parser import CFGParser
-import numpy as np
-import itertools
 import matplotlib.pyplot as plt
 # ProgramEvaluator no longer used - replaced with CFGEvaluator
 try:
@@ -14,7 +10,6 @@ try:
 except ImportError:
     CFGEvaluator = None
     CFG_EVALUATOR_AVAILABLE = False 
-import heapq
 # import concurrent.futures
 import time
 from multiprocessing import Pool, cpu_count
@@ -24,12 +19,10 @@ import sys
 # from google import genai
 import ast
 import re
-import requests
 # from funsearch.implementation.funsearch import FunSearch
 # from funsearch.implementation import config as config_lib
 import pandas as pd
 import os
-import random
 import subprocess
 from vllm import LLM, SamplingParams
 import glob
@@ -459,7 +452,7 @@ def extract_and_save_cfg(output_text, cfg_dir="cfg"):
     # --- Save CFG to file ---
     
     os.makedirs(cfg_dir, exist_ok=True)
-    filename = f"cfg_updated.txt"
+    filename = "cfg_updated.txt"
     filepath = os.path.join(cfg_dir, filename)
 
     with open(filepath, "a", encoding="utf-8") as f:
@@ -902,29 +895,7 @@ def synthesis_llm(experiment_dir: str = None, dsl_round: int = None, func_evolut
         # # plot_interactions_rewards(interactions, rewards, task)
         # plot_watermark(plot, task)
             # programs = programs_str
-        if True:
-            print("Failed to find a solution for task:", task)
-            # print(programs)
-            failure_analysis_prommpt = f"""
-            Here are the programs that failed to solve the task {task}, their generation reasoning traces, and failure reasons:
-            {reasoning}
-
-            Give me top three reasons why they are failing to solve the task in bullet points. Pay special attention to programs that ran out of steps, as this indicates the programs may be too long or inefficient.
-
-            """ 
-
-            failure_analysis = llm.generate([failure_analysis_prommpt], params)
-            failure_analysis = failure_analysis[0].outputs[0].text
-            marker_match = re.search(r'assistantfinal', failure_analysis, re.IGNORECASE)
-            search_target = failure_analysis
-
-            if marker_match:
-                # take the text after the "assistantfinal" marker
-                search_target = failure_analysis[marker_match.end():]
-            failure_analysis = search_target
-            print("Failure analysis:", failure_analysis)
-
-            conversation = [{
+        # Removed dead code: redundant if True block
                 "role": "user",
                 "content": f"""
             The following is the failure analysis for the unsuccessful DSL programs:

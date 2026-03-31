@@ -13,9 +13,7 @@ import re
 import json
 import argparse
 import glob
-from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Any
-from pathlib import Path
 import textwrap
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -24,8 +22,8 @@ _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 sys.path.insert(0, _project_root)
 
 from src.pipeline.cfg_to_funsearch_pipeline import (
-    run_pipeline, sanitize_function_name, parse_function_name_and_args, implement_cfg,
-    extract_function_args, resolve_to_terminal_value
+    sanitize_function_name, parse_function_name_and_args, implement_cfg,
+    extract_function_args
 )
 from src.utils.file_utils import version_file
 from src.utils.config_loader import load_config
@@ -48,125 +46,6 @@ try:
 except ImportError as e:
     print(f"Warning: Could not import CFGEvaluator: {e}")
     CFG_EVALUATOR_AVAILABLE = False
-
-
-def _generate_description_from_name(func_name: str, cfg: str = "", terminals: Dict[str, str] = None, shared_vllm=None) -> str:
-    """Generate a description for a terminal function.
-    
-    Uses LLM if available, otherwise falls back to pattern-based generation.
-    
-    Args:
-        func_name: Name of the terminal function
-        cfg: Optional CFG string for context
-        shared_vllm: Optional shared vLLM instance for LLM-based generation
-        
-    Returns:
-        Description string for the function
-    """
-    # Try LLM-based generation if available
-    if shared_vllm is not None:
-        try:
-            from vllm import SamplingParams
-            
-            # Build prompt with CFG and existing terminals as context
-            prompt = f"""Given a terminal function name from a domain-specific language (DSL), generate a clear, concise description of what this function does.
-
-Function name: {func_name}
-"""
-            if cfg:
-                # Include CFG context (limit to avoid token limits)
-                prompt += f"""
-Context-free grammar (CFG):
-{cfg[:800]}
-"""
-            
-            if terminals:
-                # Include ALL existing terminal descriptions for context (both with and without arguments)
-                # This helps the LLM understand the domain and style
-                existing_descriptions = []
-                for name, desc in terminals.items():
-                    # Determine if function has arguments by checking CFG
-                    has_args = False
-                    if cfg:
-                        # Check if function appears with LPAR in CFG (has arguments)
-                        import re
-                        # Pattern: FUNC_NAME LPAR ... (function with args)
-                        pattern_with_args = rf'\b{re.escape(name)}\s+LPAR'
-                        # Pattern: FUNC_NAME (standalone, no args)
-                        pattern_without_args = rf'\b{re.escape(name)}\s*(?:SEMICOLON|$|\|)'
-                        if re.search(pattern_with_args, cfg):
-                            has_args = True
-                    
-                    arg_info = " (with arguments)" if has_args else " (no arguments)"
-                    existing_descriptions.append(f"- {name}{arg_info}: {desc[:100]}")
-                
-                # Limit to avoid token limits, but show mix of with/without args
-                if len(existing_descriptions) > 15:
-                    # Take first 15 to show variety
-                    existing_descriptions = existing_descriptions[:15]
-                
-                if existing_descriptions:
-                    prompt += f"""
-Existing terminal functions and their descriptions (for reference - includes both functions with and without arguments):
-{chr(10).join(existing_descriptions)}
-"""
-            
-            prompt += """
-Generate a single-sentence description that explains the PURPOSE and INTENT of this function (what it achieves), not how it is implemented. Do NOT make assumptions about environment mechanics, specific state changes, or low-level execution details. Be specific and domain-appropriate. The description should be consistent with the style and domain of the existing terminal functions.
-
-Return only the description, no additional text, explanations, or formatting.
-
-Description:"""
-
-            params = SamplingParams(temperature=0.7, max_tokens=200)
-            output = shared_vllm.generate([prompt], sampling_params=params)
-            description = output[0].outputs[0].text.strip()
-            
-            # Clean up the response (remove quotes, extra whitespace, etc.)
-            description = description.strip('"\'')
-            description = description.split('\n')[0].strip()  # Take first line only
-            # Remove common prefixes like "Description:" or "The function"
-            description = re.sub(r'^(Description|The function|This function)[:\s]*', '', description, flags=re.IGNORECASE)
-            description = description.strip()
-            
-            if description and len(description) > 10:  # Valid description
-                return description
-        except Exception as e:
-            print(f"   LLM description generation failed for {func_name}: {e}, using fallback")
-    
-    # Fallback: pattern-based generation
-    # Convert function name to a readable verb form
-    # Handle common patterns like SNAKE_CASE or PascalCase
-    func_lower = func_name.lower()
-    
-    # Split on underscores or camelCase boundaries
-    if '_' in func_name:
-        words = func_name.lower().split('_')
-    else:
-        # Simple camelCase detection: split on capital letters
-        import re
-        words = re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)', func_name)
-        words = [w.lower() for w in words]
-    
-    # Get the primary verb (usually the first word)
-    primary_verb = words[0] if words else func_lower
-    
-    # Generate a generic description based on the verb
-    # Use simple present tense form
-    verb_form = primary_verb
-    if verb_form.endswith('ed'):
-        verb_form = verb_form[:-2]  # Remove past tense
-    elif verb_form.endswith('ing'):
-        verb_form = verb_form[:-3]  # Remove gerund
-    
-    # Create a generic description
-    if len(words) > 1:
-        # Multi-word function: "USE_TOOL" -> "Use tool with the specified parameters"
-        action = ' '.join(words)
-        return f"Execute {action} with the specified parameters"
-    else:
-        # Single word function: "MOVE" -> "Execute move with the specified parameters"
-        return f"Execute {verb_form} with the specified parameters"
 
 
 def _filter_example_program(example_program: str, terminals: Dict[str, str]) -> str:
@@ -244,16 +123,10 @@ def _generate_example_from_terminal(func_name: str, cfg: str) -> str:
     if not arg_list:
         return f"{func_name}();"
     
-    # For each argument, try to resolve to a terminal value from CFG
+    # For each argument, use a deterministic placeholder value.
     arg_values = []
     for arg in arg_list:
-        # Try to resolve to terminal value (e.g., PRIMITIVE -> WOOD, DIRECTION -> NORTH)
-        terminal_value = resolve_to_terminal_value(arg.upper(), cfg)
-        if terminal_value:
-            arg_values.append(terminal_value)
-        else:
-            # Fallback: use the argument name itself (uppercase)
-            arg_values.append(arg.upper())
+        arg_values.append(arg.upper())
     
     # Construct example: FUNC_NAME(VALUE1, VALUE2, ...);
     if len(arg_values) == 1:
@@ -291,7 +164,7 @@ def _get_final_function_descriptions(experiment_dir: str) -> str:
     return "\n\n".join(parts) if parts else "(no .py files in final_functions)"
 
 
-def ensure_terminals_match_cfg(cfg: str, terminals: Dict[str, str], old_terminals: Optional[Dict[str, str]] = None, shared_vllm=None) -> Dict[str, str]:
+def ensure_terminals_match_cfg(cfg: str, terminals: Dict[str, str], shared_vllm=None) -> Dict[str, str]:
     """Ensure terminals dictionary includes ALL terminal functions from the CFG.
     
     Includes both functions with arguments (from get_terminal_functions()) and functions
@@ -300,7 +173,7 @@ def ensure_terminals_match_cfg(cfg: str, terminals: Dict[str, str], old_terminal
     Args:
         cfg: CFG string in BNF format
         terminals: Current terminals dictionary (may be incomplete)
-        old_terminals: Optional previous terminals dictionary to preserve descriptions from
+        shared_vllm: Unused (retained for caller compatibility)
         
     Returns:
         Updated terminals dictionary with all functions from CFG
@@ -399,46 +272,14 @@ def ensure_terminals_match_cfg(cfg: str, terminals: Dict[str, str], old_terminal
         all_func_names = set(func_names_with_args) | func_names_without_args
         
         if all_func_names:
-            # Start with existing terminals (preserve descriptions)
             updated_terminals = terminals.copy()
-            
-            # Collect functions that need descriptions
-            functions_needing_descriptions = []
+
+            # Do NOT auto-generate terminal descriptions.
+            # Preserve provided descriptions only; fill missing with a fixed placeholder.
             for func_name in all_func_names:
                 if func_name not in updated_terminals:
-                    # Try to get description from old_terminals first (preserve across evolutions)
-                    if old_terminals and func_name in old_terminals:
-                        updated_terminals[func_name] = old_terminals[func_name]
-                        print(f"   Preserved description for {func_name} from previous CFG")
-                    else:
-                        functions_needing_descriptions.append(func_name)
-            
-            # Generate descriptions for missing functions using LLM if available
-            if functions_needing_descriptions and shared_vllm is not None:
-                print(f"  Generating LLM descriptions for {len(functions_needing_descriptions)} functions...")
-                # Generate descriptions one by one, passing CFG and existing terminals as context
-                for func_name in functions_needing_descriptions:
-                    try:
-                        description = _generate_description_from_name(
-                            func_name, 
-                            cfg=cfg, 
-                            terminals=updated_terminals,  # Pass existing terminals for context
-                            shared_vllm=shared_vllm
-                        )
-                        updated_terminals[func_name] = description
-                        print(f"   Generated LLM description for {func_name}")
-                    except Exception as e:
-                        print(f"   LLM description generation failed for {func_name}: {e}, using pattern-based fallback")
-                        # Fall back to pattern-based generation
-                        description = _generate_description_from_name(func_name, cfg=cfg, shared_vllm=None)
-                        updated_terminals[func_name] = description
-                        print(f"   Generated pattern-based description for {func_name}")
-            else:
-                # Use pattern-based generation (no LLM available or no functions needing descriptions)
-                for func_name in functions_needing_descriptions:
-                    description = _generate_description_from_name(func_name, cfg=cfg, shared_vllm=None)
-                    updated_terminals[func_name] = description
-                    print(f"   Generated pattern-based description for {func_name}")
+                    updated_terminals[func_name] = "No description provided."
+                    print(f"   Added placeholder description for {func_name}")
             
             # Remove any terminals that aren't in the CFG (cleanup)
             terminals_to_remove = [name for name in updated_terminals.keys() if name not in all_func_names]
@@ -477,53 +318,30 @@ def extract_and_save_cfg(output_text, cfg_dir="cfg"):
 
     failure_text = failure_match.group(1).strip() if failure_match else ""
 
-    # --- Extract CFG block ---
-    cfg_match = re.search(
-        r"(?:[#*]+\s*)?(?:Updated\s+CFG\s*\(BNF\))[:\-]*\s*(?:[#*]+\s*)?"
-        r"(?:```(?:bnf)?\s*([\s\S]*?)```|([\s\S]*?))"
-        r"(?=\n\s*(?:---|[#*]+\s*|\bChanges in CFG\b|\bUpdated CFG Explanation\b|\bTerminal Functions\b|\Z))",
-        output_text,
-        re.IGNORECASE,
-    )
-    cfg_explanation = re.search(
-        r"(?:[#*]+\s*)?(?:Updated\s+CFG\s+Explanation)[:\-]*\s*(?:[#*]+\s*)?"
-        r"([\s\S]*?)(?:\n---|\Z)",
-        output_text,
-        re.IGNORECASE,
-    )
-    # --- Extract Terminal Functions block ---
-    # Handles both "**Terminal Functions**" (bold) and plain "Terminal Functions"
-    term_match = re.search(
-        r"(?:[#*]+\s*)?Terminal Functions\**\s*\n(.*?)(?:\n---|\Z)",
-        output_text,
-        re.DOTALL | re.IGNORECASE
-    )
+    # Strict new-format extraction: require fenced bnf/grammar and json blocks.
+    # Reuse cfg-generator parser implementation for consistency.
+    from src.pipeline.getting_cfg import parse_generated_output
 
-    # Handle missing CFG block gracefully
-    if not cfg_match:
+    has_bnf_block = re.search(r"```\s*(bnf|grammar)\s*\n", output_text, re.IGNORECASE) is not None
+    has_json_block = re.search(r"```\s*json\s*\n", output_text, re.IGNORECASE) is not None
+
+    if not has_bnf_block or not has_json_block:
+        print(" No valid fenced bnf/json blocks found in output_text.")
+        if failure_text:
+            print("\n Extracted Failure Analysis:\n")
+            print(failure_text)
+        return None, None, None, failure_text, None
+
+    cfg_text, terminals_dict, _ = parse_generated_output(output_text)
+    if not cfg_text:
         print(" No CFG block found in output_text.")
         if failure_text:
             print("\n Extracted Failure Analysis:\n")
             print(failure_text)
         return None, None, None, failure_text, None
 
-    if cfg_match:
-        # The regex has two capture groups: one for code blocks, one for non-code blocks
-        cfg_text = cfg_match.group(1) if cfg_match.group(1) else (cfg_match.group(2) if len(cfg_match.groups()) > 1 and cfg_match.group(2) else "")
-    else:
-        cfg_text = ""
-    cfg_explanation = cfg_explanation.group(1).strip() if cfg_explanation else ""
-    term_text = term_match.group(1).strip() if term_match else ""
-
-    # --- Save CFG to file ---
-    os.makedirs(cfg_dir, exist_ok=True)
-    filename = f"cfg_updated.txt"
-    filepath = os.path.join(cfg_dir, filename)
-    with open(filepath, "a", encoding="utf-8") as f:
-        f.write(cfg_text)
-        f.write(cfg_explanation)
-        f.write(failure_text)
-        f.write(term_text)
+    term_text = json.dumps(terminals_dict or {}, ensure_ascii=False)
+    cfg_explanation = ""
 
     return None, cfg_text, term_text, failure_text, cfg_explanation
 
@@ -802,7 +620,7 @@ def synthesize_and_test_programs(
             dsl_round=cfg_version,
             func_evolution_round=func_evolution_round
         )
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         # Re-raise to stop the pipeline
         raise
     
@@ -823,6 +641,17 @@ def synthesize_and_test_programs(
     _prompt_abs = _prompt_rel if os.path.isabs(_prompt_rel) else os.path.join(_project_root, _prompt_rel)
     with open(_prompt_abs, "r", encoding="utf-8") as _f:
         synthesis_prompt_template = _f.read()
+
+    nld_text = ""
+    if "{nld}" in synthesis_prompt_template:
+        nld_rel = config.get("nld_path", "prompt_specifications/nld.txt")
+        nld_abs = nld_rel if os.path.isabs(nld_rel) else os.path.join(_project_root, nld_rel)
+        if nld_abs and os.path.exists(nld_abs):
+            try:
+                with open(nld_abs, "r", encoding="utf-8") as _nf:
+                    nld_text = _nf.read()
+            except Exception as e:
+                print(f" Warning: Could not read NLD from {nld_abs}: {e}")
 
     # Use shared vLLM instance if provided, otherwise create new one
     if shared_vllm is not None:
@@ -934,6 +763,7 @@ def synthesize_and_test_programs(
             programs_str = "\n\n---\n\n".join(programs_tried)
             prompt = synthesis_prompt_template.format(
                 markdown=markdown,
+                nld=nld_text,
                 recipes=recipes,
                 cfg=cfg,
                 task=task,
@@ -966,9 +796,7 @@ def synthesize_and_test_programs(
                     # Create a temporary directory with only the correct version functions
                     # This ensures CFGEvaluator loads the correct versions
                     import tempfile
-                    import shutil
                     temp_func_dir = tempfile.mkdtemp(prefix="test_functions_")
-                    final_functions_dir = os.path.join(experiment_dir, "final_functions")
                     
                     # Copy only the correct version files to temp directory
                     for func_name, func_code in final_functions.items():
@@ -1092,7 +920,7 @@ def evolve_functions_with_failing_tasks(
     specification: str,
     spec_file: str = "",
     cfg: str = "",
-    max_evolutions: int = 1,
+    # max_evolutions: int = 1,  # Removed as unused
     shared_vllm=None,
     dsl_round: Optional[int] = None,
     func_evolution_round: Optional[int] = None,
@@ -1113,7 +941,7 @@ def evolve_functions_with_failing_tasks(
         terminals: Dictionary of terminal functions
         specification: Specification string for funsearch
         cfg: CFG string
-        max_evolutions: Number of evolution rounds (currently 1 per call)
+        # max_evolutions: Number of evolution rounds (currently 1 per call)
         shared_vllm: Optional shared vLLM instance
         dsl_round: DSL evolution round number
         func_evolution_round: Function evolution round number
@@ -1123,7 +951,7 @@ def evolve_functions_with_failing_tasks(
         True if evolution succeeded and new functions were generated, False otherwise
     """
     print(f"\n{'='*80}")
-    print(f"Evolving Functions (domain template + last round's final function)")
+    print("Evolving Functions (domain template + last round's final function)")
     print(f"{'='*80}")
     print(f"Failing tasks (for reference): {failing_tasks}")
     
@@ -1142,7 +970,7 @@ def evolve_functions_with_failing_tasks(
         return False
     
     # Step 1: Reuse the first round's prompt file (domain template with grid specs)
-    print(f"\n  [Step 1] Locating first round prompt files to reuse...")
+    print("\n  [Step 1] Locating first round prompt files to reuse...")
     updated_prompts = []
     func_files = {}
     func_init_files = {}
@@ -1184,7 +1012,7 @@ def evolve_functions_with_failing_tasks(
     print(f"\n   Found {len(updated_prompts)} prompt files to reuse")
     
     # Step 2: Load final functions from previous round to use as func_init seed
-    print(f"\n  [Step 2] Loading final functions from previous round as seed...")
+    print("\n  [Step 2] Loading final functions from previous round as seed...")
     final_functions_dir = os.path.join(experiment_dir, "final_functions")
     current_final_functions = {}
     
@@ -1221,7 +1049,7 @@ def evolve_functions_with_failing_tasks(
             print(f"     No previous implementation found for {func_name}")
     
     # Step 3: Create func_init files seeded with previous round's final function
-    print(f"\n  [Step 3] Creating func_init files with previous round's implementation...")
+    print("\n  [Step 3] Creating func_init files with previous round's implementation...")
     
     for func_name in updated_prompts:
         safe_name = sanitize_function_name(func_name)
@@ -1406,7 +1234,7 @@ def evolve_functions_with_failing_tasks(
                         break
                 
                 if colon_idx is None:
-                    raise ValueError(f"Could not find colon after function signature")
+                    raise ValueError("Could not find colon after function signature")
                 
                 # Body starts after the colon
                 body_start_idx = colon_idx + 1
@@ -1664,7 +1492,7 @@ def evolve_functions_with_failing_tasks(
             print(f"   Warning: Error cleaning up FunSearch instance: {cleanup_error}")
     
     # Re-run explicit feedback generation for successfully updated functions (30 iterations)
-    print(f"\n  [Step 4.2] Re-running explicit feedback generation (30 iterations)...")
+    print("\n  [Step 4.2] Re-running explicit feedback generation (30 iterations)...")
     
     explicit_feedback_dir = os.path.join(experiment_dir, "explicit_feedback")
     os.makedirs(explicit_feedback_dir, exist_ok=True)
@@ -1691,7 +1519,6 @@ def evolve_functions_with_failing_tasks(
         
         print(f"\n    --- Re-running explicit feedback for {func_name} (30 iterations) ---")
         func_file = func_files[func_name]
-        current_func_file = func_file
         
         try:
             # Run explicit feedback iteratively (30 times)
@@ -1781,7 +1608,7 @@ def evolve_functions_with_failing_tasks(
         print(f"\n   Function evolution completed: {len(final_functions)} functions updated")
         return True
     else:
-        print(f"\n   No final functions were generated from evolution")
+        print("\n   No final functions were generated from evolution")
         return False
 
 
@@ -1827,7 +1654,7 @@ def test_cfg_on_tasks(
         func_evolution_round=func_evolution_round, synthesis_prompt_path=synthesis_prompt_path
     )
     
-    print(f"\nTask Results:")
+    print("\nTask Results:")
     for task, success in task_results.items():
         status = "" if success else ""
         print(f"  {status} {task}")
@@ -1897,37 +1724,43 @@ def evolve_dsl(
     # Terminal descriptions: one per line (name: description)
     terminal_descriptions_str = "\n".join(f"{k}: {v}" for k, v in terminals.items()) if terminals else "(none)"
     final_function_descriptions_str = _get_final_function_descriptions(experiment_dir)
-    failure_analysis_prompt = failure_analysis_template.format(
-        failing_tasks=failing_tasks,
-        cfg=cfg,
-        terminal_descriptions=terminal_descriptions_str,
-        final_function_descriptions=final_function_descriptions_str,
-        failed_programs_per_task=failed_programs_per_task_str,
-    )
+    format_kwargs = {
+        "failing_tasks": failing_tasks,
+        "cfg": cfg,
+        "terminal_descriptions": terminal_descriptions_str,
+        "final_function_descriptions": final_function_descriptions_str,
+        "failed_programs_per_task": failed_programs_per_task_str,
+    }
+
+    if "{nld}" in failure_analysis_template:
+        nld_text = ""
+        nld_rel = config.get("nld_path", "prompt_specifications/nld.txt")
+        nld_path = os.path.join(_project_root, nld_rel) if nld_rel and not os.path.isabs(nld_rel) else nld_rel
+        if nld_path and os.path.exists(nld_path):
+            try:
+                with open(nld_path, "r", encoding="utf-8") as f:
+                    nld_text = f.read().strip()
+            except Exception as e:
+                print(f" Warning: Could not read NLD from {nld_path}: {e}")
+        format_kwargs["nld"] = nld_text
+
+    failure_analysis_prompt = failure_analysis_template.format(**format_kwargs)
     
     try:
-        print("\n" + "="*80)
-        print("FAILURE ANALYSIS PROMPT:")
-        print("="*80)
-        print(failure_analysis_prompt)
-        print("="*80 + "\n")
-        
         conversation = [{"role": "user", "content": failure_analysis_prompt, "chat_template_kwargs": {"reasoning_effort": "high"}}]
         output = llm.chat(conversation, params)
         raw_failure_analysis = output[0].outputs[0].text
         
-        print("\n" + "="*80)
-        print("RAW LLM OUTPUT - FAILURE ANALYSIS:")
-        print("="*80)
-        print(raw_failure_analysis)
-        print("="*80 + "\n")
+        print("\n" + "="*80, flush=True)
+        print("RAW LLM OUTPUT - FAILURE ANALYSIS:", flush=True)
+        print("="*80, flush=True)
+        print(raw_failure_analysis, flush=True)
+        print("="*80 + "\n", flush=True)
         
         failure_analysis = raw_failure_analysis
         marker_match = re.search(r'assistantfinal', failure_analysis, re.IGNORECASE)
         if marker_match:
             failure_analysis = failure_analysis[marker_match.end():]
-        
-        print("Processed failure analysis:", failure_analysis)
         
         # Evolve CFG (prompt path from experiment config)
         cfg_evolution_rel = config.get("cfg_evolution_prompt", "prompt_specifications/cfg_evolution.txt")
@@ -1940,192 +1773,178 @@ def evolve_dsl(
             cfg=cfg,
             recipes=recipes,
         )
-        
-        print("\n" + "="*80)
-        print("CFG EVOLUTION PROMPT:")
-        print("="*80)
-        print(cfg_evolution_prompt)
-        print("="*80 + "\n")
-        
+
         conversation = [{"role": "user", "content": cfg_evolution_prompt, "chat_template_kwargs": {"reasoning_effort": "high"}}]
         output = llm.chat(conversation, params)
         raw_cfg_evolution_response = output[0].outputs[0].text
         
-        print("\n" + "="*80)
-        print("RAW LLM OUTPUT - CFG EVOLUTION:")
-        print("="*80)
-        print(raw_cfg_evolution_response)
-        print("="*80 + "\n")
+        print("\n" + "="*80, flush=True)
+        print("RAW LLM OUTPUT - CFG EVOLUTION:", flush=True)
+        print("="*80, flush=True)
+        print(raw_cfg_evolution_response, flush=True)
+        print("="*80 + "\n", flush=True)
         
         response = raw_cfg_evolution_response
         marker_match = re.search(r'assistantfinal', response, re.IGNORECASE)
         if marker_match:
             response = response[marker_match.end():]
         
-        # Extract CFG from response
+        # ============================================================================
+        # PHASE 1: EXTRACT CFG AND TERMINAL DESCRIPTIONS FROM LLM RESPONSE
+        # ============================================================================
+        print("\n[Phase 1] Extracting CFG and terminal descriptions from LLM response...")
         filepath, cfg_text, term_text, failure_text, cfg_explanation = extract_and_save_cfg(response)
         
-        if cfg_text:
-            print(" Generated new CFG")
+        if not cfg_text:
+            print("   FAILED: Could not extract CFG from response")
+            return cfg, terminals, False  # Retry evolution
+        
+        print(f"   SUCCESS: Extracted CFG text ({len(cfg_text)} chars)")
+        print(f"   SUCCESS: Extracted terminal descriptions block ({len(term_text)} chars)")
+        
+        # ============================================================================
+        # PHASE 2: VALIDATE THAT ALL TERMINAL FUNCTIONS HAVE DESCRIPTIONS
+        # ============================================================================
+        print("\n[Phase 2] Validating that all terminals have descriptions...")
+        
+        new_terminals = {}
+        try:
+            from src.pipeline.cfg_parser import CFGParser
+            # Parse the CFG to extract terminal function NAMES
+            cfg_parser = CFGParser(cfg_text)
+            terminal_funcs = cfg_parser.get_terminal_functions()
             
-            # Validate the evolved CFG
-            print("\n[Validating Evolved CFG] Checking CFG validity...")
-            from src.pipeline.cfg_to_funsearch_pipeline import validate_cfg
+            if not terminal_funcs:
+                print("   ERROR: CFGParser found no terminal functions in CFG")
+                return cfg, terminals, False  # Retry evolution
             
-            # Get example program if available for validation
-            cfg_path = os.path.join(experiment_dir, "cfg", "cfg_output.json")
-            example = None
-            if os.path.exists(cfg_path):
-                with open(cfg_path, 'r') as f:
-                    cfg_data = json.load(f)
-                    example = cfg_data.get("example", None)
+            # Extract function names (first element of each tuple)
+            func_names = [func_name for func_name, _ in terminal_funcs]
+            print(f"   Found {len(func_names)} terminal functions in CFG: {func_names}")
             
-            is_valid, validation_msg = validate_cfg(cfg_text, example=example)
-            if not is_valid:
-                print(f" Evolved CFG validation failed: {validation_msg}")
-                print("  Rejecting evolved CFG, using original")
-                return cfg, terminals, False
-            else:
-                print(f" {validation_msg}")
-            
-            # Extract terminal functions directly from CFG text using CFGParser
-            new_terminals = {}
-            try:
-                from src.pipeline.cfg_parser import CFGParser
-                # Parse the CFG to extract actual terminal functions
-                cfg_parser = CFGParser(cfg_text)
-                terminal_funcs = cfg_parser.get_terminal_functions()
-                
-                if terminal_funcs:
-                    # Extract function names (first element of each tuple)
-                    func_names = [func_name for func_name, _ in terminal_funcs]
-                    print(f"   Extracted {len(func_names)} terminal functions from CFG: {func_names}")
-                    
-                    # Try to get descriptions from term_text if available
-                    term_descriptions = {}
-                    if term_text:
-                        # First try using the robust parser from getting_cfg
-                        try:
-                            from src.pipeline.getting_cfg import parse_generated_output
-                            # Create a combined text that mimics the expected format
-                            combined_text = f"```bnf\n{cfg_text}\n```\n\nTerminal Functions:\n{term_text}"
-                            _, parsed_terminals, _ = parse_generated_output(combined_text)
-                            if parsed_terminals:
-                                # Use parsed terminals, but only for functions that are actually in the CFG
-                                for func_name in func_names:
-                                    if func_name in parsed_terminals:
-                                        term_descriptions[func_name] = parsed_terminals[func_name]
-                        except Exception as e:
-                            print(f"   Could not parse terminal descriptions using parse_generated_output: {e}")
-                        
-                        # Fallback: try regex patterns if parser didn't work
-                        if not term_descriptions:
-                            # Pattern: FUNCTION_NAME(args): description or FUNCTION_NAME: description
-                            # Also handles bolded markdown: - **FUNC_NAME(args)**: description
-                            patterns = [
-                                r'\*{0,2}([A-Z_][A-Z0-9_]*)(?:\([^)]*\))?\*{0,2}\s*[:\-–]\s*(.+?)(?=\n|$)',  # **FUNC_NAME(args)**: or plain
-                                r'([A-Z_][A-Z0-9_()]*)\s*[:\-–]\s*(.+?)(?=\n|$)',  # FUNCTION_NAME: description
-                                r'([A-Z_][A-Z0-9_()]*)\s*\([^)]*\)\s*[:\-–]\s*(.+?)(?=\n|$)',  # FUNCTION_NAME(args): description
-                            ]
-                            for pattern in patterns:
-                                for match in re.finditer(pattern, term_text, re.MULTILINE):
-                                    func_name = match.group(1).strip()
-                                    description = match.group(2).strip().rstrip(';.')
-                                    # Only add if it's an actual terminal function (not a grammar symbol)
-                                    if func_name in func_names and func_name not in term_descriptions:
-                                        term_descriptions[func_name] = description
-                    
-                    # Build terminals dict: use descriptions from term_text if available, otherwise use old terminals or generic
-                    for func_name in func_names:
-                        if func_name in term_descriptions:
-                            new_terminals[func_name] = term_descriptions[func_name]
-                        elif func_name in terminals:
-                            # Use description from old terminals if available
-                            new_terminals[func_name] = terminals[func_name]
-                        else:
-                            # Use a generic description without hardcoding specific patterns
-                            new_terminals[func_name] = f"Terminal function: {func_name}"
-                else:
-                    print("   CFGParser found no terminal functions, falling back to term_text parsing")
-                    raise ValueError("No terminal functions found in CFG")
-            except Exception as e:
-                print(f"   Could not parse terminal functions from CFG: {e}")
-                # Fallback: try to parse from term_text
-                if term_text:
-                    try:
-                        from src.pipeline.getting_cfg import parse_generated_output
-                        combined_text = f"```bnf\n{cfg_text}\n```\n\nTerminal Functions:\n{term_text}"
-                        _, parsed_terminals, _ = parse_generated_output(combined_text)
-                        if parsed_terminals:
-                            new_terminals = parsed_terminals
-                            print(f"   Parsed {len(new_terminals)} terminal functions from term_text")
-                    except Exception as e2:
-                        print(f"   Could not parse terminals from term_text: {e2}")
-                        # Final fallback: extract from term_text manually
-                        term_pattern = r'([A-Z_][A-Z0-9_()]*)\s*[:\-–]\s*(.+?)(?=\n|$)'
-                        for match in re.finditer(term_pattern, term_text, re.MULTILINE):
-                            func_name = match.group(1).strip()
-                            description = match.group(2).strip().rstrip(';.')
-                            new_terminals[func_name] = description
-                        if new_terminals:
-                            print(f"   Extracted {len(new_terminals)} terminal functions manually")
-            
-            # If still no terminals extracted, try to use the old terminals (may need updating)
-            if not new_terminals:
-                print("   No terminals extracted, using previous terminals")
-                new_terminals = terminals.copy()
-            
-            # Check if the new CFG is actually different from the old one
-            if cfg_text == cfg:
-                print("   Evolved CFG is identical to original, will retry evolution")
-                return cfg, terminals, False  # Return False to trigger retry in calling code
-            
-            # Save the new CFG to JSON file
-            cfg_path = os.path.join(experiment_dir, "cfg", "cfg_output.json")
-            example = None
-            if os.path.exists(cfg_path):
-                # Read example from existing file before versioning
-                with open(cfg_path, 'r') as f:
-                    cfg_data = json.load(f)
-                    example = cfg_data.get("example", None)
-            
-            # Version file before writing new CFG data (only if CFG is different)
-            if os.path.exists(cfg_path):
+            # Now try to get descriptions from term_text for each terminal
+            term_descriptions = {}
+            if term_text:
                 try:
-                    version_file(cfg_path, keep_original=False)
-                    print(f"   Versioned previous CFG file")
+                    parsed_terminals = json.loads(term_text)
+                    if isinstance(parsed_terminals, dict):
+                        # Build base-name lookup: parsed keys may be "GET(ITEM)" while
+                        # func_names contains plain "GET" — strip args for matching
+                        base_name_lookup = {}
+                        for key, desc in parsed_terminals.items():
+                            if not isinstance(desc, str):
+                                continue
+                            base = re.match(r'^([A-Z_][A-Z0-9_]*)', str(key))
+                            if base:
+                                base_name_lookup[base.group(1)] = desc.strip()
+                        for func_name in func_names:
+                            if func_name in parsed_terminals and isinstance(parsed_terminals[func_name], str):
+                                term_descriptions[func_name] = parsed_terminals[func_name].strip()
+                            elif func_name in base_name_lookup:
+                                term_descriptions[func_name] = base_name_lookup[func_name]
                 except Exception as e:
-                    print(f"   Warning: Failed to version CFG file: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    print(f"   Note: terminal JSON parse failed: {e}")
             
-            # Ensure terminals dictionary includes ALL terminal functions from CFG
-            # Pass old terminals to preserve descriptions across evolutions
-            new_terminals = ensure_terminals_match_cfg(cfg_text, new_terminals, old_terminals=terminals, shared_vllm=shared_vllm)
+            # Check that EVERY terminal has a description from term_text
+            missing_descriptions = [fn for fn in func_names if fn not in term_descriptions]
             
-            # Save new CFG data
-            cfg_data = {
-                "cfg": cfg_text,
-                "terminals": new_terminals,
-                "example": example
-            }
-            with open(cfg_path, 'w', encoding='utf-8') as f:
-                json.dump(cfg_data, f, indent=2, ensure_ascii=False)
-            print(f"   Saved new CFG to {cfg_path}")
-            print(f"   New CFG has {len(new_terminals)} terminal functions: {list(new_terminals.keys())}")
-
-            # Also save as cfg_output_{new_dsl_round}.json for explicit versioned access
-            # Convention: cfg_output_N.json = CFG after dsl_round N; cfg_output.json = latest
-            if new_dsl_round is not None:
-                versioned_path = os.path.join(experiment_dir, "cfg", f"cfg_output_{new_dsl_round}.json")
-                import shutil
-                shutil.copy2(cfg_path, versioned_path)
-                print(f"   Also saved as {versioned_path}")
-
-            return cfg_text, new_terminals, True
-        else:
-            print(" Could not extract new CFG, using original")
-            return cfg, terminals, False
+            if missing_descriptions:
+                print(f"   FAILED: {len(missing_descriptions)} terminals missing LLM-provided descriptions:")
+                for fn in missing_descriptions:
+                    print(f"      - {fn}")
+                print("   LLM must provide descriptions for ALL terminal functions")
+                return cfg, terminals, False  # Retry evolution
+            
+            # All terminals have descriptions - build the terminals dict
+            for func_name in func_names:
+                new_terminals[func_name] = term_descriptions[func_name]
+            
+            print(f"   SUCCESS: All {len(func_names)} terminals have descriptions")
+            
+        except Exception as e:
+            print(f"   ERROR parsing terminals from CFG: {e}")
+            return cfg, terminals, False  # Retry evolution
+        
+        # ============================================================================
+        # PHASE 3: VALIDATE CFG SYNTAX/STRUCTURE
+        # ============================================================================
+        print("\n[Phase 3] Validating CFG syntax and structure...")
+        from src.pipeline.cfg_to_funsearch_pipeline import validate_cfg
+        
+        cfg_path = os.path.join(experiment_dir, "cfg", "cfg_output.json")
+        example = None
+        if os.path.exists(cfg_path):
+            with open(cfg_path, 'r') as f:
+                cfg_data = json.load(f)
+                example = cfg_data.get("example", None)
+        
+        is_valid, validation_msg = validate_cfg(cfg_text, example=example)
+        
+        if not is_valid:
+            print("   FAILED: CFG is not valid")
+            print(f"   Validation error: {validation_msg}")
+            return cfg, terminals, False  # Retry evolution
+        
+        print("   SUCCESS: CFG is valid")
+        
+        # ============================================================================
+        # PHASE 4: CHECK IF CFG IS ACTUALLY DIFFERENT FROM ORIGINAL
+        # ============================================================================
+        print("\n[Phase 4] Checking if evolved CFG is different from original...")
+        
+        if cfg_text == cfg:
+            print("   FAILED: Evolved CFG is identical to original")
+            print("   Retrying DSL evolution...")
+            return cfg, terminals, False  # Retry evolution
+        
+        print("   SUCCESS: CFG has changed (evolved)")
+        
+        # ============================================================================
+        # PHASE 5: SAVE EVOLVED CFG AND TERMINALS
+        # ============================================================================
+        print("\n[Phase 5] Saving evolved CFG and terminals to file...")
+        
+        # (cfg_path already defined above in Phase 3, reuse it)
+        example = None
+        if os.path.exists(cfg_path):
+            # Read example from existing file before versioning
+            with open(cfg_path, 'r') as f:
+                cfg_data = json.load(f)
+                example = cfg_data.get("example", None)
+        
+        # Version file before writing new CFG data
+        if os.path.exists(cfg_path):
+            try:
+                version_file(cfg_path, keep_original=False)
+                print("   Versioned previous CFG file")
+            except Exception as e:
+                print(f"   Warning: Failed to version CFG file: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Ensure terminals dict includes ALL terminal functions from CFG
+        new_terminals = ensure_terminals_match_cfg(cfg_text, new_terminals, shared_vllm=shared_vllm)
+        
+        # Write evolved CFG to JSON
+        cfg_data = {
+            "cfg": cfg_text,
+            "terminals": new_terminals,
+            "example": example
+        }
+        with open(cfg_path, 'w', encoding='utf-8') as f:
+            json.dump(cfg_data, f, indent=2, ensure_ascii=False)
+        print(f"   Saved to {cfg_path}")
+        print(f"   New CFG has {len(new_terminals)} terminal functions: {list(new_terminals.keys())}")
+        
+        # Also save with version number for explicit versioned access
+        if new_dsl_round is not None:
+            versioned_path = os.path.join(experiment_dir, "cfg", f"cfg_output_{new_dsl_round}.json")
+            import shutil
+            shutil.copy2(cfg_path, versioned_path)
+            print(f"   Also saved as {versioned_path}")
+        
+        print("\n[SUCCESS] DSL evolution completed successfully!")
+        return cfg_text, new_terminals, True
         
     except Exception as e:
         print(f" Error evolving DSL: {e}")
@@ -2220,7 +2039,7 @@ def evolve_dsl_and_restart(
     )
     
     if success:
-        print(f"\n New CFG successfully implemented")
+        print("\n New CFG successfully implemented")
         print(f"  Generated {len(final_functions)} final functions:")
         for func_name in final_functions.keys():
             print(f"    - {func_name}")
@@ -2272,7 +2091,7 @@ def run_integrated_pipeline(
         os.makedirs(os.path.join(experiment_dir, "cfg"), exist_ok=True)
         os.makedirs(os.path.join(experiment_dir, "final_functions"), exist_ok=True)
         os.makedirs(os.path.join(experiment_dir, "explicit_feedback"), exist_ok=True)
-        print(f" Created experiment directory structure")
+        print(" Created experiment directory structure")
     else:
         # Ensure subdirectories exist even if main directory does
         os.makedirs(os.path.join(experiment_dir, "function_specific_prompts"), exist_ok=True)
@@ -2300,7 +2119,7 @@ def run_integrated_pipeline(
         print("\n[Setup] Using provided shared vLLM instance")
     
     # Step 1: Check if final_functions exist
-    print(f"\n[Step 1] Checking final functions...")
+    print("\n[Step 1] Checking final functions...")
     
     # Load CFG to get terminals
     cfg_path = os.path.join(experiment_dir, "cfg", "cfg_output.json")
@@ -2355,7 +2174,7 @@ def run_integrated_pipeline(
     print(f"\n   All {len(terminals)} terminal functions exist and are valid")
     
     # Step 2: Synthesize and test programs
-    print(f"\n[Step 2] Synthesizing and testing programs...")
+    print("\n[Step 2] Synthesizing and testing programs...")
     task_results, failed_programs_by_task = synthesize_and_test_programs(
         experiment_dir, tasks, cfg_path=cfg_path, terminals=terminals,
         recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
@@ -2365,7 +2184,7 @@ def run_integrated_pipeline(
     all_solved = all(task_results.values())
     failing_tasks = [task for task, success in task_results.items() if not success]
     
-    print(f"\nTask Results:")
+    print("\nTask Results:")
     for task, success in task_results.items():
         status = "" if success else ""
         print(f"  {status} {task}")
@@ -2375,7 +2194,7 @@ def run_integrated_pipeline(
         return 0
     
     # Step 3: Evolve functions (up to max_function_evolutions times)
-    print(f"\n[Step 3] Some tasks failed. Attempting function evolution...")
+    print("\n[Step 3] Some tasks failed. Attempting function evolution...")
     
     for evolution_round in range(max_function_evolutions):
         print(f"\n  Evolution round {evolution_round + 1}/{max_function_evolutions}")
@@ -2398,7 +2217,7 @@ def run_integrated_pipeline(
         
         evolved = evolve_functions_with_failing_tasks(
             experiment_dir, failing_tasks, terminals, specification, 
-            spec_file=spec_file, cfg=cfg, max_evolutions=1, shared_vllm=shared_vllm
+            spec_file=spec_file, cfg=cfg, shared_vllm=shared_vllm
         )
         
         if evolved:
@@ -2417,7 +2236,7 @@ def run_integrated_pipeline(
                 return 0
     
     # Step 4: Evolve DSL and implement (up to max_dsl_evolutions times)
-    print(f"\n[Step 4] Function evolution did not solve all tasks. Evolving DSL...")
+    print("\n[Step 4] Function evolution did not solve all tasks. Evolving DSL...")
     
     with open(recipes_path, 'r') as f:
         recipes = f.read()
@@ -2466,7 +2285,7 @@ def run_integrated_pipeline(
         cfg_path = os.path.join(experiment_dir, "cfg", "cfg_output.json")
         
         # Re-test tasks with new CFG and functions
-        print(f"\n  Re-testing tasks with evolved DSL...")
+        print("\n  Re-testing tasks with evolved DSL...")
         task_results, failed_programs_by_task = synthesize_and_test_programs(
             experiment_dir, failing_tasks, cfg_path=cfg_path, terminals=current_terminals,
             recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
@@ -2487,7 +2306,7 @@ def run_integrated_pipeline(
         
         # If not all solved and we have more rounds, continue
         if dsl_evolution_round < max_dsl_evolutions - 1:
-            print(f"\n  Some tasks still failing. Continuing to next DSL evolution round...")
+            print("\n  Some tasks still failing. Continuing to next DSL evolution round...")
         else:
             print(f"\n Reached maximum DSL evolution rounds ({max_dsl_evolutions})")
             print(f"  Remaining failing tasks: {failing_tasks}")

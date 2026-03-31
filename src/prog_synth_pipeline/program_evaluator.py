@@ -4,17 +4,11 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from craft import env_factory
 import time
-import re
-import json
 import os
-import io
-import numpy as np
-import contextlib
 from functions_generated.craft_func import craft
 from functions_generated.has_func import has
 from functions_generated.move_func import move
 from functions_generated.collect_func_old_and_good import collect
-import multiprocessing
 def run_funcs(queue, func_name, args_1, env):
         w = args_1[0]
         if func_name == "move":
@@ -33,8 +27,7 @@ def run_with_timeout(func_name, args_1, env, timeout):
 
 class ProgramEvaluator:
     def __init__(self, recipes_path: str = "craft/resources/recipes.yaml", 
-                 hints_path: str = "craft/resources/hints.yaml",
-                 visualise: bool = True):
+                 hints_path: str = "craft/resources/hints.yaml"):
 
         self.item_map =item_id_map = { 
                                 "WOOD": 9,

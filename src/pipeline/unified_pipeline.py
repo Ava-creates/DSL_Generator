@@ -13,11 +13,9 @@ Unified pipeline that orchestrates:
 
 import os
 import sys
-import re
 import json
 import argparse
-from typing import Dict, List, Tuple, Optional
-from pathlib import Path
+from typing import List, Optional
 
 # Exit codes for job resubmission
 EXIT_CODE_DSL_EVOLVED = 100  # DSL evolved, need to resubmit job
@@ -29,13 +27,11 @@ _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 sys.path.insert(0, _project_root)
 
 from src.pipeline.cfg_to_funsearch_pipeline import (
-    get_cfg, implement_cfg, sanitize_function_name, parse_function_name_and_args
+    get_cfg, implement_cfg
 )
 from src.pipeline.integrated_pipeline import (
-    test_cfg_on_tasks, evolve_functions_with_failing_tasks, evolve_dsl,
-    extract_and_save_cfg
+    test_cfg_on_tasks, evolve_functions_with_failing_tasks, evolve_dsl
 )
-from src.utils.file_utils import version_file
 from src.utils.results_tracker import ResultsTracker
 
 # Import vLLM for shared instance
@@ -54,6 +50,7 @@ def run_unified_pipeline(
     skip_cfg_generation: bool = False,
     cfg_output_file: Optional[str] = None,
     max_cfg_retries: int = 10,
+    nld_path: str = "prompt_specifications/nld.txt",
     recipes_path: str = "craft/resources/recipes.yaml",
     hints_path: str = "craft/resources/hints.yaml",
     max_attempts: int = 1,
@@ -116,10 +113,10 @@ def run_unified_pipeline(
                 print(f"  Checkpoint type: Function Evolution (round {resume_func_round + 1})")
                 print(f"  Failing tasks: {resume_failing_tasks}")
             else:
-                print(f"  Checkpoint type: DSL Evolution")
-            print(f"  Restored parameters from checkpoint")
+                print("  Checkpoint type: DSL Evolution")
+            print("  Restored parameters from checkpoint")
         else:
-            print(f"   Checkpoint file not found, starting from beginning")
+            print("   Checkpoint file not found, starting from beginning")
     
     # Create shared vLLM instance if not provided
     if shared_vllm is None:
@@ -155,6 +152,8 @@ def run_unified_pipeline(
         skip_cfg_generation=skip_cfg_generation,
         cfg_output_file=cfg_output_file,
         max_cfg_retries=max_cfg_retries,
+        nld_path=nld_path,
+        recipes_path=recipes_path,
         shared_vllm=shared_vllm
     )
     
@@ -198,7 +197,7 @@ def run_unified_pipeline(
         # If so, skip CFG implementation and testing, go straight to function evolution
         skip_implementation = False
         if resume_from_checkpoint and checkpoint_type == "function_evolution" and resume_failing_tasks and dsl_round == start_dsl_round:
-            print(f"\n[Resuming] Skipping CFG implementation - resuming from function evolution")
+            print("\n[Resuming] Skipping CFG implementation - resuming from function evolution")
             failing_tasks = resume_failing_tasks
             all_solved = False
             skip_implementation = True
@@ -215,7 +214,7 @@ def run_unified_pipeline(
                 }
             
             # Step 2a: Implement CFG
-            print(f"\n[Step 2a] Implementing CFG...")
+            print("\n[Step 2a] Implementing CFG...")
             implementation_success, final_functions = implement_cfg(
                 cfg=cfg,
                 terminals=terminals,
@@ -234,7 +233,7 @@ def run_unified_pipeline(
                 return 1
             
             # Step 2b: Test CFG on tasks
-            print(f"\n[Step 2b] Testing CFG on tasks...")
+            print("\n[Step 2b] Testing CFG on tasks...")
             task_results = test_cfg_on_tasks(
                 experiment_dir=experiment_dir,
                 tasks=tasks,
@@ -291,7 +290,7 @@ def run_unified_pipeline(
                 
                 # Print summary
                 summary = results_tracker.get_summary()
-                print(f"\n[Results Summary]")
+                print("\n[Results Summary]")
                 print(f"  Total results: {summary['total_results']}")
                 print(f"  Total interactions: {summary['total_interactions']['total']}")
                 print(f"    - FunSearch: {summary['total_interactions']['funsearch']}")
@@ -359,7 +358,7 @@ def run_unified_pipeline(
                 specification = ""
             
             # Evolve functions with failing tasks
-            print(f"\n  [Evolving Functions] Evolving functions with failing tasks...")
+            print("\n  [Evolving Functions] Evolving functions with failing tasks...")
             evolved = evolve_functions_with_failing_tasks(
                 experiment_dir=experiment_dir,
                 failing_tasks=failing_tasks,
@@ -378,7 +377,7 @@ def run_unified_pipeline(
                 break
             
             # Re-test tasks
-            print(f"\n  [Re-testing Tasks] Re-testing tasks after function evolution...")
+            print("\n  [Re-testing Tasks] Re-testing tasks after function evolution...")
             task_results = test_cfg_on_tasks(
                 experiment_dir=experiment_dir,
                 tasks=failing_tasks,
@@ -444,7 +443,7 @@ def run_unified_pipeline(
                 
                 # Print summary (plots already generated above)
                 summary = results_tracker.get_summary()
-                print(f"\n[Results Summary]")
+                print("\n[Results Summary]")
                 print(f"  Total results: {summary['total_results']}")
                 print(f"  Total interactions: {summary['total_interactions']['total']}")
                 print(f"    - FunSearch: {summary['total_interactions']['funsearch']}")
@@ -458,7 +457,7 @@ def run_unified_pipeline(
         # Step 2d: If still failing, evolve DSL
         if failing_tasks:
             print(f"\n  {'-'*60}")
-            print(f"  DSL Evolution (tasks still failing)")
+            print("  DSL Evolution (tasks still failing)")
             print(f"  {'-'*60}")
             
             # Retry DSL evolution up to 10 times if CFG is rejected or same as original
@@ -492,7 +491,7 @@ def run_unified_pipeline(
                         print(f"   Attempt {dsl_attempt}: DSL evolution failed, retrying...")
             
             if dsl_success and new_cfg != cfg:
-                print(f"\n   DSL evolved successfully")
+                print("\n   DSL evolved successfully")
                 cfg = new_cfg
                 terminals = new_terminals
                 
@@ -534,14 +533,14 @@ def run_unified_pipeline(
                 # Exit with special code to trigger job resubmission
                 if dsl_round < max_dsl_evolutions - 1:
                     print(f"\n  {'='*80}")
-                    print(f"  DSL EVOLVED - EXITING TO RESUBMIT JOB")
+                    print("  DSL EVOLVED - EXITING TO RESUBMIT JOB")
                     print(f"  Next DSL round will be: {dsl_round + 2}/{max_dsl_evolutions}")
                     print(f"  Current dsl_round: {dsl_round}, max_dsl_evolutions: {max_dsl_evolutions}")
                     print(f"  Exiting with code: {EXIT_CODE_DSL_EVOLVED}")
                     print(f"  {'='*80}")
                     return EXIT_CODE_DSL_EVOLVED
                 else:
-                    print(f"  Reached maximum DSL evolution rounds")
+                    print("  Reached maximum DSL evolution rounds")
                     
                     # Generate plots even if max evolutions reached
                     print("\n[Generating Plots] Creating reward vs interactions plots...")
@@ -560,13 +559,13 @@ def run_unified_pipeline(
                 # Also generate separate plots per task from evolution metrics
                 results_tracker.plot_tasks_separately_from_metrics(dsl_round=dsl_round, func_evolution_round=None)
                 if dsl_round < max_dsl_evolutions - 1:
-                    print(f"  Continuing to next DSL evolution round...")
+                    print("  Continuing to next DSL evolution round...")
                     continue
                 else:
-                    print(f"  Reached maximum DSL evolution rounds")
+                    print("  Reached maximum DSL evolution rounds")
         else:
             # This shouldn't happen, but just in case
-            print(f"\n   All tasks solved (should have returned earlier)")
+            print("\n   All tasks solved (should have returned earlier)")
             return 0
     
     # If we get here, we've exhausted all evolution rounds
@@ -630,6 +629,12 @@ def main():
         help='Maximum number of attempts to generate a valid CFG (default: 10)'
     )
     parser.add_argument(
+        '--nld_path',
+        type=str,
+        default="prompt_specifications/nld.txt",
+        help='Path to natural language domain description file'
+    )
+    parser.add_argument(
         '--recipes_path',
         type=str,
         default="craft/resources/recipes.yaml",
@@ -685,6 +690,7 @@ def main():
         skip_cfg_generation=args.skip_cfg_generation,
         cfg_output_file=args.cfg_output_file,
         max_cfg_retries=args.max_cfg_retries,
+        nld_path=args.nld_path,
         recipes_path=args.recipes_path,
         hints_path=args.hints_path,
         max_attempts=args.max_attempts,

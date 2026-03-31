@@ -9,13 +9,14 @@ import sys
 import json
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, Optional
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, _project_root)
 
 from src.pipeline.cfg_to_funsearch_pipeline import run_explicit_feedback_generation
+from src.utils.status_manager import read_status, write_status
+from src.utils.pipeline_state import read_state
 
 # Import vLLM for shared instance
 try:
@@ -45,26 +46,27 @@ def main():
         cfg_data = json.load(f)
     terminals = cfg_data.get("terminals", {})
     
-    # Load file generation status
-    file_gen_status_path = os.path.join(args.experiment_dir, "stage_file_generation_status.json")
-    if not os.path.exists(file_gen_status_path):
-        print(f" File generation status not found: {file_gen_status_path}", file=sys.stderr)
-        return 1
+    # Get current DSL round from state
+    state = read_state(args.experiment_dir)
+    state_dsl_round = state.get("dsl_round", 0)
+    if args.dsl_round != state_dsl_round:
+        print(f"[Explicit Feedback] Using dsl_round={state_dsl_round} from state file")
+        args.dsl_round = state_dsl_round
     
-    with open(file_gen_status_path, 'r') as f:
-        file_gen_status = json.load(f)
+    # Load file generation status
+    file_gen_status = read_status(args.experiment_dir, args.dsl_round, "file_generation")
+    if file_gen_status is None:
+        print(f" File generation status not found for dsl_round={args.dsl_round}", file=sys.stderr)
+        return 1
     
     func_files = file_gen_status.get("func_files", {})
     func_signatures = file_gen_status.get("func_signatures", {})
     
     # Load funsearch status
-    funsearch_status_path = os.path.join(args.experiment_dir, "stage_funsearch_status.json")
-    if not os.path.exists(funsearch_status_path):
-        print(f" FunSearch status not found: {funsearch_status_path}", file=sys.stderr)
+    funsearch_status = read_status(args.experiment_dir, args.dsl_round, "funsearch")
+    if funsearch_status is None:
+        print(f" FunSearch status not found for dsl_round={args.dsl_round}", file=sys.stderr)
         return 1
-    
-    with open(funsearch_status_path, 'r') as f:
-        funsearch_status = json.load(f)
     
     funsearch_results = funsearch_status.get("results", {})
     successful_funcs = [func_name for func_name in terminals.keys() 
@@ -95,7 +97,8 @@ def main():
     
     # Results directory
     results_dir = os.path.join(args.experiment_dir, "results", "funsearch")
-    explicit_feedback_dir = os.path.join(args.experiment_dir, "explicit_feedback")
+    dsl_folder = f"dsl{args.dsl_round}" if args.dsl_round is not None else "dsl_unknown"
+    explicit_feedback_dir = os.path.join(args.experiment_dir, "explicit_feedback", dsl_folder)
     os.makedirs(explicit_feedback_dir, exist_ok=True)
     
     # Helper function to run explicit feedback for a single function
@@ -103,7 +106,6 @@ def main():
         """Run explicit feedback for a single function."""
         try:
             print(f"[{func_name}] Starting explicit feedback generation...")
-            current_func_file = func_file
             
             # Run multiple iterations
             final_func = None
@@ -211,9 +213,7 @@ def main():
         "final_functions": list(final_functions.keys()),
         "errors": list(errors.keys()) if errors else []
     }
-    status_file = os.path.join(args.experiment_dir, "stage_explicit_feedback_status.json")
-    with open(status_file, 'w') as f:
-        json.dump(stage_status, f, indent=2)
+    write_status(args.experiment_dir, args.dsl_round, "explicit_feedback", stage_status)
     
     print(f"\n Explicit feedback completed for {len(final_functions)} functions")
     return 0 if final_functions else 1

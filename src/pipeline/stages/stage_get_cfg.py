@@ -8,7 +8,6 @@ import os
 import sys
 import json
 import argparse
-from typing import Dict, Optional, Tuple
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -29,10 +28,13 @@ def main():
     parser.add_argument('--experiment_dir', type=str, default=None, help='Experiment directory (auto-generated if not provided)')
     parser.add_argument('--skip_cfg_generation', action='store_true', help='Skip CFG generation and load from file')
     parser.add_argument('--cfg_output_file', type=str, default=None, help='File to load CFG from')
-    parser.add_argument('--max_cfg_retries', type=int, default=10, help='Maximum retries for CFG generation')
+    parser.add_argument('--max_cfg_retries', type=int, default=int(os.environ.get("MAX_CFG_RETRIES", "10")), help='Maximum retries for CFG generation')
+    parser.add_argument('--nld_path', type=str, default=os.environ.get("NLD_PATH", "prompt_specifications/nld.txt"), help='Path to natural language domain description')
+    parser.add_argument('--recipes_path', type=str, default=os.environ.get("RECIPES_PATH"), help='Optional path to recipes/domain file')
+    parser.add_argument('--cfg_generator_prompt_path', type=str, default=os.environ.get("CFG_GENERATOR_PROMPT_PATH", "prompt_specifications/cfg_generator.txt"), help='Path to CFG generator prompt template')
+    parser.add_argument('--domain_context_template_path', type=str, default=os.environ.get("DOMAIN_CONTEXT_TEMPLATE_PATH"), help='Path to domain context template')
     
     args = parser.parse_args()
-    
     # Auto-generate experiment directory if not provided or empty
     if not args.experiment_dir or args.experiment_dir.strip() == "":
         from datetime import datetime
@@ -67,6 +69,10 @@ def main():
         skip_cfg_generation=args.skip_cfg_generation,
         cfg_output_file=args.cfg_output_file,
         max_cfg_retries=args.max_cfg_retries,
+        nld_path=args.nld_path,
+        recipes_path=args.recipes_path,
+        cfg_generator_prompt_path=args.cfg_generator_prompt_path,
+        domain_context_template_path=args.domain_context_template_path,
         shared_vllm=shared_vllm
     )
     

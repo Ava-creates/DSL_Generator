@@ -15,6 +15,7 @@ import argparse
 from datetime import datetime
 from typing import Dict, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import glob
 from funsearch.implementation.funsearch import FunSearch
 from funsearch.implementation import config as config_lib
 from src.utils.file_utils import version_file
@@ -88,6 +89,14 @@ def _extract_function_body(func_code: str, func_name: str) -> str:
     return "\n".join(body_lines).rstrip()
 
 
+def _versioned_name(safe_name: str, dsl_round: Optional[int], func_evolution_round: Optional[int]) -> str:
+    """Return the versioned base filename prefix, e.g. 'move_dsl0_func1' or 'move'."""
+    if dsl_round is not None:
+        fround = func_evolution_round if func_evolution_round is not None else 0
+        return f"{safe_name}_dsl{dsl_round}_func{fround}"
+    return safe_name
+
+
 def _load_seed_body(
     experiment_dir: Optional[str],
     safe_name: str,
@@ -99,23 +108,11 @@ def _load_seed_body(
         return ""
     prev_path = None
     if dsl_round is not None and func_evolution_round is not None and func_evolution_round > 0:
-        prev_path = os.path.join(
-            experiment_dir,
-            "final_functions",
-            f"{safe_name}_dsl{dsl_round}_func{func_evolution_round - 1}.py"
-        )
+        prev_path = os.path.join(experiment_dir, "final_functions", f"{_versioned_name(safe_name, dsl_round, func_evolution_round - 1)}.py")
     elif dsl_round is not None and dsl_round > 0:
-        prev_path = os.path.join(
-            experiment_dir,
-            "final_functions",
-            f"{safe_name}_dsl{dsl_round - 1}_func0.py"
-        )
+        prev_path = os.path.join(experiment_dir, "final_functions", f"{_versioned_name(safe_name, dsl_round - 1, 0)}.py")
     elif dsl_round is None:
-        prev_path = os.path.join(
-            experiment_dir,
-            "final_functions",
-            f"{safe_name}.py"
-        )
+        prev_path = os.path.join(experiment_dir, "final_functions", f"{safe_name}.py")
     if prev_path and os.path.exists(prev_path):
         try:
             with open(prev_path, "r", encoding="utf-8") as f:
@@ -124,94 +121,6 @@ def _load_seed_body(
         except Exception:
             return ""
     return ""
-
-
-def resolve_to_terminal_value(symbol: str, cfg: str, visited: set = None) -> Optional[str]:
-    """Recursively resolve a non-terminal symbol to a terminal value.
-    
-    Args:
-        symbol: The symbol to resolve (e.g., "TOOL", "ITEM")
-        cfg: The CFG string
-        visited: Set of already visited symbols to prevent infinite recursion
-        
-    Returns:
-        A terminal value (string) or None if no terminal found
-    """
-    if visited is None:
-        visited = set()
-    
-    # Prevent infinite recursion
-    if symbol in visited:
-        return None
-    visited.add(symbol)
-    
-    # Look for the rule definition for this symbol
-    rule_line_pattern = rf"^{re.escape(symbol)}\s*::=\s*(.+)$"
-    rule_match = re.search(rule_line_pattern, cfg, re.IGNORECASE | re.MULTILINE)
-    
-    if not rule_match:
-        # No rule found - this might be a terminal or doesn't exist
-        return None
-    
-    values_str = rule_match.group(1).strip()
-    rule_start_pos = rule_match.end()
-    
-    # Also handle continuation lines (lines starting with |)
-    lines = cfg[rule_start_pos:].split('\n')
-    for line in lines[:20]:  # Limit to first 20 continuation lines
-        line = line.strip()
-        if not line:
-            break  # Empty line means end of rule
-        if '::=' in line:
-            break  # New rule definition means end of previous rule
-        if line.startswith('|'):
-            # This is a continuation line
-            cont_values = line[1:].strip()  # Remove leading |
-            values_str += " | " + cont_values
-    
-    # Extract individual values by splitting on |
-    values = [v.strip() for v in values_str.split('|')]
-    
-    # Filter out grammar symbols and clean values
-    clean_values = []
-    for v in values:
-        # Remove any newlines and normalize whitespace
-        v = ' '.join(v.split()).strip().strip('"').strip("'")
-        # Skip if it contains rule syntax (::=), is empty, or is a grammar symbol
-        if (v and '::=' not in v and 
-            v.upper() not in ['LPAR', 'RPAR', 'COMMA', 'SEMI', 'LBRACKET', 'RBRACKET'] and
-            not v.startswith('::=')):
-            clean_values.append(v)
-    
-    if not clean_values:
-        return None
-    
-    # Check if the first value is a non-terminal (has a rule definition)
-    first_value = clean_values[0]
-    
-    # Check if this value has its own rule definition (is a non-terminal)
-    check_pattern = rf"^{re.escape(first_value)}\s*::="
-    if re.search(check_pattern, cfg, re.IGNORECASE | re.MULTILINE):
-        # It's a non-terminal, recursively resolve it
-        resolved = resolve_to_terminal_value(first_value, cfg, visited)
-        if resolved:
-            return resolved
-        # If recursion failed, try the next value
-        for v in clean_values[1:]:
-            check_pattern_v = rf"^{re.escape(v)}\s*::="
-            if not re.search(check_pattern_v, cfg, re.IGNORECASE | re.MULTILINE):
-                # This is a terminal, use it
-                return v
-            # It's also a non-terminal, try to resolve
-            resolved = resolve_to_terminal_value(v, cfg, visited)
-            if resolved:
-                return resolved
-    else:
-        # It's a terminal value, return it
-        return first_value
-    
-    # If we get here, couldn't find a terminal
-    return None
 
 
 def extract_function_args(func_name: str, cfg: str) -> str:
@@ -325,9 +234,6 @@ def infer_argument_type(arg_name: str, cfg: str, description: str = "") -> str:
     Returns:
         Type string: "str", "int", or "float"
     """
-    arg_name_lower = arg_name.lower()
-    desc_lower = description.lower() if description else ""
-    
     # Parse CFG rule first; this is the most reliable source of argument type.
     # We only collect the target rule's RHS and its direct continuation lines.
     if cfg:
@@ -372,40 +278,6 @@ def infer_argument_type(arg_name: str, cfg: str, description: str = "") -> str:
     return "str"
 
 
-def extract_env_setup_from_spec(specification: str) -> str:
-    """Extract environment setup code from specification file."""
-    if not specification:
-        return None
-    
-    # Look for common environment setup patterns
-    # Pattern 1: Multi-line environment factory initialization
-    pattern1 = r'env_sampler\s*=\s*[^\n]+EnvironmentFactory\s*\([^)]+\)'
-    match1 = re.search(pattern1, specification, re.MULTILINE | re.DOTALL)
-    if match1:
-        setup = match1.group(0).strip()
-        # Try to also get the sample_environment call if nearby
-        remaining = specification[match1.end():match1.end()+200]
-        env_match = re.search(r'env\s*=\s*[^\n]+sample_environment\s*\([^)]+\)', remaining, re.MULTILINE)
-        if env_match:
-            return setup + "\n  " + env_match.group(0).strip()
-        return setup
-    
-    # Pattern 2: Direct environment creation
-    pattern2 = r'env\s*=\s*[^\n]+EnvironmentFactory\s*\([^)]+\)'
-    match2 = re.search(pattern2, specification, re.MULTILINE | re.DOTALL)
-    if match2:
-        return match2.group(0).strip()
-    
-    # Pattern 3: Generic factory pattern
-    pattern3 = r'[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*[a-zA-Z_][a-zA-Z0-9_]*\.EnvironmentFactory\s*\([^)]+\)'
-    match3 = re.search(pattern3, specification, re.MULTILINE | re.DOTALL)
-    if match3:
-        return match3.group(0).strip()
-    
-    # Return None if nothing found - will use generic template
-    return None
-
-
 def create_experiment_directory(base_name: str = "experiment") -> str:
     """Create a dated/numbered experiment directory.
     
@@ -447,7 +319,10 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
                              shared_vllm=None,
                              grid_prompt_path: str = "prompt_specifications/grid_prompt.txt",
                              require_test_type: bool = True,
-                             skip_positive_grids: bool = False) -> tuple[str, str]:
+                             skip_positive_grids: bool = False,
+                             positive_grids: int = 10,
+                             negative_grids: int = 4,
+                             edge_grids: int = 1) -> tuple[str, str]:
     """Generate a function-specific prompt file for funsearch.
     
     Args:
@@ -493,18 +368,8 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
     # For display purposes, use the base function name
     display_name = base_name
     
-    # Build filename with DSL and function evolution round numbers
-    # Always include func number, use func0 for initial round
-    if dsl_round is not None:
-        if func_evolution_round is not None:
-            func_file = os.path.join(func_dir, f"{safe_name}_dsl{dsl_round}_func{func_evolution_round}.txt")
-        else:
-            # Initial round: use func0
-            func_file = os.path.join(func_dir, f"{safe_name}_dsl{dsl_round}_func0.txt")
-    else:
-        # Fallback to old naming if rounds not provided
-        func_file = os.path.join(func_dir, f"{safe_name}.txt")
-    
+    func_file = os.path.join(func_dir, f"{_versioned_name(safe_name, dsl_round, func_evolution_round)}.txt")
+
     # Infer return type from description
     _, default_return = infer_return_type(description)
     
@@ -563,7 +428,7 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
     grid_dir_override = os.environ.get("GRID_SPEC_DIR")
     grid_dir = grid_dir_override if grid_dir_override else (os.path.join(experiment_dir, "grids") if experiment_dir else "grids")
     os.makedirs(grid_dir, exist_ok=True)
-    num_grid_tests = 5 if skip_positive_grids else 15
+    num_grid_tests = (negative_grids + edge_grids) if skip_positive_grids else (positive_grids + negative_grids + edge_grids)
     total_grid_generation_attempts = 200
     grid_spec_paths = []
     grid_spec = None
@@ -672,6 +537,9 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
                 codebase_text=codebase_text,
                 require_test_type=require_test_type,
                 skip_positive_grids=skip_positive_grids,
+                positive_grids=positive_grids,
+                negative_grids=negative_grids,
+                edge_grids=edge_grids,
             )
             if isinstance(grid_spec, dict):
                 generated_cases.append(grid_spec)
@@ -700,13 +568,11 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
 
     
    
-    solve_func_basic = craft_solve_template_basic(
+    solve_func = craft_solve_template_basic(
         func_name=func_name,
         func_params=func_params,
         func_call_args=func_call_args,
     )
-    solve_func = solve_func_basic
-    solve_func_custom = None
 
     seed_body = _load_seed_body(experiment_dir, safe_name, dsl_round, func_evolution_round)
     if seed_body:
@@ -724,10 +590,6 @@ def {safe_name}({func_params}):
   """
 '''
     
-    # Generate solve() function - prefer LLM-generated if available, otherwise keep basic template
-    if solve_func_custom:
-        solve_func = solve_func_custom
-    
     # Generate evaluate() function - always use template (never generated by LLM)
     # Prepare environment setup code
     env_setup = craft_env_setup(
@@ -739,95 +601,20 @@ def {safe_name}({func_params}):
         
     if env_setup:
         # Use extracted environment setup
-        # Define function arguments before calling solve - extract from CFG
+        # Define function arguments directly from grid_spec arg_values.
         args_definitions = ""
         if has_args:
             # Split args if there are multiple (comma-separated)
             arg_list = [a.strip() for a in args.split(',')] if ',' in args else [args.strip()]
-        
-            # Try to create a test environment to check what's on the grid
-            test_env = None
-            recipes = None
-            try:
-                from src.pipeline.evaluation_helpers import (
-                    load_recipes, create_test_environment_for_item, get_valid_test_argument
-                )
-                from craft import env_factory
-                
-                recipes_path = "craft/resources/recipes.yaml"
-                hints_path = "craft/resources/hints.yaml"
-                recipes = load_recipes(recipes_path)
-                
-                # Try to extract task name from env_setup or use default
-                task_name = "make[goldarrow]"  # default
-                import re
-                task_match = re.search(r"task_name\s*=\s*['\"]([^'\"]+)['\"]", env_setup)
-                if task_match:
-                    task_name = task_match.group(1)
-                
-                # Create a test environment to check what's on the grid
-                test_env = create_test_environment_for_item(
-                    task_name.replace("make[", "").replace("]", "").replace("get[", ""),
-                    recipes_path, hints_path, env_factory
-                )
-            except Exception as e:
-                print(f"  Note: Could not create test environment for grid checking: {e}")
-                test_env = None
-                recipes = None
-            
+
             args_def_lines = []
-            args_def_lines.append('  arg_values = grid_spec.get("arg_values", {}) if isinstance(grid_spec, dict) else {}')
-            if has_args:  # Only process args if we have them
-                for arg_name in arg_list:
-                    if not arg_name:
-                        continue
-                    
-                    # Use helper to get valid test argument that's on the grid
-                    try:
-                        from src.pipeline.evaluation_helpers import get_valid_test_argument
-                        arg_value, explanation = get_valid_test_argument(
-                            arg_name, arg_type, cfg, recipes, test_env, task_name
-                        )
-                        # Ensure string literals are quoted
-                        if isinstance(arg_value, str):
-                            if not (arg_value.startswith('"') and arg_value.endswith('"')):
-                                arg_value = f'"{arg_value}"'
-                        args_def_lines.append(f'  {arg_name} = arg_values.get("{arg_name}", {arg_value}).lower()  {explanation}') #lowecasee tohelp lookup in cookbook
-                    except Exception as e:
-                        # Fallback to old logic if helper fails
-                        print(f"  Warning: Could not use grid-aware argument selection: {e}")
-                        # Try to get valid values from CFG for this argument
-                        arg_value = None
-                        if cfg:
-                            arg_value = resolve_to_terminal_value(arg_name.upper(), cfg)
-                        
-                        # If no CFG value found, use type-based defaults
-                        if arg_value is None:
-                            if arg_type == "str":
-                                arg_value = '"test_input"'
-                            elif arg_type == "int":
-                                arg_value = "0"
-                            elif arg_type == "float":
-                                arg_value = "0.0"
-                            else:
-                                arg_value = '"test_input"'
-                        else:
-                            # Check if value is already quoted
-                            is_quoted = (isinstance(arg_value, str) and 
-                                        len(arg_value) >= 2 and 
-                                        arg_value.startswith('"') and arg_value.endswith('"'))
-                            
-                            # If not already quoted, check if it's a number or string
-                            if not is_quoted:
-                                try:
-                                    int(arg_value)
-                                except ValueError:
-                                    try:
-                                        float(arg_value)
-                                    except ValueError:
-                                        arg_value = f'"{arg_value}"'
-                        
-                        args_def_lines.append(f'  {arg_name} = arg_values.get("{arg_name}", {arg_value})  # Argument value from CFG')
+            args_def_lines.append('  arg_values = grid_spec["arg_values"] if isinstance(grid_spec, dict) else {}')
+            for arg_name in arg_list:
+                if not arg_name:
+                    continue
+                args_def_lines.append(f'  {arg_name} = arg_values["{arg_name}"]')
+                args_def_lines.append(f'  if isinstance({arg_name}, str):')
+                args_def_lines.append(f'    {arg_name} = {arg_name}.lower()')
         
             args_definitions = '\n'.join(args_def_lines) + '\n' if args_def_lines else ''
         
@@ -838,69 +625,7 @@ def {safe_name}({func_params}):
             func_call_args=func_call_args,
             grid_spec_paths_var=repr(grid_spec_paths),
         )
-    else:
-        # Generic template - user should customize based on their domain
-        # Define function arguments before calling solve - extract from CFG
-        args_definitions = ""
-        if has_args:
-            # Split args if there are multiple (comma-separated)
-            arg_list = [a.strip() for a in args.split(',')] if ',' in args else [args.strip()]
-            
-            # Try to use grid-aware argument selection if possible
-            test_env = None
-            recipes = None
-            task_name = None
-            try:
-                from src.pipeline.evaluation_helpers import (
-                    load_recipes, get_valid_test_argument
-                )
-                recipes_path = "craft/resources/recipes.yaml"
-                recipes = load_recipes(recipes_path)
-            except Exception:
-                recipes = None
-            
-            args_def_lines = []
-            for arg_name in arg_list:
-                if not arg_name:
-                    continue
-                
-                # Try grid-aware selection first
-                try:
-                    from src.pipeline.evaluation_helpers import get_valid_test_argument
-                    arg_value, explanation = get_valid_test_argument(
-                        arg_name, arg_type, cfg, recipes, test_env, task_name
-                    )
-                    args_def_lines.append(f'  {arg_name} = {arg_value}  {explanation}')
-                except Exception:
-                    # Fallback to CFG-based selection
-                    arg_value = None
-                    if cfg:
-                        arg_value = resolve_to_terminal_value(arg_name.upper(), cfg)
-                    
-                    if arg_value is None:
-                        if arg_type == "str":
-                            arg_value = '"test_input"'
-                        elif arg_type == "int":
-                            arg_value = "0"
-                        elif arg_type == "float":
-                            arg_value = "0.0"
-                        else:
-                            arg_value = '"test_input"'
-                    else:
-                        if arg_type == "str":
-                            arg_value = f'"{arg_value}"'
-                    
-                    args_def_lines.append(f'  {arg_name} = {arg_value}  # Argument value from CFG')
-            
-            args_definitions = '\n'.join(args_def_lines) + '\n' if args_def_lines else ''
-        
-        eval_func = craft_evaluate_template(
-            display_name=display_name,
-            env_setup=env_setup,
-            args_definitions=args_definitions,
-            func_call_args=func_call_args,
-        )
-    
+
     # Combine all functions (solve, evaluate, and evolve)
     if solve_func is None:
         raise ValueError(f"LLM generation failed for {func_name}. solve_func is None. Check LLM generation logs for errors.")
@@ -941,32 +666,12 @@ def generate_func_init(func_name: str, description: str, cfg: str = "",
     safe_name = sanitize_function_name(func_name)
     args = extract_function_args(func_name, cfg)
     
-    # Build filename with DSL and function evolution round numbers to match prompt files
-    # Always include func number, use func0 for initial round
-    if dsl_round is not None:
-        if func_evolution_round is not None:
-            func_init_file = os.path.join(func_dir, f"{safe_name}_dsl{dsl_round}_func{func_evolution_round}_func_init.py")
-        else:
-            # Initial round: use func0
-            func_init_file = os.path.join(func_dir, f"{safe_name}_dsl{dsl_round}_func0_func_init.py")
-    else:
-        # Fallback to old naming if rounds not provided
-        func_init_file = os.path.join(func_dir, f"{safe_name}_func_init.py")
-    
+    func_init_file = os.path.join(func_dir, f"{_versioned_name(safe_name, dsl_round, func_evolution_round)}_func_init.py")
+
     init_content = None
     if experiment_dir and func_evolution_round is not None and func_evolution_round > 0:
-        if dsl_round is not None:
-            prev_final = os.path.join(
-                experiment_dir,
-                "final_functions",
-                f"{safe_name}_dsl{dsl_round}_func{func_evolution_round - 1}.py"
-            )
-        else:
-            prev_final = os.path.join(
-                experiment_dir,
-                "final_functions",
-                f"{safe_name}.py"
-            )
+        prev_name = _versioned_name(safe_name, dsl_round, func_evolution_round - 1) if dsl_round is not None else safe_name
+        prev_final = os.path.join(experiment_dir, "final_functions", f"{prev_name}.py")
         if os.path.exists(prev_final):
             try:
                 with open(prev_final, "r", encoding="utf-8") as f:
@@ -1115,6 +820,38 @@ def validate_cfg(cfg: str, example: Optional[str] = None) -> Tuple[bool, str]:
         return False, f"Error validating CFG: {e}"
 
 
+def validate_terminal_descriptions(terminals: Dict[str, str]) -> Tuple[bool, str]:
+    """Validate terminal descriptions do not reference other terminal names."""
+    if not isinstance(terminals, dict) or not terminals:
+        return False, "Terminals dictionary is missing or empty."
+
+    terminal_names = [str(name).strip() for name in terminals.keys() if str(name).strip()]
+    if not terminal_names:
+        return False, "No terminal names found in terminals dictionary."
+
+    upper_names = [name.upper() for name in terminal_names]
+    for terminal_name, description in terminals.items():
+        if not isinstance(description, str):
+            return False, f"Terminal description for '{terminal_name}' must be a string."
+
+        self_name_upper = str(terminal_name).strip().upper()
+        desc_upper = description.upper()
+
+        for candidate in upper_names:
+            if candidate == self_name_upper:
+                continue
+            # Match full token to avoid partial-word false positives.
+            pattern = rf"(?<![A-Z0-9_]){re.escape(candidate)}(?![A-Z0-9_])"
+            if re.search(pattern, desc_upper):
+                return (
+                    False,
+                    f"Terminal '{terminal_name}' description references terminal '{candidate}'. "
+                    "Terminal descriptions must be independent and must not mention other terminals by name.",
+                )
+
+    return True, "Terminal descriptions are valid (no cross-terminal references)."
+
+
 def determine_inputs(func_name: str, description: str, cfg: str) -> list:
     """Determine appropriate inputs for funsearch evaluation.
     
@@ -1135,9 +872,7 @@ def find_funsearch_log_file(func_name: str, results_dir: str) -> Optional[str]:
         Path to the log file, or None if not found
     """
     safe_name = sanitize_function_name(func_name)
-    # Log files have pattern: model_q2.5_function_name_func_init_spec_timestamp.log
     pattern = f"*{safe_name}*.log"
-    import glob
     log_files = glob.glob(os.path.join(results_dir, pattern))
     if log_files:
         # Return the most recent one
@@ -1180,20 +915,14 @@ def run_explicit_feedback_generation(func_name: str, results_dir: str, func_file
     # Parse top k functions from log using existing function
     funcs = parse_log_file(log_file, k=k)
     if not funcs:
-        print(f"   No functions found in log file")
+        print("   No functions found in log file")
         return None
     
     print(f"  Found {len(funcs)} top functions")
     
     # Create evaluation file for this function with versioning
-    safe_name = sanitize_function_name(func_name)  # Always define safe_name for file naming
-    if dsl_round is not None:
-        if func_evolution_round is not None:
-            eval_file = os.path.join(explicit_feedback_dir, f"eval_{safe_name}_dsl{dsl_round}_func{func_evolution_round}.py")
-        else:
-            eval_file = os.path.join(explicit_feedback_dir, f"eval_{safe_name}_dsl{dsl_round}_func0.py")
-    else:
-        eval_file = os.path.join(explicit_feedback_dir, f"eval_{safe_name}.py")
+    safe_name = sanitize_function_name(func_name)
+    eval_file = os.path.join(explicit_feedback_dir, f"eval_{_versioned_name(safe_name, dsl_round, func_evolution_round)}.py")
     create_evaluation_file(func_file, eval_file)
     
     # Use the function signature passed from the pipeline
@@ -1217,13 +946,6 @@ def run_explicit_feedback_generation(func_name: str, results_dir: str, func_file
         dsl_round=dsl_round, func_evolution_round=func_evolution_round
     )
     
-    # # Save final function
-    # if final_func:
-    #     final_func_file = os.path.join(explicit_feedback_dir, f"{safe_name}_final.py")
-    #     with open(final_func_file, 'w', encoding='utf-8') as f:
-    #         f.write(final_func)
-    #     print(f"  Saved final function to: {final_func_file}")
-    
     return final_func
 
 
@@ -1234,8 +956,6 @@ def create_evaluation_file(func_file: str, eval_file: str):
         func_file: Path to the function prompt file
         eval_file: Path where the evaluation file should be created
     """
-    import re
-    
     # Read the function prompt file to get solve and evaluate functions
     with open(func_file, 'r', encoding='utf-8') as f:
         func_content = f.read()
@@ -1260,6 +980,10 @@ def get_cfg(
     skip_cfg_generation: bool = False,
     cfg_output_file: Optional[str] = None,
     max_cfg_retries: int = 10,
+    nld_path: str = "prompt_specifications/nld.txt",
+    recipes_path: Optional[str] = None,
+    cfg_generator_prompt_path: str = "prompt_specifications/cfg_generator.txt",
+    domain_context_template_path: Optional[str] = None,
     shared_vllm=None
 ) -> Tuple[str, Dict[str, str], Optional[str], bool]:
     """Get CFG either by loading from file or generating new one.
@@ -1269,6 +993,10 @@ def get_cfg(
         skip_cfg_generation: If True, load from cfg_output_file
         cfg_output_file: File to load CFG from
         max_cfg_retries: Maximum retries for CFG generation
+        nld_path: Path to natural language domain description
+        recipes_path: Optional path to recipes/domain schema file
+        cfg_generator_prompt_path: Path to CFG generator prompt template
+        domain_context_template_path: Path to domain-context template
         shared_vllm: Optional shared vLLM instance
         
     Returns:
@@ -1294,8 +1022,13 @@ def get_cfg(
         if not is_valid:
             print(f"ERROR: Loaded CFG validation failed: {validation_msg}", file=sys.stderr)
             return "", {}, None, False
+        term_valid, term_msg = validate_terminal_descriptions(terminals)
+        if not term_valid:
+            print(f"ERROR: Loaded terminal descriptions failed validation: {term_msg}", file=sys.stderr)
+            return "", {}, None, False
         else:
             print(f" {validation_msg}")
+            print(f" {term_msg}")
             # Write to experiment's cfg_output.json and cfg_output_0.json so downstream stages can find it
             os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
             with open(cfg_path, 'w', encoding='utf-8') as f:
@@ -1320,8 +1053,13 @@ def get_cfg(
         if not is_valid:
             print(f"ERROR: Loaded CFG validation failed: {validation_msg}", file=sys.stderr)
             return "", {}, None, False
+        term_valid, term_msg = validate_terminal_descriptions(terminals)
+        if not term_valid:
+            print(f"ERROR: Loaded terminal descriptions failed validation: {term_msg}", file=sys.stderr)
+            return "", {}, None, False
         else:
             print(f" {validation_msg}")
+            print(f" {term_msg}")
             return cfg, terminals, example, True
     else:
         print("\n[Generating CFG] Generating new CFG...")
@@ -1336,12 +1074,17 @@ def get_cfg(
                     print(f"\n[Generating CFG] Retry attempt {attempt}/{max_cfg_retries}...")
                 
                 from src.pipeline.getting_cfg import generate_and_parse_cfg
-                cfg, terminals, example = generate_and_parse_cfg(vllm_instance=shared_vllm)
+                cfg, terminals, example = generate_and_parse_cfg(
+                    vllm_instance=shared_vllm,
+                    nld_path=nld_path,
+                    recipes_path=recipes_path,
+                    prompt_template_path=cfg_generator_prompt_path,
+                    domain_context_template_path=domain_context_template_path,
+                )
                 
                 # Validate CFG is parseable
                 print(f"\n[Validating CFG] Validating CFG (attempt {attempt})...")
                 is_valid, validation_msg = validate_cfg(cfg, example)
-                
                 if is_valid:
                     print(f" {validation_msg}")
                     # Extract terminals using ensure_terminals_match_cfg which handles both
@@ -1362,6 +1105,17 @@ def get_cfg(
                         # This is a bug - validation passed but terminal extraction failed
                         # Don't retry, but raise to surface the issue
                         raise RuntimeError(f"CFG validation passed but terminal extraction failed: {e}")
+
+                    term_valid, term_msg = validate_terminal_descriptions(terminals)
+                    if not term_valid:
+                        print(f" Terminal description validation failed: {term_msg}")
+                        if attempt < max_cfg_retries:
+                            print("Retrying CFG generation...")
+                            continue
+                        print(f"\nERROR: Failed to generate valid terminal descriptions after {max_cfg_retries} attempts", file=sys.stderr)
+                        print(f"Last terminal validation error: {term_msg}", file=sys.stderr)
+                        return "", {}, None, False
+                    print(f" {term_msg}")
                     
                     # Success! Save and return
                     cfg_data = {
@@ -1391,7 +1145,7 @@ def get_cfg(
                 else:
                     print(f" CFG validation failed: {validation_msg}")
                     if attempt < max_cfg_retries:
-                        print(f"Retrying CFG generation...")
+                        print("Retrying CFG generation...")
                         continue
                     else:
                         # Last attempt failed
@@ -1402,7 +1156,7 @@ def get_cfg(
             except Exception as e:
                 print(f" Error generating CFG (attempt {attempt}): {e}", file=sys.stderr)
                 if attempt < max_cfg_retries:
-                    print(f"Retrying CFG generation...")
+                    print("Retrying CFG generation...")
                     continue
                 else:
                     print(f"\nERROR: Failed to generate CFG after {max_cfg_retries} attempts", file=sys.stderr)
@@ -1413,6 +1167,9 @@ def replace_dsl_section_in_specification(specification: str, cfg: str) -> str:
     """Replace the DSL block in the specification with the current CFG."""
     if not cfg or not specification:
         return specification
+
+    if "<<CFG>>" in specification:
+        return specification.replace("<<CFG>>", cfg)
 
     dsl_pattern = r'(## DSL[^\n]*\n.*?"""\n)(.*?)(\n"""\n)'
     dsl_match = re.search(dsl_pattern, specification, re.DOTALL)
@@ -1609,12 +1366,12 @@ def implement_cfg(
     # Step 5: Run explicit feedback generation for each function (in parallel)
     print("\n[Step 5] Running explicit feedback generation for each function (in parallel)...")
     final_functions = {}
-    explicit_feedback_dir = os.path.join(experiment_dir, "explicit_feedback")
+    dsl_folder = f"dsl{dsl_round}" if dsl_round is not None else "dsl_unknown"
+    explicit_feedback_dir = os.path.join(experiment_dir, "explicit_feedback", dsl_folder)
     os.makedirs(explicit_feedback_dir, exist_ok=True)
     
     # Import explicit feedback functions from existing module
     sys.path.insert(0, os.path.dirname(__file__))
-    from explicit_feedback_generation import parse_log_file, eval as explicit_eval
     
     # Helper function to run explicit feedback for a single function
     def run_explicit_feedback_for_function(func_name, func_file):
@@ -1671,21 +1428,12 @@ def implement_cfg(
     
     for func_name, func_code in final_functions.items():
         safe_name = sanitize_function_name(func_name)
-        if dsl_round is not None:
-            if func_evolution_round is not None:
-                func_file = os.path.join(final_functions_dir, f"{safe_name}_dsl{dsl_round}_func{func_evolution_round}.py")
-            else:
-                # Initial functions should be func0
-                func_file = os.path.join(final_functions_dir, f"{safe_name}_dsl{dsl_round}_func0.py")
-        else:
-            # Fallback to old naming if rounds not provided
-            func_file = os.path.join(final_functions_dir, f"{safe_name}.py")
-        
+        func_file = os.path.join(final_functions_dir, f"{_versioned_name(safe_name, dsl_round, func_evolution_round)}.py")
         with open(func_file, 'w', encoding='utf-8') as f:
             f.write(func_code)
         print(f"  Saved {func_name} to {os.path.basename(func_file)}")
     
-    print(f" Final functions saved. Use standalone cfg_evaluator.py for evaluation.")
+    print(" Final functions saved. Use standalone cfg_evaluator.py for evaluation.")
     
     # Step 7: Test generated functions with example program from CFG (optional)
     if example and final_functions:
@@ -1733,18 +1481,18 @@ def implement_cfg(
             parse_success = evaluator.parse_program(example_program)
             
             print(f"\n  {'='*60}")
-            print(f"  Test Results for Example Program")
+            print("  Test Results for Example Program")
             print(f"  {'='*60}")
             print(f"  Program: {example_program}")
             print(f"  Task: {task_name}")
-            print(f"\n  Execution Status:")
+            print("\n  Execution Status:")
             print(f"     Program parsed successfully: {parse_success}")
             
             if result.get('error'):
                 print(f"     Execution error: {result.get('error')}")
-                print(f"     Program execution failed")
+                print("     Program execution failed")
             else:
-                print(f"     Program executed without errors")
+                print("     Program executed without errors")
             
             # Check if task was solved (success = True and reward > 0)
             task_solved = result.get('success', False)
@@ -1752,23 +1500,23 @@ def implement_cfg(
             steps_taken = result.get('steps', 0)
             actions_taken = result.get('actions_taken', [])
             
-            print(f"\n  Task Completion:")
+            print("\n  Task Completion:")
             if task_solved and total_reward > 0:
-                print(f"     Task SOLVED successfully!")
+                print("     Task SOLVED successfully!")
                 print(f"     Total Reward: {total_reward}")
             elif task_solved:
-                print(f"     Task completed but reward is 0 (may indicate partial success)")
+                print("     Task completed but reward is 0 (may indicate partial success)")
                 print(f"    Total Reward: {total_reward}")
             else:
-                print(f"     Task NOT solved")
+                print("     Task NOT solved")
                 print(f"    Total Reward: {total_reward}")
             
-            print(f"\n  Execution Details:")
+            print("\n  Execution Details:")
             print(f"    Steps taken: {steps_taken}")
             print(f"    Actions executed: {len(actions_taken)}")
             
             if actions_taken:
-                print(f"\n  Actions Sequence:")
+                print("\n  Actions Sequence:")
                 # Show first 20 actions to avoid too much output
                 display_actions = actions_taken[:20]
                 for i, action in enumerate(display_actions, 1):
@@ -1776,23 +1524,23 @@ def implement_cfg(
                 if len(actions_taken) > 20:
                     print(f"    ... and {len(actions_taken) - 20} more actions")
             
-            print(f"\n  Summary:")
+            print("\n  Summary:")
             if parse_success and not result.get('error'):
                 if task_solved and total_reward > 0:
-                    print(f"     Example program executed and SOLVED the task!")
+                    print("     Example program executed and SOLVED the task!")
                 elif task_solved:
-                    print(f"     Example program executed (task completed with 0 reward)")
+                    print("     Example program executed (task completed with 0 reward)")
                 else:
-                    print(f"     Example program executed but did not solve the task")
+                    print("     Example program executed but did not solve the task")
             elif not parse_success:
-                print(f"     Example program failed to parse")
+                print("     Example program failed to parse")
             else:
-                print(f"     Example program execution failed")
+                print("     Example program execution failed")
             print(f"  {'='*60}\n")
                 
         except ImportError as e:
             print(f"   Could not import cfg_evaluator: {e}")
-            print(f"  Skipping function testing")
+            print("  Skipping function testing")
         except Exception as e:
             print(f"   Error testing functions: {e}")
             import traceback
@@ -1818,7 +1566,9 @@ def implement_cfg(
 
 def run_pipeline(spec_file: str, model_type: str = "huggingface", 
                  skip_cfg_generation: bool = False, cfg_output_file: Optional[str] = None,
-                 max_cfg_retries: int = 10, experiment_dir: Optional[str] = None):
+                 max_cfg_retries: int = 10, experiment_dir: Optional[str] = None,
+                 nld_path: str = "prompt_specifications/nld.txt",
+                 recipes_path: str = "craft/resources/recipes.yaml"):
     """Main pipeline function.
     
     Args:
@@ -1828,6 +1578,8 @@ def run_pipeline(spec_file: str, model_type: str = "huggingface",
         cfg_output_file: File to save/load CFG output
         max_cfg_retries: Maximum number of attempts to generate a valid CFG (default: 10)
         experiment_dir: Optional experiment directory (if None, will create a new one)
+        nld_path: Path to natural language domain description
+        recipes_path: Path to recipes/domain file
     
     Returns:
         0 on success, 1 on error
@@ -1867,6 +1619,8 @@ def run_pipeline(spec_file: str, model_type: str = "huggingface",
         skip_cfg_generation=skip_cfg_generation,
         cfg_output_file=cfg_output_file,
         max_cfg_retries=max_cfg_retries,
+        nld_path=nld_path,
+        recipes_path=recipes_path,
         shared_vllm=shared_vllm
     )
     
@@ -1955,6 +1709,18 @@ def main():
         help='Maximum number of attempts to generate a valid CFG (default: 10)'
     )
     parser.add_argument(
+        '--nld_path',
+        type=str,
+        default='prompt_specifications/nld.txt',
+        help='Path to natural language domain description file'
+    )
+    parser.add_argument(
+        '--recipes_path',
+        type=str,
+        default='craft/resources/recipes.yaml',
+        help='Path to recipes/domain file'
+    )
+    parser.add_argument(
         '--experiment_dir',
         type=str,
         default=None,
@@ -1969,7 +1735,9 @@ def main():
         skip_cfg_generation=args.skip_cfg_generation,
         cfg_output_file=args.cfg_output_file,
         max_cfg_retries=args.max_cfg_retries,
-        experiment_dir=args.experiment_dir
+        experiment_dir=args.experiment_dir,
+        nld_path=args.nld_path,
+        recipes_path=args.recipes_path,
     )
 
 if __name__ == "__main__":

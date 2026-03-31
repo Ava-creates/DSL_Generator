@@ -9,11 +9,10 @@ It takes a CFG, terminal functions, program, and environment, and evaluates the 
 import os
 import sys
 import time
-from typing import Dict, List, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable
 
 # Add paths for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from src.pipeline.cfg_parser import CFGParser
 from src.pipeline.dsl_evaluator import DSLEvaluator, load_function_implementations
 
 

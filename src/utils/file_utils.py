@@ -5,7 +5,6 @@ File utility functions for versioning and file operations.
 
 import os
 import re
-from typing import Optional
 
 
 def version_file(file_path: str, keep_original: bool = False) -> None:
@@ -21,8 +20,7 @@ def version_file(file_path: str, keep_original: bool = False) -> None:
     
     Args:
         file_path: Path to the file to version
-        keep_original: If True, keeps the original file name (for the new version)
-                      If False, renames the original to _n (default behavior)
+        # keep_original: (unused)
     """
     if not os.path.exists(file_path):
         return

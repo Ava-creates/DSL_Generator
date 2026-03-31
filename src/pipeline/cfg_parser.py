@@ -173,7 +173,26 @@ class CFGParser:
 
     def _extract_terminal_functions(self):
         """Extract terminal functions from productions."""
+        # Track which functions have already been added to avoid duplicates
+        added_functions = set()
+
+        # Collect values that belong to pure enumeration rules such as:
+        # DIR ::= NORTH | SOUTH | EAST | WEST
+        # ITEM ::= AXE | BED | PLANK
+        # These are parameter values, not callable terminal functions.
+        enumeration_values = set()
+        for non_terminal, productions in self.rules.items():
+            if self._is_enumeration_rule(non_terminal, productions):
+                enumeration_values.update(prod.strip() for prod in productions if prod.strip())
+        
         for rule, productions in self.rules.items():
+            rule_name_lower = rule.lower()
+            is_statement_like_rule = (
+                rule_name_lower == 'statement' or
+                rule_name_lower.endswith('_statement') or
+                'statement' in rule_name_lower
+            )
+
             for production in productions:
                 # Pattern 1: FUNC_NAME(ARG1, ARG2, ...) - literal parentheses
                 matches = re.finditer(r'([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*([^)]*)\s*\)', production)
@@ -181,9 +200,11 @@ class CFGParser:
                     func_name = match.group(1)
                     args_str = match.group(2).strip()
                     args = [arg.strip() for arg in args_str.split(',') if arg.strip()] if args_str else []
-                    if (func_name, args) not in self.terminal_functions:
+                    key = (func_name, tuple(args))
+                    if key not in added_functions:
                         self.terminal_functions.append((func_name, args))
                         self.terminals.add(func_name)
+                        added_functions.add(key)
                 
                 # Pattern 2: FUNC_NAME LPAR ARG RPAR - terminal symbols
                 # Match FUNC_NAME followed by LPAR, then capture everything until RPAR
@@ -198,9 +219,36 @@ class CFGParser:
                         args = [args_str] if args_str.strip() else []
                     # Filter out terminal symbols like LPAR, RPAR, COMMA
                     args = [arg for arg in args if arg and arg not in ['LPAR', 'RPAR', 'COMMA', 'SEMICOLON', 'SEMI']]
-                    if (func_name, args) not in self.terminal_functions:
+                    key = (func_name, tuple(args))
+                    if key not in added_functions:
                         self.terminal_functions.append((func_name, args))
                         self.terminals.add(func_name)
+                        added_functions.add(key)
+                
+                # Pattern 3: Bare FUNC_NAME with no arguments.
+                # Only allow this for statement-like rules where the ENTIRE production is a
+                # single callable symbol, e.g. `statement ::= PICKUP`.
+                # This prevents enum values like LEFT/GOLD/PLANK from being treated as functions.
+                if is_statement_like_rule:
+                    production_stripped = production.strip()
+                    match3 = re.fullmatch(r'([A-Z_][A-Z0-9_]*)', production_stripped)
+                    if match3:
+                        func_name = match3.group(1)
+                        # Skip if it's a known non-terminal, special symbol, or enum value
+                        if (
+                            func_name in self.non_terminals or
+                            func_name in ['LPAR', 'RPAR', 'COMMA', 'SEMICOLON', 'SEMI', 'LBRACK', 'RBRACK'] or
+                            func_name in enumeration_values
+                        ):
+                            continue
+                        # Skip if already matched by Pattern 1 or 2 (has parens or args)
+                        if any(t[0] == func_name for t in self.terminal_functions):
+                            continue
+                        key = (func_name, tuple())
+                        if key not in added_functions:
+                            self.terminal_functions.append((func_name, []))
+                            self.terminals.add(func_name)
+                            added_functions.add(key)
 
     def get_terminal_functions(self) -> List[Tuple[str, List[str]]]:
         return self.terminal_functions

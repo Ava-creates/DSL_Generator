@@ -211,15 +211,10 @@ def craft_env_setup(
     return f"""
   recipes_path = "{recipes_path}"
   hints_path = "{hints_path}"
-  task_name = "{task_name}"
   grid_spec = None
-  if os.path.exists(grid_spec_path):
-    try:
-      with open(grid_spec_path, "r", encoding="utf-8") as f:
-        grid_spec = json.load(f)
-      task_name = grid_spec.get("task_name", task_name) or task_name
-    except Exception:
-      pass
+  with open(grid_spec_path, "r", encoding="utf-8") as f:
+    grid_spec = json.load(f)
+  task_name = grid_spec.get("task_name")
   custom_grid_path = grid_spec_path if os.path.exists(grid_spec_path) else None
   env_sampler = env_factory.EnvironmentFactory(
       recipes_path, hints_path, 7, max_steps=400, reuse_environments=False,

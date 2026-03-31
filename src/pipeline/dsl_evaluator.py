@@ -10,7 +10,6 @@ import copy
 import os
 import sys
 import re
-import json
 try:
     import numpy as np
 except ImportError:
@@ -378,7 +377,7 @@ def load_function_implementations(function_dir: str) -> Dict[str, Callable]:
                     for node in ast.walk(source_tree):
                         if isinstance(node, ast.FunctionDef):
                             defined_functions.add(node.name)
-                except Exception as e:
+                except Exception:
                     # If we can't parse the source, fall back to checking all attributes
                     defined_functions = None
                 

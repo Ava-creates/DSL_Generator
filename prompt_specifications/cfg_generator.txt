@@ -10,6 +10,9 @@ Only include terminal functions that can be implemented as a pure action-sequenc
 2. **Terminal Functions**:
    - Terminal functions are actions that appear directly in productions (e.g., ACTION1, ACTION2, ACTION3)
    - Use UPPERCASE names for all terminal functions
+   - Terminal functions MUST be DSL-level abstractions (intent/composite skills), NOT raw backend primitive action names.
+   - If the domain context lists available primitive actions, treat those as implementation details only.
+   - Do NOT copy primitive action names directly as terminal functions (e.g., PRIMITIVE_ACTION_A, PRIMITIVE_ACTION_B).
    - If a function takes no arguments, use it directly: `statement ::= ACTION1`
    - If a function takes arguments, use: `statement ::= ACTION1 LPAR PARAM RPAR`
    - NEVER create rules like `ACTION1 ::= 'action1'` or `ACTION1 ::= 'ACTION1'` - terminal functions appear directly in productions, not as separate rules
@@ -58,10 +61,20 @@ COMMA          ::= ','
 8. **What NOT to do**:
    -  NEVER create `ACTION1 ::= 'action1'` or any lowercase definitions
    -  NEVER create `ACTION1 ::= 'ACTION1'` - terminal functions appear directly in productions
+   -  NEVER mirror backend primitive action inventories as your DSL terminal set
    -  NEVER use lowercase terminal function names
    -  NEVER use literal parentheses in productions (always use LPAR/RPAR)
    -  NEVER create circular rules like `X ::= X`
    -  NEVER create redundant rules for enumeration values
+
+9. **Abstraction self-check (MUST PASS before final answer)**:
+   - If the domain context includes a list of primitive/backend actions, compare your `statement` terminals against that list.
+   - The overlap MUST be ZERO.
+   - If any `statement` terminal is a primitive action name, rewrite it into a higher-level intent/composite DSL function and regenerate the grammar.
+   - Prefer capability-level names (goal-oriented), not executor-level names (single primitive operations).
+   - Reject terminal sets like: `GO_TO`, `PICK_UP`, `PLACE_ON`, `OPEN_DOOR`, `CLOSE_DOOR`, `TURN_ON`, `TURN_OFF`.
+   - Prefer terminal sets like: `PREPARE_DRINK`, `SET_TABLE`, `STORE_GROCERIES`, `DO_LAUNDRY_LOAD`, `CLEAN_SURFACE_AREA`, `SERVE_MEAL`.
+   - Before finalizing, ask: "Does each terminal describe *what is achieved* rather than *which primitive is called*?" If not, rewrite.
 
 ## Output Format:
 
@@ -76,7 +89,12 @@ Return three fenced code blocks:
 ```json
 {{"ACTION1": "Description of what ACTION1 does", "ACTION2": "Description of what ACTION2 does", ...}}
 ```
-**CRITICAL**: You MUST include ALL terminal functions that appear in your CFG productions. Every function name that appears at the start of a statement production (e.g., ACTION1, ACTION2, ACTION3 in `statement ::= ACTION1 LPAR PARAM RPAR | ACTION2 LPAR PARAM RPAR | ACTION3`) MUST have an entry in this JSON dictionary with a clear, descriptive explanation of what it does. Do not omit any terminal functions - completeness is essential.
+**CRITICAL**: You MUST include ALL terminal functions that appear in your CFG productions. Every function name that appears at the start of a statement production (e.g., ACTION1, ACTION2, ACTION3 in `statement ::= ACTION1 LPAR PARAM RPAR | ACTION2 LPAR PARAM RPAR | ACTION3`) MUST have an entry in this JSON dictionary. Do not omit any terminal functions - completeness is essential.
+
+Each description should state the function's PURPOSE and INTENT only:
+- **What the function achieves** (high-level goal in domain terms)
+- **What arguments it takes and what they mean**
+- Do NOT describe implementation mechanics, step-by-step behavior, or make assumptions about how the environment executes the action (e.g., do NOT claim specific position/direction changes, do NOT assume what low-level actions exist). The execution semantics will be determined by the actual environment code, not by this description.
 
 3. **DSL example block** (labeled `dsl` or `example`):
 ```dsl
@@ -84,17 +102,14 @@ ACTION1(VALUE1); ACTION2(VALUE2); ACTION3
 ```
 Use actual terminal function names and values from your CFG.
 
-## Natural Language Description of Domain:
-{domain_description}
+##NLD:
+{nld}
 
-## Recipes for the domain:
-{recipes}
+##Domain information
+{domain_context}
 
 ## Domain semantics guidance (soft, not rigid):
-- Use the recipe file to infer meaningful value categories.
-- Distinguish raw resources (primitives) from crafted outputs (recipe keys), even if both appear as ITEM-like tokens.
-- Prefer argument/value sets that respect gameplay semantics: pickup/get usually targets raw resources, while craft targets recipe-defined outputs.
-- Avoid suggesting that primitives are crafted unless the recipe data explicitly supports that.
+- Use whatever facts are provided in the domain context to infer meaningful value categories.
 - It is fine to keep the grammar compact, but preserve semantic clarity in symbol naming and function argument choices.
 
 Return the CFG, terminal functions dictionary, and example program as specified above. Use ONLY UPPERCASE for all terminal functions and symbols. Choose meaningful UPPERCASE names for terminal functions based on the domain.

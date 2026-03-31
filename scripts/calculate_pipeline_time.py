@@ -10,7 +10,7 @@ This script helps determine appropriate SLURM time limits based on:
 """
 
 import argparse
-from typing import Dict, List
+from typing import Dict
 
 # Time estimates (in minutes) - adjust based on your observations
 # Updated with parallelization improvements:

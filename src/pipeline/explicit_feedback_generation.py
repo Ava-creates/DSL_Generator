@@ -1,14 +1,9 @@
 import os
 import json
-import argparse
-import random
 import subprocess
 import re
-from datetime import datetime
 from typing import List, Tuple, Dict, Any, Optional
 import time
-import ast
-import textwrap
 from vllm import SamplingParams
 from vllm import LLM as vLLM
 
@@ -407,7 +402,6 @@ print(evaluate())
                 if isinstance(parsed, (list, tuple)) and len(parsed) >= 2:
                     total_reward = parsed[0]
                     actions_count = parsed[1]
-                    grid_markdown = parsed[2] if len(parsed) > 2 else None
                 else:
                     raise ValueError(f"Unexpected parsed format: {parsed}")
 
@@ -514,7 +508,6 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
       + "\n\nReturn a corrected and improved version of the function and ."
     )
     
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     # Extract function name from signature for filename
     func_name_match = re.search(r'def\s+(\w+)', func_signature)
     func_name = func_name_match.group(1) if func_name_match else "function"
@@ -536,7 +529,6 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
     # Store best function from log as fallback (will evaluate only if LLM generation fails)
     best_log_func = None
     best_log_score = float('-inf')
-    best_log_runs_ok = False
     
     # Track feedback per iteration for logging
     feedback_entries = []
@@ -580,7 +572,7 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
                     b = re.sub(rf'def\s+{re.escape(func_name)}\s*\([^)]+\)', expected_sig, b, count=1)
                 else:
                     # If func_signature doesn't match, try to extract params from it
-                    sig_params_match = re.search(rf'def\s+\w+\s*\(([^)]+)\)', func_signature)
+                    sig_params_match = re.search(r'def\s+\w+\s*\(([^)]+)\)', func_signature)
                     if sig_params_match:
                         expected_params = sig_params_match.group(1)
                         # Replace the function signature with correct params
@@ -691,13 +683,13 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
             
             indented_body = '\n'.join(indented_body_lines)
             best_func = f"{sig_clean}\n{indented_body}"
-            print(f"    Prepended signature to generated function (with indentation)")
+            print("    Prepended signature to generated function (with indentation)")
         final_func = best_func
     else:
         # Generated function failed, use best function from log as fallback
         # Functions in log are already evaluated, so we can use their scores directly
         # Filter out functions with score -1 (runs_ok=False) and use the best one
-        print(f"   Generated function failed, using best function from log as fallback...")
+        print("   Generated function failed, using best function from log as fallback...")
         
         # Find the best function from log based on existing scores
         # funcs is already sorted by score (highest first) from parse_log_file
@@ -767,7 +759,7 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
                 
                 indented_body = '\n'.join(indented_body_lines)
                 best_log_func = f"{sig_clean}\n{indented_body}"
-                print(f"    Prepended signature to log function (with indentation)")
+                print("    Prepended signature to log function (with indentation)")
             
             print(f"   Using best function from log (score: {best_log_score:.4f}, already evaluated)")
             final_func = best_log_func
@@ -776,7 +768,7 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
             best_runs_ok = True  # Functions from log that pass the filter (score > -1) are working
         else:
             
-            print(f"   No working functions found. Creating stub function that returns []")
+            print("   No working functions found. Creating stub function that returns []")
             # Extract function name and parameters from signature
             func_name_match = re.search(r'def\s+(\w+)', func_signature)
             func_name = func_name_match.group(1) if func_name_match else "function"

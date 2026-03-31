@@ -1,14 +1,8 @@
 #from msilib import text
 from typing import List
-from collections import deque
 from .cfg_parser import CFGParser
-import numpy as np
 # from DSL_Generator.plotting import plot_watermark, plot_interactions_rewards
-import itertools
-import matplotlib.pyplot as plt
 from program_evaluator import ProgramEvaluator 
-import heapq
-import concurrent.futures
 import time
 from multiprocessing import Pool, cpu_count
 from craft import env_factory
@@ -18,11 +12,8 @@ from google import genai
 import ast
 import re
 import requests
-from funsearch.implementation.funsearch import FunSearch
-from funsearch.implementation import config as config_lib
 import pandas as pd
 import os
-import random
 import subprocess
 from vllm import LLM, SamplingParams
 import textwrap
@@ -324,7 +315,7 @@ def synthesis_baseline():
             # Remove leading `def make_stick(...):` if present and get body
             response_body = strip_function_def(response, "make_stick")
             # Re-wrap the body into a full def for evaluation (so eval() finds make_stick)
-            wrapped = f"def make_stick(env):\n" + textwrap.indent(response_body, "    ")
+            wrapped = "def make_stick(env):\n" + textwrap.indent(response_body, "    ")
             a, b, c, d = eval(wrapped)
             print(a, b, c, d)
             if a== -1 :  

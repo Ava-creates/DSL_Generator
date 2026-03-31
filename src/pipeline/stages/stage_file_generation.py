@@ -9,7 +9,6 @@ import sys
 import json
 import argparse
 import re
-from typing import Dict, Optional
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -19,6 +18,8 @@ from src.pipeline.cfg_to_funsearch_pipeline import (
     generate_function_prompt, generate_func_init, sanitize_function_name
 )
 from src.utils.pipeline_state import read_state, update_state
+from src.utils.status_manager import write_status
+from src.utils.config_loader import load_config
 
 # Import vLLM for LLM-based evaluation generation
 try:
@@ -38,6 +39,10 @@ def main():
     parser.add_argument('--skip_positive_grids', type=lambda x: x.lower() == 'true', default=False, help='When true, discard LLM-generated positive grids (only save negative/edge); useful for supplementing existing positives with new negative cases')
     
     args = parser.parse_args()
+    config = load_config()
+    positive_grids = int(config.get("positive_girds", config.get("positive_grids", 10)))
+    negative_grids = int(config.get("negative_grids", 4))
+    edge_grids = int(config.get("edge_grids", 1))
     
     # Read state file to get current DSL and function evolution rounds
     # This ensures consistency after DSL evolution
@@ -48,7 +53,7 @@ def main():
     # Use dsl_round from state file if not provided or if it doesn't match
     # This is critical after DSL evolution - the state file has the correct round
     if args.dsl_round != state_dsl_round:
-        print(f"[File Generation]  Warning: dsl_round mismatch!")
+        print("[File Generation]  Warning: dsl_round mismatch!")
         print(f"  Command line: {args.dsl_round}, State file: {state_dsl_round}")
         print(f"  Using state file value: {state_dsl_round}")
         args.dsl_round = state_dsl_round
@@ -59,7 +64,7 @@ def main():
         args.func_evolution_round = state_func_round
         print(f"[File Generation] Using func_evolution_round={args.func_evolution_round} from state file")
     elif args.func_evolution_round != state_func_round:
-        print(f"[File Generation]  Warning: func_evolution_round mismatch!")
+        print("[File Generation]  Warning: func_evolution_round mismatch!")
         print(f"  Command line: {args.func_evolution_round}, State file: {state_func_round}")
         print(f"  Using state file value: {state_func_round}")
         args.func_evolution_round = state_func_round
@@ -87,7 +92,6 @@ def main():
         cfg_data = json.load(f)
     cfg = cfg_data.get("cfg", "")
     terminals = cfg_data.get("terminals", {})
-    example = cfg_data.get("example", None)
     
     if not cfg:
         print(" Invalid CFG data: missing CFG string", file=sys.stderr)
@@ -97,7 +101,7 @@ def main():
     # This ensures we use complete terminals even if the file has incomplete ones
     # But we don't modify the file - it stays as-is
     from src.pipeline.integrated_pipeline import ensure_terminals_match_cfg
-    terminals = ensure_terminals_match_cfg(cfg, terminals, old_terminals=terminals, shared_vllm=shared_vllm)
+    terminals = ensure_terminals_match_cfg(cfg, terminals, shared_vllm=shared_vllm)
     
     if not terminals:
         print(" Invalid CFG data: no terminals found after extraction", file=sys.stderr)
@@ -119,8 +123,8 @@ def main():
         
         if not func0_exists:
             print(f"[File Generation]  No func0 files found for DSL round {args.dsl_round}")
-            print(f"  This should be the initial file generation after DSL evolution.")
-            print(f"  Forcing func_evolution_round=0 to create func0 files")
+            print("  This should be the initial file generation after DSL evolution.")
+            print("  Forcing func_evolution_round=0 to create func0 files")
             args.func_evolution_round = 0
     
     # Load specification
@@ -170,7 +174,10 @@ def main():
             shared_vllm=shared_vllm,
             grid_prompt_path=args.grid_prompt,
             require_test_type=args.require_test_type,
-            skip_positive_grids=args.skip_positive_grids
+            skip_positive_grids=args.skip_positive_grids,
+            positive_grids=positive_grids,
+            negative_grids=negative_grids,
+            edge_grids=edge_grids,
         )
         func_files[func_name] = func_file
         func_signatures[func_name] = func_signature
@@ -187,7 +194,7 @@ def main():
         )
         func_init_files[func_name] = func_init_file
     
-    # Save stage completion marker (legacy flat path + grouped folder path)
+    # Save stage completion marker with DSL versioning
     stage_status = {
         "stage": "file_generation",
         "status": "completed",
@@ -197,19 +204,19 @@ def main():
         "func_init_files": func_init_files,
         "func_signatures": func_signatures
     }
-    status_file = os.path.join(args.experiment_dir, "stage_file_generation_status.json")
-    status_dir_file = os.path.join(args.experiment_dir, "status", "file_generation", "status.json")
-    os.makedirs(os.path.dirname(status_dir_file), exist_ok=True)
-    for path in (status_file, status_dir_file):
-        with open(path, 'w') as f:
-            json.dump(stage_status, f, indent=2)
+    # Write to versioned location: status/file_generation/dsl{N}/status.json
+    write_status(
+        args.experiment_dir,
+        args.dsl_round,
+        "file_generation",
+        stage_status
+    )
     
     print(f"\n Generated files for {len(terminals)} functions")
     
     # Read state file to get terminal function count
     state = read_state(args.experiment_dir)
     num_terminals = len(terminals)
-    test_tasks_total = state.get("test_tasks_total", 0)  # Preserve test tasks total
     
     # Update state with current terminal count and reset counters
     update_state(
@@ -224,7 +231,7 @@ def main():
     
     # Chaining will be handled by the SLURM script after this Python script completes
     print(f"\n[Chaining] State file updated with {num_terminals} terminal functions.")
-    print(f"  SLURM script will handle chaining to FunSearch jobs.")
+    print("  SLURM script will handle chaining to FunSearch jobs.")
     
     return 0
 

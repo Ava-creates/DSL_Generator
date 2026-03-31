@@ -1,0 +1,41 @@
+Domain: VirtualHome household activity simulation using the Evolving Graph backend (Python-only), not Unity rendering.
+
+World model:
+- The environment is a graph.
+- Nodes represent rooms, objects, and the character.
+- Edges represent relations (e.g., INSIDE, ON, CLOSE, HOLDS_LH, HOLDS_RH, FACING, BETWEEN).
+- Nodes have properties (e.g., CAN_OPEN, GRABBABLE, HAS_SWITCH, RECIPIENT, MOVABLE) and states (e.g., OPEN/CLOSED, ON/OFF, CLEAN/DIRTY, SITTING, LYING, PLUGGED_IN/PLUGGED_OUT).
+
+Program in the current world model that we want to abstract away from:
+- A program is an ordered sequence of actions.
+- Canonical action line format:
+  [ACTION] <object_name> (instance_id) [<second_object_name> (instance_id)]
+- Actions have fixed arity (0, 1, or 2 arguments).
+- Execution checks preconditions; if valid, applies postconditions that modify graph state.
+
+Important ID semantics:
+- Script instance IDs are symbolic references in script text.
+- Graph node IDs are concrete IDs in the runtime graph.
+- A mapping/preprocessing layer resolves script references to graph node IDs.
+
+Available actions for graph scripts:
+CLOSE, DRINK, FIND, WALK, GRAB, LOOKAT, LOOKAT_SHORT, LOOKAT_MEDIUM, LOOKAT_LONG,
+OPEN, POINTAT, PUTBACK, PUTIN, PUTOBJBACK, RUN, SIT, STANDUP, SWITCHOFF, SWITCHON,
+TOUCH, TURNTO, WATCH, WIPE, PUTON, PUTOFF, GREET, DROP, READ, LIE, POUR, TYPE, PUSH,
+PULL, MOVE, WASH, RINSE, SCRUB, SQUEEZE, PLUGIN, PLUGOUT, CUT, EAT, SLEEP, WAKEUP, RELEASE.
+
+Tasks in the enviornemnt - 
+- clean room
+- do laundry
+- interact
+- make drinks
+- cook
+
+DSL objective:
+- Build a higher-level, human-readable DSL for household tasks. The tasks should be much higher level than the tasks provided by virtual home already. 
+- Do NOT expose low-level operation-style terminals such as navigation/manipulation primitives (e.g., GO_TO, PICK_UP, OPEN_DOOR, CLOSE_DOOR, TURN_ON, TURN_OFF).
+- Prefer goal/capability terminals that can compile to multiple primitives (e.g., PREPARE_DRINK, DO_LAUNDRY_LOAD, CLEAN_SURFACE_AREA, SET_TABLE).
+- Compile DSL deterministically into valid VirtualHome action lines.
+- Validate action names, argument arity, and object references before output.
+- Support object aliases/declarations and optional preconditions.
+- Target graph executability only (no Unity-specific rendering/runtime assumptions).

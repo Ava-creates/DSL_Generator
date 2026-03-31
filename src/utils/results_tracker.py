@@ -15,7 +15,8 @@ import tempfile
 import shutil
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Dict, List, Optional, Tuple
+from matplotlib.lines import Line2D
+from typing import Dict, List, Optional
 from collections import defaultdict
 from datetime import datetime
 
@@ -191,8 +192,9 @@ class ResultsTracker:
             self.interactions["program_synthesis"]
         )
         
-        # Find best reward so far for this task
-        best_reward = self._get_best_reward(task)
+        # Find best reward so far for this task within this CFG version.
+        # This avoids carry-over across DSL evolutions (different cfg_version).
+        best_reward = self._get_best_reward(task, cfg_version=cfg_version)
         if reward > best_reward:
             best_reward = reward
         
@@ -265,16 +267,19 @@ class ResultsTracker:
             "program_synthesis": 0
         }
     
-    def _get_best_reward(self, task: str) -> float:
+    def _get_best_reward(self, task: str, cfg_version: Optional[int] = None) -> float:
         """Get the best reward achieved so far for a task.
         
         Args:
             task: Task name
+            cfg_version: Optional CFG version to scope the best-reward lookup
             
         Returns:
             Best reward so far (or -inf if no results)
         """
         task_results = [r for r in self.results if r["task"] == task]
+        if cfg_version is not None:
+            task_results = [r for r in task_results if r.get("cfg_version") == cfg_version]
         if not task_results:
             return float('-inf')
         return max(r["best_reward_so_far"] for r in task_results)
@@ -297,6 +302,12 @@ class ResultsTracker:
             List of all result dictionaries
         """
         return self.results.copy()
+
+    def _require_dsl_round(self, dsl_round: Optional[int]) -> int:
+        """Require explicit DSL round for plotting APIs."""
+        if dsl_round is None:
+            raise ValueError("dsl_round is required for plotting; backward-compatible omitted mode was removed")
+        return int(dsl_round)
     
     def plot_reward_vs_interactions(
         self,
@@ -310,9 +321,11 @@ class ResultsTracker:
         Args:
             output_file: Optional path to save plot (auto-generated if None)
             tasks: Optional list of tasks to plot (if None, plots all tasks)
-            dsl_round: Optional DSL round number for filename
+            dsl_round: DSL round number (required)
             func_evolution_round: Optional function evolution round number for filename
         """
+        dsl_round = self._require_dsl_round(dsl_round)
+
         if not self.results:
             print("No results to plot")
             return
@@ -323,9 +336,8 @@ class ResultsTracker:
         else:
             filtered_results = self.results
         
-        # Filter by dsl_round if specified
-        if dsl_round is not None:
-            filtered_results = [r for r in filtered_results if r.get("cfg_version") == dsl_round]
+        # Filter by required dsl_round
+        filtered_results = [r for r in filtered_results if r.get("cfg_version") == dsl_round]
         
         # Filter by func_evolution_round if specified (when plotting in a specific func round folder)
         # Show all rounds up to and including the specified round (e.g., func1 shows func0 and func1)
@@ -392,10 +404,18 @@ class ResultsTracker:
         
         # Create figure
         fig, ax = plt.subplots(figsize=(12, 8))
-        
-        # Color palette for different func_evolution_rounds
-        # Use distinct colors: blue for func0, red for func1, green for func2, etc.
-        func_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+
+        # Round-specific success/fail color pairs for clearer evolution tracking.
+        success_palette = ['#1f77b4', '#2ca02c', '#9467bd', '#17becf', '#8c564b']
+        fail_palette = ['#ff7f0e', '#d62728', '#e377c2', '#bcbd22', '#7f7f7f']
+
+        def _series_color(func_round, is_success: bool) -> str:
+            if func_round is None:
+                return '#4c78a8' if is_success else '#f58518'
+            idx = int(func_round) % len(success_palette)
+            return success_palette[idx] if is_success else fail_palette[idx]
+
+        round_status_seen = set()
         
         # Plot each task
         for task_idx, (task, cfg_data) in enumerate(task_cfg_func_data.items()):
@@ -417,29 +437,19 @@ class ResultsTracker:
                         interactions = [r["total_interactions"] for r in results_sorted]
                     best_rewards = [r["best_reward_so_far"] for r in results_sorted]
                     
-                    # Get color for this func_evolution_round
-                    # If plotting within a specific func_evolution_round, use different colors for different rounds
-                    # to show progression (func0, func1, etc.)
+                    # Color by (func round, success/fail).
+                    series_success = any(bool(r.get("success", False)) for r in results_sorted)
+                    color = _series_color(func_round, series_success)
+                    success_label = "success" if series_success else "unsuccessful"
+                    round_status_seen.add((func_round, series_success))
+
+                    # Keep linestyle encoding by function-evolution round.
+                    linestyle = '-' if func_round == 0 else '--' if func_round == 1 else '-.' if func_round == 2 else ':'
+                    func_label = f"func{func_round}" if func_round is not None else "func_init"
                     if func_evolution_round is not None:
-                        # Use different colors for different func rounds to show progression
-                        if func_round is None:
-                            color = '#808080'  # Gray for initial testing
-                        else:
-                            color = func_colors[func_round % len(func_colors)]
-                        # Use different linestyles for different rounds
-                        linestyle = '-' if func_round == 0 else '--' if func_round == 1 else '-.' if func_round == 2 else ':'
-                        func_label = f"func{func_round}" if func_round is not None else "func_init"
-                        label = f"{task} ({func_label})"  # Show task name and func round
+                        label = f"{task} ({func_label}, {success_label})"
                     else:
-                        # Use gray for None (initial testing), otherwise use color palette
-                        if func_round is None:
-                            color = '#808080'  # Gray for initial testing
-                        else:
-                            color = func_colors[func_round % len(func_colors)]
-                        # Plot line with different linestyle for different func rounds
-                        linestyle = '-' if func_round == 0 else '--' if func_round == 1 else '-.' if func_round == 2 else ':'
-                        func_label = f"func{func_round}" if func_round is not None else "func_init"
-                        label = f"{task} (CFG v{cfg_version + 1}, {func_label})"
+                        label = f"{task} (CFG v{cfg_version + 1}, {func_label}, {success_label})"
                     ax.plot(interactions, best_rewards, marker='o', label=label, 
                            color=color, linewidth=2, markersize=6, linestyle=linestyle)
         
@@ -447,26 +457,39 @@ class ResultsTracker:
         ax.set_ylabel("Best Reward So Far", fontsize=12)
         
         # Create title with evolution info
-        title = "Best Reward vs Total Interactions"
-        if dsl_round is not None:
-            title += f" - DSL Round {dsl_round + 1}"
+        title = f"Best Reward vs Total Interactions - DSL Round {dsl_round + 1}"
         if func_evolution_round is not None:
             # Show 0-indexed number (func_evolution_round=0 shows "Func Evolution 0")
             title += f", Func Evolution {func_evolution_round}"
         
         ax.set_title(title, fontsize=14, fontweight='bold')
         ax.grid(True, alpha=0.3)
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9)
+
+        # Keep series legend and add separate color-key legend for round/status mapping.
+        task_legend = ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9, title="Task Series")
+        ax.add_artist(task_legend)
+
+        color_key_handles = []
+        for func_round, is_success in sorted(
+            round_status_seen,
+            key=lambda x: ((-1 if x[0] is None else int(x[0])), 0 if x[1] else 1),
+        ):
+            color = _series_color(func_round, is_success)
+            round_label = f"func{func_round}" if func_round is not None else "func_init"
+            status_label = "success" if is_success else "fail"
+            color_key_handles.append(
+                Line2D([0], [0], color=color, marker='o', linestyle='-', linewidth=2,
+                       markersize=6, label=f"{round_label} {status_label}")
+            )
+        if color_key_handles:
+            ax.legend(handles=color_key_handles, loc='lower right', fontsize=8, title="Color Key")
         
         plt.tight_layout()
         
         # Create subdirectory for this DSL round and function evolution round
-        if dsl_round is not None:
-            func_round_str = f"func{func_evolution_round}" if func_evolution_round is not None else "func_init"
-            plot_dir = os.path.join(self.results_dir, f"dsl{dsl_round}", func_round_str)
-            os.makedirs(plot_dir, exist_ok=True)
-        else:
-            plot_dir = self.results_dir
+        func_round_str = f"func{func_evolution_round}" if func_evolution_round is not None else "func_init"
+        plot_dir = os.path.join(self.results_dir, f"dsl{dsl_round}", func_round_str)
+        os.makedirs(plot_dir, exist_ok=True)
         
         # Generate filename with version numbers
         if output_file is None:
@@ -482,9 +505,7 @@ class ResultsTracker:
         for task, cfg_data in task_cfg_func_data.items():
             # Create figure for this task
             fig, ax = plt.subplots(figsize=(10, 6))
-            
-            # Color palette for different func_evolution_rounds
-            func_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+            round_status_seen_task = set()
             
             # Plot each CFG version and func_evolution_round for this task
             for cfg_version, func_data in cfg_data.items():
@@ -505,29 +526,19 @@ class ResultsTracker:
                         interactions = [r["total_interactions"] for r in results_sorted]
                     best_rewards = [r["best_reward_so_far"] for r in results_sorted]
                     
-                    # Get color for this func_evolution_round
-                    # If plotting within a specific func_evolution_round, use different colors for different rounds
-                    # to show progression (func0, func1, etc.)
+                    # Color by (func round, success/fail).
+                    series_success = any(bool(r.get("success", False)) for r in results_sorted)
+                    color = _series_color(func_round, series_success)
+                    success_label = "success" if series_success else "unsuccessful"
+                    round_status_seen_task.add((func_round, series_success))
+
+                    # Keep linestyle encoding by function-evolution round.
+                    linestyle = '-' if func_round == 0 else '--' if func_round == 1 else '-.' if func_round == 2 else ':'
+                    func_label = f"func{func_round}" if func_round is not None else "func_init"
                     if func_evolution_round is not None:
-                        # Use different colors for different func rounds to show progression
-                        if func_round is None:
-                            color = '#808080'  # Gray for initial testing
-                        else:
-                            color = func_colors[func_round % len(func_colors)]
-                        # Use different linestyles for different rounds
-                        linestyle = '-' if func_round == 0 else '--' if func_round == 1 else '-.' if func_round == 2 else ':'
-                        func_label = f"func{func_round}" if func_round is not None else "func_init"
-                        label = f"{func_label}"  # Show func round label
+                        label = f"{func_label}, {success_label}"
                     else:
-                        # Use gray for None (initial testing), otherwise use color palette
-                        if func_round is None:
-                            color = '#808080'  # Gray for initial testing
-                        else:
-                            color = func_colors[func_round % len(func_colors)]
-                        # Plot line with different linestyle for different func rounds
-                        linestyle = '-' if func_round == 0 else '--' if func_round == 1 else '-.' if func_round == 2 else ':'
-                        func_label = f"func{func_round}" if func_round is not None else "func_init"
-                        label = f"CFG v{cfg_version + 1}, {func_label}"
+                        label = f"CFG v{cfg_version + 1}, {func_label}, {success_label}"
                     ax.plot(interactions, best_rewards, marker='o', label=label, 
                            color=color, linewidth=2, markersize=6, linestyle=linestyle)
             
@@ -535,19 +546,34 @@ class ResultsTracker:
             ax.set_ylabel("Best Reward So Far", fontsize=12, fontweight='bold')
             
             # Create title with evolution info
-            task_title = f"Reward vs Interactions: {task}"
-            if dsl_round is not None:
-                task_title += f" - DSL Round {dsl_round + 1}"
+            task_title = f"Reward vs Interactions: {task} - DSL Round {dsl_round + 1}"
             if func_evolution_round is not None:
                 # Show 0-indexed number (func_evolution_round=0 shows "Func Evolution 0")
                 task_title += f", Func Evolution {func_evolution_round}"
             
             ax.set_title(task_title, fontsize=14, fontweight='bold')
             ax.grid(True, alpha=0.3, linestyle='--')
-            # Show legend if there are multiple series (multiple CFG versions or func rounds)
+            # Show series legend if there are multiple series.
             total_series = sum(len(func_data) for func_data in cfg_data.values())
             if total_series > 1:
-                ax.legend(fontsize=10)
+                series_legend = ax.legend(fontsize=9, loc='upper left', title="Series")
+                ax.add_artist(series_legend)
+
+            # Add compact color key legend for round/status.
+            color_key_handles_task = []
+            for func_round, is_success in sorted(
+                round_status_seen_task,
+                key=lambda x: ((-1 if x[0] is None else int(x[0])), 0 if x[1] else 1),
+            ):
+                color = _series_color(func_round, is_success)
+                round_label = f"func{func_round}" if func_round is not None else "func_init"
+                status_label = "success" if is_success else "fail"
+                color_key_handles_task.append(
+                    Line2D([0], [0], color=color, marker='o', linestyle='-', linewidth=2,
+                           markersize=6, label=f"{round_label} {status_label}")
+                )
+            if color_key_handles_task:
+                ax.legend(handles=color_key_handles_task, fontsize=8, loc='lower right', title="Color Key")
             
             # Set y-axis to start at 0 if all rewards are non-negative
             all_rewards = []
@@ -577,16 +603,28 @@ class ResultsTracker:
         
         Args:
             output_file: Optional path to save plot (auto-generated if None)
-            dsl_round: Optional DSL round number for filename
+            dsl_round: DSL round number (required)
             func_evolution_round: Optional function evolution round number for filename
         """
+        dsl_round = self._require_dsl_round(dsl_round)
+
         if not self.results:
             print("No results to plot")
+            return
+
+        # Filter to the requested DSL round and function-evolution round.
+        filtered_results = self.results
+        filtered_results = [r for r in filtered_results if r.get("cfg_version") == dsl_round]
+        if func_evolution_round is not None:
+            filtered_results = [r for r in filtered_results if r.get("func_evolution_round") == func_evolution_round]
+
+        if not filtered_results:
+            print("No results to plot after filtering")
             return
         
         # Group by CFG version
         cfg_data = defaultdict(list)
-        for result in self.results:
+        for result in filtered_results:
             cfg_version = result["cfg_version"]
             cfg_data[cfg_version].append(result)
         
@@ -626,9 +664,7 @@ class ResultsTracker:
         ax.set_ylabel("Best Reward So Far (All Tasks)", fontsize=12)
         
         # Create title with evolution info
-        title = "Best Reward vs Total Interactions (All Tasks Combined)"
-        if dsl_round is not None:
-            title += f" - DSL Round {dsl_round + 1}"
+        title = f"Best Reward vs Total Interactions (All Tasks Combined) - DSL Round {dsl_round + 1}"
         if func_evolution_round is not None:
             # Show 0-indexed number (func_evolution_round=0 shows "Func Evolution 0")
             title += f", Func Evolution {func_evolution_round}"
@@ -640,12 +676,9 @@ class ResultsTracker:
         plt.tight_layout()
         
         # Create subdirectory for this DSL round and function evolution round
-        if dsl_round is not None:
-            func_round_str = f"func{func_evolution_round}" if func_evolution_round is not None else "func_init"
-            plot_dir = os.path.join(self.results_dir, f"dsl{dsl_round}", func_round_str)
-            os.makedirs(plot_dir, exist_ok=True)
-        else:
-            plot_dir = self.results_dir
+        func_round_str = f"func{func_evolution_round}" if func_evolution_round is not None else "func_init"
+        plot_dir = os.path.join(self.results_dir, f"dsl{dsl_round}", func_round_str)
+        os.makedirs(plot_dir, exist_ok=True)
         
         # Generate filename with version numbers
         if output_file is None:

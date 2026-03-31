@@ -9,8 +9,6 @@ import sys
 import json
 import argparse
 import glob
-import re
-from typing import Dict, Optional
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -31,10 +29,9 @@ from src.utils.results_tracker import (
     plot_baseline_reward_vs_interactions,
 )
 from src.utils.pipeline_state import (
-    decrement_function_implementation,
-    read_state,
-    update_state
+    decrement_function_implementation
 )
+from src.utils.status_manager import read_status, write_function_status
 
 # Import vLLM for shared instance
 try:
@@ -71,7 +68,7 @@ def main():
     
     # Use dsl_round from state file if not provided or if it doesn't match
     if args.dsl_round != state_dsl_round:
-        print(f"[Implement CFG]  Warning: dsl_round mismatch!")
+        print("[Implement CFG]  Warning: dsl_round mismatch!")
         print(f"  Command line: {args.dsl_round}, State file: {state_dsl_round}")
         print(f"  Using state file value: {state_dsl_round}")
         args.dsl_round = state_dsl_round
@@ -82,7 +79,7 @@ def main():
         args.func_evolution_round = state_func_round
         print(f"[Implement CFG] Using func_evolution_round={args.func_evolution_round} from state file")
     elif args.func_evolution_round != state_func_round:
-        print(f"[Implement CFG]  Warning: func_evolution_round mismatch!")
+        print("[Implement CFG]  Warning: func_evolution_round mismatch!")
         print(f"  Command line: {args.func_evolution_round}, State file: {state_func_round}")
         print(f"  Using state file value: {state_func_round}")
         args.func_evolution_round = state_func_round
@@ -99,7 +96,6 @@ def main():
         cfg_data = json.load(f)
     cfg = cfg_data.get("cfg", "")
     terminals = cfg_data.get("terminals", {})
-    example = cfg_data.get("example", None)
     
     if not cfg or not terminals:
         print(" Invalid CFG data", file=sys.stderr)
@@ -112,13 +108,10 @@ def main():
     description = terminals[args.function_name]
     
     # Load file generation status to get func_files and func_init_files
-    file_gen_status_path = os.path.join(args.experiment_dir, "stage_file_generation_status.json")
-    if not os.path.exists(file_gen_status_path):
-        print(f" File generation status not found: {file_gen_status_path}", file=sys.stderr)
+    file_gen_status = read_status(args.experiment_dir, args.dsl_round, "file_generation")
+    if file_gen_status is None:
+        print(" File generation status not found at dsl<round>/file_generation/status", file=sys.stderr)
         return 1
-    
-    with open(file_gen_status_path, 'r') as f:
-        file_gen_status = json.load(f)
     
     func_files = file_gen_status.get("func_files", {})
     func_init_files = file_gen_status.get("func_init_files", {})
@@ -219,13 +212,13 @@ def main():
             except ImportError:
                 pass  # torch not available for diagnostics
             
-            print(f"\n  Possible causes:", file=sys.stderr)
-            print(f"    1. GPU memory fragmentation (previous operations left fragmented memory)", file=sys.stderr)
+            print("\n  Possible causes:", file=sys.stderr)
+            print("    1. GPU memory fragmentation (previous operations left fragmented memory)", file=sys.stderr)
             print(f"    2. Insufficient free GPU memory (need ~{0.75 * 4 * 80:.0f}GB for 4 GPUs at 75% utilization)", file=sys.stderr)
-            print(f"    3. CUDA context issues from previous operations", file=sys.stderr)
-            print(f"    4. Another process/job using the same GPUs", file=sys.stderr)
-            print(f"\n  Failing stage to prevent multiple instances from being created (which would cause OOM)", file=sys.stderr)
-            print(f"  Shared instance is required to avoid GPU memory issues when running FunSearch and explicit feedback sequentially", file=sys.stderr)
+            print("    3. CUDA context issues from previous operations", file=sys.stderr)
+            print("    4. Another process/job using the same GPUs", file=sys.stderr)
+            print("\n  Failing stage to prevent multiple instances from being created (which would cause OOM)", file=sys.stderr)
+            print("  Shared instance is required to avoid GPU memory issues when running FunSearch and explicit feedback sequentially", file=sys.stderr)
             return 1
         except Exception as e:
             print(f" ERROR: Unexpected error creating shared vLLM instance: {e}", file=sys.stderr)
@@ -239,7 +232,8 @@ def main():
     # Results directories
     results_dir = os.path.join(args.experiment_dir, "results", "funsearch")
     os.makedirs(results_dir, exist_ok=True)
-    explicit_feedback_dir = os.path.join(args.experiment_dir, "explicit_feedback")
+    dsl_folder = f"dsl{args.dsl_round}" if args.dsl_round is not None else "dsl_unknown"
+    explicit_feedback_dir = os.path.join(args.experiment_dir, "explicit_feedback", dsl_folder)
     os.makedirs(explicit_feedback_dir, exist_ok=True)
     
     func_evolution_round = args.func_evolution_round if args.func_evolution_round is not None else 0
@@ -277,7 +271,8 @@ def main():
             function_to_implement=func_file,
             function_init=func_init_file,
             spec_file=args.spec_file,
-            experiment_dir=results_dir
+            experiment_dir=results_dir,
+            grid_lookup_experiment_dir=args.experiment_dir,
         )
         
         final_funsearch_steps = results_tracker.interactions.get("funsearch", 0)
@@ -286,11 +281,6 @@ def main():
         print(f"[{args.function_name}]  Completed FunSearch (env steps: {steps_taken})")
         
         # Save FunSearch status
-        status_file = os.path.join(args.experiment_dir, f"stage_funsearch_{args.function_name}_status.json")
-        status_dir_file = os.path.join(
-            args.experiment_dir, "status", "funsearch", f"{args.function_name}.json"
-        )
-        os.makedirs(os.path.dirname(status_dir_file), exist_ok=True)
         funsearch_status = {
             "stage": "funsearch",
             "function_name": args.function_name,
@@ -299,9 +289,7 @@ def main():
             "func_evolution_round": func_evolution_round,
             "env_steps": steps_taken
         }
-        for path in (status_file, status_dir_file):
-            with open(path, 'w') as f:
-                json.dump(funsearch_status, f, indent=2)
+        write_function_status(args.experiment_dir, args.dsl_round, "funsearch", args.function_name, funsearch_status)
 
         # Plot FunSearch reward vs interactions for this function
         try:
@@ -327,11 +315,6 @@ def main():
         traceback.print_exc()
         
         # Save failure status
-        status_file = os.path.join(args.experiment_dir, f"stage_funsearch_{args.function_name}_status.json")
-        status_dir_file = os.path.join(
-            args.experiment_dir, "status", "funsearch", f"{args.function_name}.json"
-        )
-        os.makedirs(os.path.dirname(status_dir_file), exist_ok=True)
         funsearch_status = {
             "stage": "funsearch",
             "function_name": args.function_name,
@@ -340,9 +323,7 @@ def main():
             "dsl_round": args.dsl_round,
             "func_evolution_round": func_evolution_round
         }
-        for path in (status_file, status_dir_file):
-            with open(path, 'w') as f:
-                json.dump(funsearch_status, f, indent=2)
+        write_function_status(args.experiment_dir, args.dsl_round, "funsearch", args.function_name, funsearch_status)
         
         return 1
     
@@ -358,7 +339,6 @@ def main():
         print(f"   Warning: Could not read FunSearch result file: {e}", file=sys.stderr)
     
     try:
-        current_func_file = func_file
         current_func_code = funsearch_result_code  # Start with FunSearch result
         
         # Run multiple iterations
@@ -399,7 +379,7 @@ def main():
         # Final fallback: if everything failed, use FunSearch result
         if final_func is None and funsearch_result_code:
             final_func = funsearch_result_code
-            print(f"   Using FunSearch result as final function (explicit feedback failed)")
+            print("   Using FunSearch result as final function (explicit feedback failed)")
         
         if final_func:
             # Save final function
@@ -442,11 +422,6 @@ def main():
                         pass
             
             # Save explicit feedback status
-            status_file = os.path.join(args.experiment_dir, f"stage_explicit_feedback_{args.function_name}_status.json")
-            status_dir_file = os.path.join(
-                args.experiment_dir, "status", "explicit_feedback", f"{args.function_name}.json"
-            )
-            os.makedirs(os.path.dirname(status_dir_file), exist_ok=True)
             explicit_fb_status = {
                 "stage": "explicit_feedback",
                 "function_name": args.function_name,
@@ -454,9 +429,7 @@ def main():
                 "dsl_round": args.dsl_round,
                 "func_evolution_round": func_evolution_round
             }
-            for path in (status_file, status_dir_file):
-                with open(path, 'w') as f:
-                    json.dump(explicit_fb_status, f, indent=2)
+            write_function_status(args.experiment_dir, args.dsl_round, "explicit_feedback", args.function_name, explicit_fb_status)
             
             print(f"[{args.function_name}]  Completed explicit feedback ({args.num_iterations} iterations)")
             
@@ -473,7 +446,7 @@ def main():
                 feedback_file = os.path.join(explicit_feedback_dir, feedback_filename)
                 
                 explicit_plot_dir = os.path.join(
-                    args.experiment_dir, "results_tracking", "explicit_feedback"
+                    args.experiment_dir, "results_tracking", "explicit_feedback", dsl_folder
                 )
                 if os.path.exists(feedback_file):
                     plot_explicit_feedback_reward_vs_interactions(
@@ -488,7 +461,7 @@ def main():
                 log_file = find_funsearch_log_file(args.function_name, results_dir)
                 if log_file and os.path.exists(feedback_file):
                     baseline_plot_dir = os.path.join(
-                        args.experiment_dir, "results_tracking", "baseline"
+                        args.experiment_dir, "results_tracking", "baseline", dsl_folder
                     )
                     plot_baseline_reward_vs_interactions(
                         funsearch_log_file=log_file,
@@ -500,7 +473,7 @@ def main():
                 print(f"   Failed to plot explicit feedback/baseline metrics: {plot_error}")
             
             # Decrement counter (both FunSearch and Explicit Feedback are part of implement_cfg)
-            print(f"\n[Chaining] Decrementing function implementation counter...")
+            print("\n[Chaining] Decrementing function implementation counter...")
             implementation_remaining = decrement_function_implementation(args.experiment_dir)
             print(f"  Function implementations remaining: {implementation_remaining}")
             
@@ -532,7 +505,7 @@ def main():
         traceback.print_exc()
         
         # Extract best function from FunSearch log file as fallback
-        print(f"   Extracting best function from FunSearch log as fallback...")
+        print("   Extracting best function from FunSearch log as fallback...")
         best_func_from_log = None
         
         try:
@@ -609,7 +582,7 @@ def main():
                     
                     print(f"   Extracted best function from log (score: {best_log_score:.4f})")
                 else:
-                    print(f"   No functions found in log file")
+                    print("   No functions found in log file")
             else:
                 print(f"   Could not find log file for {args.function_name}")
         except Exception as extract_error:
@@ -622,7 +595,7 @@ def main():
         final_func_to_save = best_func_from_log if best_func_from_log else funsearch_result_code
         
         if final_func_to_save:
-            print(f"  Saving best function as final function (explicit feedback failed)...")
+            print("  Saving best function as final function (explicit feedback failed)...")
             final_functions_dir = os.path.join(args.experiment_dir, "final_functions")
             os.makedirs(final_functions_dir, exist_ok=True)
             
@@ -644,11 +617,6 @@ def main():
                 print(f"   Failed to save final function: {save_error}", file=sys.stderr)
         
         # Save failure status
-        status_file = os.path.join(args.experiment_dir, f"stage_explicit_feedback_{args.function_name}_status.json")
-        status_dir_file = os.path.join(
-            args.experiment_dir, "status", "explicit_feedback", f"{args.function_name}.json"
-        )
-        os.makedirs(os.path.dirname(status_dir_file), exist_ok=True)
         explicit_fb_status = {
             "stage": "explicit_feedback",
             "function_name": args.function_name,
@@ -657,9 +625,7 @@ def main():
             "dsl_round": args.dsl_round,
             "func_evolution_round": func_evolution_round
         }
-        for path in (status_file, status_dir_file):
-            with open(path, 'w') as f:
-                json.dump(explicit_fb_status, f, indent=2)
+        write_function_status(args.experiment_dir, args.dsl_round, "explicit_feedback", args.function_name, explicit_fb_status)
         
         # Still decrement counters
         implementation_remaining = decrement_function_implementation(args.experiment_dir)

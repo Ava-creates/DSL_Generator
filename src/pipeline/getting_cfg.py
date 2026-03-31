@@ -1,14 +1,11 @@
 from google import genai
 from typing import Tuple, Dict, Optional as Opt
-import os
 import sys
 import re
 import json
 import ast
+import os
 from pydantic import BaseModel
-from enum import Enum
-from vllm.sampling_params import StructuredOutputsParams
-from vllm.sampling_params import GuidedDecodingParams
 
 
 
@@ -25,122 +22,49 @@ from vllm import LLM as vLLM
 
 
 
-def CFGPromptBuilder():
+def CFGPromptBuilder(
+    nld_path: str = "prompt_specifications/nld.txt",
+    recipes_path: Opt[str] = None,
+    prompt_template_path: str = "prompt_specifications/cfg_generator.txt",
+    domain_context_template_path: Opt[str] = None,
+):
     """Builds the prompt string given domain description .
 
     This isolates prompt formatting so changes to wording don't affect other code.
     """
-    with open("prompt_specifications/nld.txt", 'r') as f:
-        domain_description = f.read()
+    nld_text = ""
+    if nld_path and os.path.exists(nld_path):
+        with open(nld_path, 'r', encoding='utf-8') as f:
+            nld_text = f.read().strip()
 
-    with open("craft/resources/recipes.yaml", 'r') as f:
-        recipes = f.read()
+    recipes_text = ""
+    if recipes_path and os.path.exists(recipes_path):
+        with open(recipes_path, 'r', encoding='utf-8') as f:
+            recipes_text = f.read().strip()
 
-    TEMPLATE = '''
-You are a context-free grammar (CFG) designer. Given the domain specified below in natural language, return a CFG in BNF format that can be used to solve this domain.
+    domain_context = ""
+    if domain_context_template_path:
+        if not os.path.exists(domain_context_template_path):
+            raise FileNotFoundError(f"Domain context template not found: {domain_context_template_path}")
+        with open(domain_context_template_path, 'r', encoding='utf-8') as f:
+            domain_context_template = f.read()
+        domain_context = domain_context_template.format(
+            nld=nld_text,
+            recipes=recipes_text,
+        ).strip()
 
-Only include terminal functions that can be implemented as a pure action-sequence generator: a function that returns a list of primitive actions (0-4). Do NOT include terminals that require external memory, cross-function state sharing, or knowledge accumulation . If a function cannot be expressed as a list of primitive actions without side effects, omit it from the CFG.
+    if not domain_context:
+        domain_context = "No additional domain information provided."
 
-## CRITICAL RULES - Follow Exactly:
+    if not os.path.exists(prompt_template_path):
+        raise FileNotFoundError(f"CFG prompt template not found: {prompt_template_path}")
+    with open(prompt_template_path, 'r', encoding='utf-8') as f:
+        template = f.read()
 
-1. **ALL SYMBOLS MUST BE UPPERCASE**: Use UPPERCASE for ALL terminal functions, terminal symbols, and non-terminals. NEVER use lowercase or mixed case.
-
-2. **Terminal Functions**:
-   - Terminal functions are actions that appear directly in productions (e.g., ACTION1, ACTION2, ACTION3)
-   - Use UPPERCASE names for all terminal functions
-   - If a function takes no arguments, use it directly: `statement ::= ACTION1`
-   - If a function takes arguments, use: `statement ::= ACTION1 LPAR PARAM RPAR`
-   - NEVER create rules like `ACTION1 ::= 'action1'` or `ACTION1 ::= 'ACTION1'` - terminal functions appear directly in productions, not as separate rules
-
-3. **Function Arguments Format**:
-   - Use space-separated format: `FUNC LPAR ARG RPAR`
-   - Example: `ACTION1 LPAR PARAM RPAR` (correct)
-   - Example: `ACTION2 LPAR PARAM1 COMMA PARAM2 RPAR` (correct for multiple args)
-   - NEVER use literal parentheses like `ACTION1(PARAM)` - always use `ACTION1 LPAR PARAM RPAR`
-
-4. **Special Symbols** (single characters only):
-   - Define punctuation as: `SYMBOL ::= 'char'` (single character in single quotes)
-   - Examples: `SEMICOLON ::= ';'`, `LPAR ::= '('`, `RPAR ::= ')'`, `COMMA ::= ','`
-   - These are the ONLY terminals that should have quoted character definitions
-
-5. **Enumeration Rules** (for parameter values):
-   - Use: `PARAM ::= VALUE1 | VALUE2 | VALUE3`
-   - Example: `PARAM ::= OPTION1 | OPTION2 | OPTION3 | OPTION4`
-   - DO NOT create individual rules like `VALUE1 ::= 'VALUE1'` - the enumeration is sufficient
-   - All values in enumerations must be UPPERCASE
-
-6. **Start Symbol**: Use lowercase `program` as the top-level non-terminal
-
-7. **Rule Format**: One rule per line, use `|` for alternatives:
-```
-program        ::= statement_seq
-
-statement_seq  ::= statement
-                |  statement SEMICOLON statement_seq
-
-statement      ::= ACTION1 LPAR PARAM RPAR
-                |  ACTION2 LPAR PARAM RPAR
-                |  ACTION3
-                |  ACTION4 LPAR PARAM1 COMMA PARAM2 RPAR
-
-PARAM          ::= VALUE1 | VALUE2 | VALUE3 | VALUE4
-PARAM1         ::= OPTION1 | OPTION2
-PARAM2         ::= CHOICE1 | CHOICE2
-
-SEMICOLON      ::= ';'
-LPAR           ::= '('
-RPAR           ::= ')'
-COMMA          ::= ','
-```
-
-8. **What NOT to do**:
-   -  NEVER create `ACTION1 ::= 'action1'` or any lowercase definitions
-   -  NEVER create `ACTION1 ::= 'ACTION1'` - terminal functions appear directly in productions
-   -  NEVER use lowercase terminal function names
-   -  NEVER use literal parentheses in productions (always use LPAR/RPAR)
-   -  NEVER create circular rules like `X ::= X`
-   -  NEVER create redundant rules for enumeration values
-
-## Output Format:
-
-Return three fenced code blocks:
-
-1. **BNF block** (labeled `bnf` or `grammar`):
-```bnf
-[Your CFG here]
-```
-
-2. **JSON block** (labeled `json`):
-```json
-{{"ACTION1": "Description of what ACTION1 does", "ACTION2": "Description of what ACTION2 does", ...}}
-```
-**CRITICAL**: You MUST include ALL terminal functions that appear in your CFG productions. Every function name that appears at the start of a statement production (e.g., ACTION1, ACTION2, ACTION3 in `statement ::= ACTION1 LPAR PARAM RPAR | ACTION2 LPAR PARAM RPAR | ACTION3`) MUST have an entry in this JSON dictionary. Do not omit any terminal functions - completeness is essential.
-
-Each description should state the function's PURPOSE and INTENT only:
-- **What the function achieves** (high-level goal, e.g., "picks up an item", "moves the agent forward")
-- **What arguments it takes and what they mean**
-- Do NOT describe implementation mechanics, step-by-step behavior, or make assumptions about how the environment executes the action (e.g., do NOT claim specific position/direction changes, do NOT assume what low-level actions exist). The execution semantics will be determined by the actual environment code, not by this description.
-
-3. **DSL example block** (labeled `dsl` or `example`):
-```dsl
-ACTION1(VALUE1); ACTION2(VALUE2); ACTION3
-```
-Use actual terminal function names and values from your CFG.
-
-## Natural Language Description of Domain:
-{domain_description}
-
-## Recipes for the domain:
-{recipes}
-
-## Domain semantics guidance (soft, not rigid):
-- Use the recipe file to infer meaningful value categories.
-- It is fine to keep the grammar compact, but preserve semantic clarity in symbol naming and function argument choices.
-
-Return the CFG, terminal functions dictionary, and example program as specified above. Use ONLY UPPERCASE for all terminal functions and symbols. Choose meaningful UPPERCASE names for terminal functions based on the domain.
-'''
-
-    return TEMPLATE.format(domain_description=domain_description, recipes=recipes)
+    return template.format(
+        nld=nld_text,
+        domain_context=domain_context,
+    )
 
 
 class GenAIWrapper:
@@ -167,9 +91,6 @@ class GenAIWrapper:
             if not hasattr(self, 'llm') or self.llm is None:
                 raise ValueError("vLLM instance not available. Either provide vllm_instance or set client='vllm'")
             
-            structured_outputs_params_json = StructuredOutputsParams(json=json_schema)
-            guided_decoding_params = GuidedDecodingParams(json=json_schema)
-
             self.params = SamplingParams(temperature=0.7, max_tokens=35000)
             output = self.llm.generate([prompt], sampling_params=self.params)
             response = output[0].outputs[0].text
@@ -185,11 +106,27 @@ class GenAIWrapper:
 class CFGGenerator:
     """Orchestrates building prompt, calling the LLM, and returning text."""
 
-    def __init__(self,  llm: GenAIWrapper) -> None:
+    def __init__(
+        self,
+        llm: GenAIWrapper,
+        nld_path: str = "prompt_specifications/nld.txt",
+        recipes_path: Opt[str] = None,
+        prompt_template_path: str = "prompt_specifications/cfg_generator.txt",
+        domain_context_template_path: Opt[str] = None,
+    ) -> None:
         self.llm = llm
+        self.nld_path = nld_path
+        self.recipes_path = recipes_path
+        self.prompt_template_path = prompt_template_path
+        self.domain_context_template_path = domain_context_template_path
 
     def generate_cfg(self) -> str:
-        prompt = CFGPromptBuilder()
+        prompt = CFGPromptBuilder(
+            nld_path=self.nld_path,
+            recipes_path=self.recipes_path,
+            prompt_template_path=self.prompt_template_path,
+            domain_context_template_path=self.domain_context_template_path,
+        )
         return self.llm.generate(prompt)
 
 
@@ -310,7 +247,13 @@ def parse_generated_output(text: str) -> Tuple[str, Dict[str, str], Opt[str]]:
     return cfg, terminals, example
 
 
-def generate_and_parse_cfg(vllm_instance: Opt[vLLM] = None) -> Tuple[str, Dict[str, str], Opt[str]]:
+def generate_and_parse_cfg(
+    vllm_instance: Opt[vLLM] = None,
+    nld_path: str = "prompt_specifications/nld.txt",
+    recipes_path: Opt[str] = None,
+    prompt_template_path: str = "prompt_specifications/cfg_generator.txt",
+    domain_context_template_path: Opt[str] = None,
+) -> Tuple[str, Dict[str, str], Opt[str]]:
     """
     Generate CFG and return parsed results as a tuple.
     
@@ -319,9 +262,23 @@ def generate_and_parse_cfg(vllm_instance: Opt[vLLM] = None) -> Tuple[str, Dict[s
     
     Returns: (cfg_string, terminals_dict, example_program_or_None)
     """
-    builder = CFGPromptBuilder()
+    if not os.path.exists(nld_path):
+        raise FileNotFoundError(f"NLD file not found: {nld_path}")
+    if recipes_path and not os.path.exists(recipes_path):
+        raise FileNotFoundError(f"Recipes file not found: {recipes_path}")
+    if not os.path.exists(prompt_template_path):
+        raise FileNotFoundError(f"CFG prompt template not found: {prompt_template_path}")
+    if domain_context_template_path and not os.path.exists(domain_context_template_path):
+        raise FileNotFoundError(f"Domain context template not found: {domain_context_template_path}")
+
     llm_wrapper = GenAIWrapper("vllm", vllm_instance=vllm_instance)
-    generator = CFGGenerator(llm_wrapper)
+    generator = CFGGenerator(
+        llm_wrapper,
+        nld_path=nld_path,
+        recipes_path=recipes_path,
+        prompt_template_path=prompt_template_path,
+        domain_context_template_path=domain_context_template_path,
+    )
     
     output = generator.generate_cfg()
     cfg, terminals, example = parse_generated_output(output)

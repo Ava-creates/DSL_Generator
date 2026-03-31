@@ -7,8 +7,7 @@ Manages pipeline state using a simple text file to track terminal function count
 import os
 import json
 import subprocess
-from typing import Dict, Optional, List
-from pathlib import Path
+from typing import Dict, List
 
 
 def get_state_file_path(experiment_dir: str) -> str:
@@ -26,11 +25,7 @@ def read_state(experiment_dir: str) -> Dict:
           This replaces terminal_functions_remaining/total and explicit_feedback_remaining/total
           since implement_cfg packages FunSearch + Explicit Feedback together
         - test_tasks_total: Total number of test tasks (informational only, test_tasks runs in single job)
-        - function_evolution_remaining: Number of function evolution jobs remaining
-        - function_evolution_total: Total number of function evolution jobs
-        # implement_cfg_submitted removed - use status files as source of truth
         - test_tasks_submitted: Whether test task jobs have been submitted (0 or 1)
-        - function_evolution_submitted: Whether function evolution jobs have been submitted (0 or 1)
         - phase: Current phase (initial, function_evolution, dsl_evolution)
         - dsl_round: Current DSL evolution round
         - func_evolution_round: Current function evolution round
@@ -43,11 +38,7 @@ def read_state(experiment_dir: str) -> Dict:
             "function_implementation_remaining": 0,
             "function_implementation_total": 0,
             "test_tasks_total": 0,  # Informational only (test_tasks runs in single job)
-            "function_evolution_remaining": 0,
-            "function_evolution_total": 0,
-            # implement_cfg_submitted removed - use status files as source of truth
             "test_tasks_submitted": 0,
-            "function_evolution_submitted": 0,
             "file_generation_submitted": 0,
             "dsl_evolution_submitted": 0,
             "phase": "initial",
@@ -81,11 +72,7 @@ def read_state(experiment_dir: str) -> Dict:
         "function_implementation_remaining": 0,
         "function_implementation_total": 0,
         "test_tasks_total": 0,  # Informational only (test_tasks runs in single job)
-        "function_evolution_remaining": 0,
-        "function_evolution_total": 0,
-        # implement_cfg_submitted removed - use status files as source of truth
         "test_tasks_submitted": 0,
-        "function_evolution_submitted": 0,
         "file_generation_submitted": 0,
         "dsl_evolution_submitted": 0,
         "phase": "initial",
@@ -247,7 +234,7 @@ def decrement_function_implementation(experiment_dir: str) -> int:
                 
                 # Lock is automatically released when file is closed
                 return remaining
-        except (IOError, OSError) as e:
+        except (IOError, OSError):
             # Lock is held by another process, wait and retry
             if attempt < max_retries - 1:
                 time.sleep(retry_delay)
@@ -296,50 +283,6 @@ def decrement_terminal_functions(experiment_dir: str) -> int:
 
 # decrement_test_tasks removed - test_tasks now runs in a single job, so no counter needed
 
-
-def decrement_function_evolution(experiment_dir: str) -> int:
-    """Decrement function evolution remaining count atomically."""
-    import fcntl
-    import time
-    
-    state_file = get_state_file_path(experiment_dir)
-    lock_file = state_file + ".lock"
-    os.makedirs(experiment_dir, exist_ok=True)
-    
-    max_retries = 10
-    retry_delay = 0.1
-    
-    for attempt in range(max_retries):
-        try:
-            with open(lock_file, 'w') as lock:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                state = read_state(experiment_dir)
-                remaining = state.get("function_evolution_remaining", 0)
-                if remaining > 0:
-                    remaining -= 1
-                state["function_evolution_remaining"] = remaining
-                write_state(experiment_dir, state)
-                return remaining
-        except (IOError, OSError):
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay)
-                retry_delay *= 2
-            else:
-                state = read_state(experiment_dir)
-                remaining = state.get("function_evolution_remaining", 0)
-                if remaining > 0:
-                    remaining -= 1
-                state["function_evolution_remaining"] = remaining
-                write_state(experiment_dir, state)
-                return remaining
-    
-    state = read_state(experiment_dir)
-    remaining = state.get("function_evolution_remaining", 0)
-    if remaining > 0:
-        remaining -= 1
-    state["function_evolution_remaining"] = remaining
-    write_state(experiment_dir, state)
-    return remaining
 
 
 def mark_test_tasks_submitted(experiment_dir: str) -> bool:
@@ -457,47 +400,6 @@ def check_and_mark_test_tasks_ready(experiment_dir: str) -> bool:
         return True
     return False
 
-
-def mark_function_evolution_submitted(experiment_dir: str) -> bool:
-    """Mark function evolution as submitted atomically."""
-    import fcntl
-    import time
-    
-    state_file = get_state_file_path(experiment_dir)
-    lock_file = state_file + ".lock"
-    os.makedirs(experiment_dir, exist_ok=True)
-    
-    max_retries = 10
-    retry_delay = 0.1
-    
-    for attempt in range(max_retries):
-        try:
-            with open(lock_file, 'w') as lock:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                state = read_state(experiment_dir)
-                if state.get("function_evolution_submitted", 0) == 1:
-                    return False
-                state["function_evolution_submitted"] = 1
-                write_state(experiment_dir, state)
-                return True
-        except (IOError, OSError):
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay)
-                retry_delay *= 2
-            else:
-                state = read_state(experiment_dir)
-                if state.get("function_evolution_submitted", 0) == 1:
-                    return False
-                state["function_evolution_submitted"] = 1
-                write_state(experiment_dir, state)
-                return True
-    
-    state = read_state(experiment_dir)
-    if state.get("function_evolution_submitted", 0) == 1:
-        return False
-    state["function_evolution_submitted"] = 1
-    write_state(experiment_dir, state)
-    return True
 
 
 def mark_file_generation_submitted(experiment_dir: str) -> bool:

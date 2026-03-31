@@ -1,5 +1,8 @@
 You are an expert in DSL design and program synthesis. Your task is to analyze why a set of DSL programs failed to solve their target tasks, and produce structured guidance for improving the grammar (CFG).
 
+## Natrual Langauge Description of the domain
+{nld}
+
 ## Failed Tasks
 {failing_tasks}
 
@@ -25,15 +28,11 @@ The DSL evaluator executes programs as a flat sequence of function calls, one at
 - Programs are a semicolon-separated list of terminal function calls: `FUNC1(ARG); FUNC2(ARG); ...`
 - Each terminal function receives the current environment state and returns a **flat list of primitive actions**
 - The evaluator steps through tokens sequentially: there is NO interpreter support for jumps, branches, or loops at the grammar level
-- `i` always increments by 1 — there is no mechanism to re-execute or skip tokens
 
-**Consequence**: Grammar-level control flow constructs (`WHILE ... END`, `IF ... THEN ... ELSE ... END`, `REPEAT N`) are NOT executable by the evaluator. Do NOT suggest them.
+**CONSTRAINT**: Grammar-level control flow constructs (`WHILE ... END`, `IF ... THEN ... ELSE ... END`, `REPEAT N`) are NOT executable by the evaluator. Do NOT suggest them.
 
-Instead, express looping or conditional behavior as **terminal functions** that inspect the environment internally and return the appropriate action sequence. Examples:
-- Need to keep collecting until enough: suggest `USE_UNTIL LPAR RESOURCE RPAR`
-- Need to check if an item exists before acting: suggest `ENSURE LPAR ITEM RPAR`
-- Need to repeat an action N times: suggest `REPEAT_ACTION LPAR ACTION_TYPE RPAR`
-
+Instead, express looping or conditional behavior as **terminal functions** that inspect the environment internally and return the appropriate action sequence.
+Each suggested terminal must be independently implementable and MUST NOT call any other terminal function.
 ---
 
 ## YOUR OUTPUT — Produce Both Sections Below
@@ -52,9 +51,15 @@ For each recommendation, use exactly one of these directive formats:
 - ADD terminal (no args): `FUNCTION_NAME` — purpose: <why this function is needed>
 - REMOVE terminal: `FUNCTION_NAME` — reason: <why it is not useful or is misleading>
 - CHANGE parameter set: `PARAM_NAME` — remove `VALUE_X`, add `VALUE_Y` — reason: <why>
+- ADD production: `NONTERMINAL -> RHS` — purpose: <what programs this enables>
+- REMOVE production: `NONTERMINAL -> RHS` — reason: <why this derivation is unhelpful>
+- CHANGE production: `NONTERMINAL -> OLD_RHS` to `NONTERMINAL -> NEW_RHS` — reason: <why this better matches the task structure>
+- CHANGE existing terminal description 
 
 **Constraints for recommendations:**
 - Use ONLY UPPERCASE names
 - Every suggested terminal function must be implementable as a pure action-sequence generator returning a flat list of primitive actions — it may inspect the environment (a copy is provided) but must NOT require cross-call shared state
 - Only reference items, values, or concepts present in the domain (do not invent parameters outside what exists in the domain)
 - Do NOT suggest grammar-level loops or conditionals — express those needs as terminal functions instead
+- Domain grounding is STRICT: if a relation/mapping is not explicitly defined in the provided context (NLD/recipes/current CFG/failed programs), do NOT recommend new mapping-specific terminals or parameter values for it
+- Do NOT recommend placeholder enum values (e.g., `ANY`, `UNKNOWN`, `OTHER`) unless that exact value already exists in the current CFG/domain inputs

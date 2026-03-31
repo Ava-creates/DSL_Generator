@@ -8,7 +8,7 @@ import os
 import sys
 import yaml
 import json
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from pathlib import Path
 
 
@@ -46,7 +46,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
             if default_path.exists():
                 config_path = str(default_path)
             elif example_path.exists():
-                print(f" Warning: Using example config file. Copy to experiment_config.yaml to customize.", file=sys.stderr)
+                print(" Warning: Using example config file. Copy to experiment_config.yaml to customize.", file=sys.stderr)
                 config_path = str(example_path)
     
     if config_path and os.path.exists(config_path):
@@ -66,6 +66,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     env_mappings = {
         "EXPERIMENT_DIR": "experiment_dir",
         "SPEC_FILE": "spec_file",
+        "NLD_PATH": "nld_path",
         "TASKS": "tasks",  # Can be JSON array or space-separated
         "MAX_DSL_EVOLUTIONS": "max_dsl_evolutions",
         "MAX_FUNCTION_EVOLUTIONS": "max_function_evolutions",
@@ -83,6 +84,8 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "GRID_SPEC_DIR": "grid_spec_dir",
         "FAILURE_ANALYSIS_PROMPT": "failure_analysis_prompt",
         "CFG_EVOLUTION_PROMPT": "cfg_evolution_prompt",
+        "CFG_GENERATOR_PROMPT_PATH": "cfg_generator_prompt_path",
+        "DOMAIN_CONTEXT_TEMPLATE_PATH": "domain_context_template_path",
     }
     
     for env_var, config_key in env_mappings.items():
@@ -100,7 +103,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
                 config[config_key] = env_value.lower() in ("true", "1", "yes")
             elif config_key == "use_existing_grid_specs":
                 config[config_key] = env_value.lower() in ("true", "1", "yes")
-            elif config_key in ("grid_spec_dir", "failure_analysis_prompt", "cfg_evolution_prompt", "synthesis_prompt"):
+            elif config_key in ("grid_spec_dir", "failure_analysis_prompt", "cfg_evolution_prompt", "synthesis_prompt", "nld_path", "cfg_generator_prompt_path", "domain_context_template_path"):
                 config[config_key] = env_value
             elif config_key == "tasks":
                 # Handle tasks - can be JSON array or space-separated
@@ -117,6 +120,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     defaults = {
         "experiment_dir": None,
         "spec_file": "prompt_specifications/specification_with_updated_nld.txt",
+        "nld_path": "prompt_specifications/nld.txt",
         "tasks": [],
         "max_dsl_evolutions": 2,
         "max_function_evolutions": 1,
@@ -124,7 +128,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "num_explicit_feedback_iterations": 30,
         "max_attempts": 30,
         "model_type": "huggingface",
-        "recipes_path": "craft/resources/recipes.yaml",
+        "recipes_path": None,
         "hints_path": "craft/resources/hints.yaml",
         "skip_cfg_generation": False,
         "cfg_output_file": None,
@@ -135,6 +139,8 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "failure_analysis_prompt": "prompt_specifications/failure_analysis.txt",
         "cfg_evolution_prompt": "prompt_specifications/cfg_evolution.txt",
         "synthesis_prompt": "prompt_specifications/prompt_synth_with_grid_and_failures.txt",
+        "cfg_generator_prompt_path": "prompt_specifications/cfg_generator.txt",
+        "domain_context_template_path": None,
     }
     
     for key, default_value in defaults.items():
@@ -154,6 +160,7 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
     env_mappings = {
         "experiment_dir": "EXPERIMENT_DIR",
         "spec_file": "SPEC_FILE",
+        "nld_path": "NLD_PATH",
         "tasks": "TASKS",  # Will be converted to space-separated string
         "max_dsl_evolutions": "MAX_DSL_EVOLUTIONS",
         "max_function_evolutions": "MAX_FUNCTION_EVOLUTIONS",
@@ -172,6 +179,8 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
         "failure_analysis_prompt": "FAILURE_ANALYSIS_PROMPT",
         "cfg_evolution_prompt": "CFG_EVOLUTION_PROMPT",
         "synthesis_prompt": "SYNTHESIS_PROMPT",
+        "cfg_generator_prompt_path": "CFG_GENERATOR_PROMPT_PATH",
+        "domain_context_template_path": "DOMAIN_CONTEXT_TEMPLATE_PATH",
     }
     
     for config_key, env_var in env_mappings.items():

@@ -6,7 +6,6 @@ Tests the recipe loading and primitive extraction logic.
 
 import os
 import sys
-import yaml
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

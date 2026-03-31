@@ -1,20 +1,4 @@
-from typing import List
-from collections import deque
-from .cfg_parser import CFGParser
-import itertools
-from program_evaluator import ProgramEvaluator 
-import heapq
-import concurrent.futures
-import time
-from multiprocessing import Pool, cpu_count
-import env_factory
-import json
-import sys
 from google import genai
-import requests
-from funsearch.implementation.funsearch import FunSearch
-from funsearch.implementation import config as config_lib
-import pandas as pd    
 
 with open("cfg/cfg.txt") as f:
         cfg = f.read()

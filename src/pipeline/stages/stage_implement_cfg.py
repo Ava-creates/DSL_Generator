@@ -15,7 +15,8 @@ sys.path.insert(0, _project_root)
 
 from src.pipeline.cfg_to_funsearch_pipeline import implement_cfg
 from src.utils.results_tracker import ResultsTracker
-from src.utils.pipeline_state import read_state, update_state
+from src.utils.pipeline_state import update_state
+from src.utils.status_manager import write_function_status
 
 # Import vLLM for shared instance
 try:
@@ -55,9 +56,6 @@ def main():
         print(f" Specification file not found: {args.spec_file}", file=sys.stderr)
         return 1
     
-    with open(args.spec_file, 'r', encoding='utf-8') as f:
-        specification = f.read()
-    
     # Create shared vLLM instance
     shared_vllm = None
     if vLLM is not None and args.model_type == "huggingface":
@@ -78,7 +76,7 @@ def main():
     if args.func_evolution_round is not None:
         print(f"  Function Evolution Round: {args.func_evolution_round}")
     else:
-        print(f"  Function Evolution Round: 0 (initial)")
+        print("  Function Evolution Round: 0 (initial)")
     
     try:
         success, final_functions = implement_cfg(
@@ -108,16 +106,9 @@ def main():
         )
         
         # Create explicit feedback status files for each function (required by chaining logic)
-        explicit_fb_status_dir = os.path.join(args.experiment_dir, "status", "explicit_feedback")
-        os.makedirs(explicit_fb_status_dir, exist_ok=True)
-        
         func_evolution_round = args.func_evolution_round if args.func_evolution_round is not None else 0
         
         for func_name in final_functions.keys():
-            # Create status file in grouped location
-            status_file = os.path.join(explicit_fb_status_dir, f"{func_name}.json")
-            legacy_status_file = os.path.join(args.experiment_dir, f"stage_explicit_feedback_{func_name}_status.json")
-            
             status = {
                 "stage": "explicit_feedback",
                 "function_name": func_name,
@@ -125,12 +116,7 @@ def main():
                 "dsl_round": args.dsl_round,
                 "func_evolution_round": func_evolution_round
             }
-            
-            # Write to both locations for compatibility
-            with open(status_file, 'w') as f:
-                json.dump(status, f, indent=2)
-            with open(legacy_status_file, 'w') as f:
-                json.dump(status, f, indent=2)
+            write_function_status(args.experiment_dir, args.dsl_round, "explicit_feedback", func_name, status)
         
         print(f" Created explicit feedback status files for {len(final_functions)} functions")
         print(" Updated pipeline state: FunSearch and Explicit Feedback marked as complete")

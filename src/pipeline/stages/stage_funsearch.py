@@ -9,7 +9,6 @@ import sys
 import json
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, Optional
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -18,6 +17,8 @@ sys.path.insert(0, _project_root)
 from src.pipeline.cfg_to_funsearch_pipeline import determine_inputs
 from funsearch.implementation.funsearch import FunSearch
 from funsearch.implementation import config as config_lib
+from src.utils.status_manager import read_status, write_status
+from src.utils.pipeline_state import read_state
 
 # Import vLLM for shared instance
 try:
@@ -57,14 +58,19 @@ def main():
         print(" Invalid CFG data", file=sys.stderr)
         return 1
     
-    # Load file generation status to get func_files and func_init_files
-    file_gen_status_path = os.path.join(args.experiment_dir, "stage_file_generation_status.json")
-    if not os.path.exists(file_gen_status_path):
-        print(f" File generation status not found: {file_gen_status_path}", file=sys.stderr)
-        return 1
+    # Get current DSL round from state (fallback to args if provided)
+    state = read_state(args.experiment_dir)
+    state_dsl_round = state.get("dsl_round", 0)
+    if args.dsl_round != state_dsl_round:
+        print(f"[FunSearch] Using dsl_round={state_dsl_round} from state file (cmd: {args.dsl_round})")
+        args.dsl_round = state_dsl_round
     
-    with open(file_gen_status_path, 'r') as f:
-        file_gen_status = json.load(f)
+    # Load file generation status to get func_files and func_init_files
+    # Use backward-compatible read that tries both new and legacy locations
+    file_gen_status = read_status(args.experiment_dir, args.dsl_round, "file_generation")
+    if file_gen_status is None:
+        print(f" File generation status not found for dsl_round={args.dsl_round}", file=sys.stderr)
+        return 1
     
     func_files = file_gen_status.get("func_files", {})
     func_init_files = file_gen_status.get("func_init_files", {})
@@ -174,9 +180,7 @@ def main():
         "func_evolution_round": args.func_evolution_round,
         "results": results
     }
-    status_file = os.path.join(args.experiment_dir, "stage_funsearch_status.json")
-    with open(status_file, 'w') as f:
-        json.dump(stage_status, f, indent=2)
+    write_status(args.experiment_dir, args.dsl_round, "funsearch", stage_status)
     
     print(f"\n All {len(terminals)} functions completed FunSearch successfully")
     return 0

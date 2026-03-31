@@ -1,14 +1,16 @@
 ##Natural Language Description of Craft
-The environment is a grid world of size n*n . Each cell contains an inventory vector of length i, where each position corresponds to a possible item type. If a cell contains an item, its corresponding entry is marked as 1; otherwise, it is 0. A cell is considered blocked if it contains any item, meaning the agent cannot move into it. The agent can only move around freely through empty cells. Agent can pick up items from the cells it is directly facing.
+The environment is a grid world of size n*n .
+Each cell contains an inventory vector of length i, where each position corresponds to a possible item type.
+If a cell contains an object, its corresponding entry is marked as 1; otherwise, it is 0. A cell is considered blocked if it contains any item, meaning the agent cannot move into it. The agent can only move around freely through empty cells. Agent can pick up items from the cells it is directly facing.
 
 At the beginning of each episode, the agent is placed at a starting position and a distribution of items across the grid is initialized. The agent’s tasks involve either collecting primitives (raw resources) or crafting items.
 
-The environment contains both natural terrain and functional structures, such as boundaries, water, stone deposits, and different workshops.
-Primitives are basic resources like iron, grass, gold, and gem.
-Items are somethign that are crafted using primitives or other items by following a recipe only at the workshop type mentioned in its recipe. The crafted items appear in the agent's inventory.
-Obstacles are the things on the grid that are not primitives, boundary, or workshops. 
+The environment contains both natural terrain and functional structures, such as boundaries and different workshops.
+Primitives are the basic resources listed under the `primitives` list in the recipes file. These are the raw materials that can be collected directly from the environment. Their presence and type are defined explicitly in the recipes file for each environment, and they serve as the foundational elements for crafting more complex items.
+Items are something that are crafted using primitives or other items by following a recipe only at the workshop type mentioned in its recipe. The crafted items appear in the agent's inventory.
 
-In this domain, primitives may sometimes be blocked by obstacles. Obstacles are entities that are part of the recipe but are not primitives, workshops, or boundaries. To reach the blocked primitives, the agent must identify and use appropriate tools to remove or bypass these obstacles.
+In this domain, primitives may sometimes be blocked by obstacles. Obstacles correspond to environment entries (from the `environment` list in the recipes file) other than `boundary` and any of workshop tiles (`workshopn`). 
+To reach the blocked primitives, the agent must identify and use appropriate tools to remove or bypass these obstacles. Any item from the recipes can be a tool. 
 The correspondence between tools and obstacles is not predefined or known a priori. It cannot be inferred from real-world knowledge or semantic associations. Instead, the correct relationships must be discovered empirically through exploration and interaction within the environment, by observing which tools succeed or fail when applied to different obstacles.
 Primitives used to craft an item has no relation to it being the tool that helps pass an obstacle.
 

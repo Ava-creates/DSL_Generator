@@ -1,30 +1,31 @@
-The following failure analysis was produced for unsuccessful DSL programs on tasks: {failing_tasks}.
+You are a context-free grammar (CFG) evolution expert. Given a current CFG and a failure analysis, improve the CFG to address the identified weaknesses while maintaining the ability to express valid programs for the domain.
 
-It contains two sections:
-1. **Diagnostic Reasons** — why the current CFG is insufficient
-2. **CFG Recommendations** — specific ADD / REMOVE / CHANGE directives for terminal functions and parameter sets
+## Input Data
 
-Use the **CFG Recommendations** as your primary guide. Each recommendation is already constrained to be compatible with the evaluator and the domain.
+**Failure Analysis** (failing tasks: {failing_tasks}):
+- Contains diagnostic reasons why the current CFG is insufficient
+- Contains CFG recommendations (ADD / REMOVE / CHANGE directives for terminal functions and parameters)
+- Use these recommendations as primary guidance for improvements
 
 {failure_analysis}
 
----
-
-### Current CFG (Context-Free Grammar)
+**Current CFG** (to be evolved):
 {cfg}
 
-### Domain items available — only these values may appear as parameters. Do not introduce any item not present here:
+**Domain Items** (only these values may appear as parameters):
 {recipes}
 
 ---
 
-## CRITICAL CFG FORMAT RULES - Follow Exactly:
+## CRITICAL RULES - Follow Exactly:
 
-1. **ALL SYMBOLS MUST BE UPPERCASE**: Use UPPERCASE for ALL terminal functions, terminal symbols, and non-terminals. NEVER use lowercase or mixed case (except for the start symbol `program`).
+1. **ALL SYMBOLS MUST BE UPPERCASE**: Use UPPERCASE for ALL terminal functions, terminal symbols, and non-terminals. NEVER use lowercase or mixed case.
 
 2. **Terminal Functions**:
    - Terminal functions are actions that appear directly in productions (e.g., ACTION1, ACTION2, ACTION3)
    - Use UPPERCASE names for all terminal functions
+   - If a function takes no arguments, use it directly: `statement ::= ACTION1`
+   - If a function takes arguments, use: `statement ::= ACTION1 LPAR PARAM RPAR`
    - NEVER create rules like `ACTION1 ::= 'action1'` or `ACTION1 ::= 'ACTION1'` - terminal functions appear directly in productions, not as separate rules
 
 3. **Function Arguments Format**:
@@ -57,7 +58,7 @@ statement_seq  ::= statement
 
 statement      ::= ACTION1 LPAR PARAM RPAR
                 |  ACTION2 LPAR PARAM RPAR
-                |  ACTION3 PARAM
+                |  ACTION3
                 |  ACTION4 LPAR PARAM1 COMMA PARAM2 RPAR
 
 PARAM          ::= VALUE1 | VALUE2 | VALUE3 | VALUE4
@@ -70,106 +71,58 @@ RPAR           ::= ')'
 COMMA          ::= ','
 ```
 
-8. **What NOT to do** (COMMON MISTAKES THAT CAUSE VALIDATION ERRORS):
-   -  NEVER use regex syntax: `(?:VALUE1|VALUE2|)` - use BNF: `PARAM ::= VALUE1 | VALUE2`
-   -  NEVER create empty alternatives: `PARAM ::= VALUE1 | | VALUE2` - remove empty alternatives
-   -  NEVER put non-terminals inside terminal definitions: `ITEM ::= NonTerminal('items')` - use: `ITEM ::= VALUE1 | VALUE2`
-   -  NEVER create recursive terminals: `NUMBER ::= NUMBER DIGIT` - use non-terminals for recursion
-   -  NEVER create undefined rules - every non-terminal used must be defined
-   -  NEVER create `ACTION1 ::= 'action1'` or any lowercase definitions
-   -  NEVER create `ACTION1 ::= 'ACTION1'` - terminal functions appear directly in productions
-   -  NEVER use lowercase terminal function names
-   -  NEVER use literal parentheses in productions (always use LPAR/RPAR)
-   -  NEVER create circular rules like `X ::= X`
+8. **What NOT to do**:
+   - NEVER use regex syntax: `(?:VALUE1|VALUE2|)` - use simple BNF
+   - NEVER create empty alternatives: `PARAM ::= VALUE1 | | VALUE2`
+   - NEVER put non-terminals inside terminal definitions: `ITEM ::= NonTerminal('items')`
+   - NEVER create recursive terminals: `NUMBER ::= NUMBER DIGIT` - use non-terminals for recursion
+   - NEVER create undefined rules - every non-terminal used must be defined
+   - NEVER create `ACTION1 ::= 'action1'` or any lowercase definitions
+   - NEVER create `ACTION1 ::= 'ACTION1'` - terminal functions appear directly in productions
+   - NEVER use lowercase terminal function names
+   - NEVER use literal parentheses in productions (always use LPAR/RPAR)
+   - NEVER create circular rules like `X ::= X`
 
-9. **Validation Requirements**:
-   - The CFG must be parseable by a strict BNF parser
-   - All non-terminals used in rules must be defined
-   - All terminals must be properly formatted (either as quoted characters or as enumeration values)
-   - The example program must be parseable by the generated CFG
-
----
-
-### Context
-
-You are an expert in **DSL and program synthesis**.
-
-Your task is to analyze these failures and propose **targeted improvements** while maintaining strict BNF format compliance.
-
-You need to:
-1. Identify **gaps or weaknesses** in the current CFG.  
-2. Suggest **specific additions or removal of terminal functions** to the CFG that would enable better synthesis results.  
-   - Terminal functions are the action functions that appear directly in statement productions (e.g., in rules like `statement ::= ACTION LPAR PARAM RPAR`, the terminal function is ACTION, not PARAM)
-   - Terminal functions are the actual executable actions in programs
-   - Grammar symbols that represent parameter types or special symbols are NOT terminal functions
-3. Provide **solution explanation** where the proposed changes are justified based on the failure analysis.
-4. **CRITICALLY**: Ensure your CFG follows ALL format rules above - validation will fail if you use regex syntax, empty alternatives, or other invalid patterns.
+9. **Terminal Independence (MANDATORY)**:
+   - Every terminal function must be an independent primitive action planner; terminal functions are leaves and MUST NOT call, invoke, delegate to, or expand into other terminal functions
+   - Do NOT design macro/composite terminals whose semantics are "do X by calling Y"
+   - Terminal descriptions must describe direct behavior only; do not reference calling other terminal functions by name
 
 ---
 
-### Output Format
+## Output Format
 
-Your response must strictly follow this structure:
+Return three fenced code blocks:
 
-Updated CFG(BNF)
-<return the full updated CFG in BNF format here - MUST follow all format rules above>
-
-Updated CFG Explanation
-<Write a comprehensive, standalone explanation of the entire CFG shown above. 
-Do NOT list changes, revisions, differences, deltas, or what was "added" or "modified" 
-compared to previous grammars. Instead, explain the grammar from scratch as if the 
-reader has never seen any earlier version.>
-
-Changes in CFG
-(bullet point list of specific changes made to the CFG)
-
-**Terminal Functions**
-FUNCTION_NAME(args): description of purpose and usage
-
-**CRITICAL - READ CAREFULLY**: In the "**Terminal Functions**" section, you MUST list ALL actual terminal function names that appear directly in statement productions. Every function that appears at the start of a statement production alternative MUST be included with a clear description. Do not omit any terminal functions - completeness is essential for the system to work correctly.
-
-**What ARE terminal functions:**
-- Terminal functions are the ACTION WORDS that appear at the START of statement rules
-- These are the functions that can be CALLED in programs
-- They appear as the FIRST symbol in statement production alternatives
-- They are the executable actions/operations in your DSL
-
-**What are NOT terminal functions (DO NOT LIST THESE):**
-- Grammar symbols that represent parameter types (e.g., PARAM, ARG, TYPE, VALUE, OPTION, etc.)
-- Enumeration symbols (symbols that define sets of values like `SYMBOL ::= VALUE1 | VALUE2 | VALUE3`)
-- Special symbols like LPAR, RPAR, COMMA, SEMICOLON, LBRACK, RBRACK
-- Any symbol that appears AFTER a function name in a production rule
-- Any symbol that is used as a parameter/argument to a function
-
-**How to identify terminal functions:**
-1. Look at your statement rules (e.g., `statement ::= ...`)
-2. Find the FIRST UPPERCASE WORD in each alternative (before any parentheses, brackets, or parameters)
-3. That FIRST WORD is the terminal function
-4. Everything after it (parameters, arguments, etc.) are NOT functions
-
-**Concrete Example:**
-If your CFG has:
-```
-statement ::= ACTION1 LPAR PARAM RPAR
-           |  ACTION2 LPAR PARAM RPAR
-           |  ACTION3 PARAM
-           |  ACTION4 LPAR PARAM1 COMMA PARAM2 RPAR
+1. **BNF block** (labeled `bnf` or `grammar`):
+```bnf
+[Your evolved CFG here]
 ```
 
-Then your Terminal Functions section MUST list:
+2. **JSON block** (labeled `json`):
+```json
+{{"ACTION1": "Description of what ACTION1 does", "ACTION2": "Description of what ACTION2 does", ...}}
 ```
-ACTION1: Description of what ACTION1 does
-ACTION2: Description of what ACTION2 does
-ACTION3: Description of what ACTION3 does
-ACTION4: Description of what ACTION4 does
+**CRITICAL**: You MUST include ALL terminal functions that appear in your CFG productions. Every function name that appears at the start of a statement production (e.g., ACTION1, ACTION2, ACTION3 in `statement ::= ACTION1 LPAR PARAM RPAR | ACTION2 LPAR PARAM RPAR | ACTION3`) MUST have an entry in this JSON dictionary. Do not omit any terminal functions - completeness is essential.
+
+Each description should state the function's PURPOSE and INTENT only:
+- **What the function achieves** (high-level goal, e.g., "picks up an item", "moves the agent forward")
+- **What arguments it takes and what they mean**
+- Do NOT describe implementation mechanics, step-by-step behavior, or make assumptions about how the environment executes the action (e.g., do NOT claim specific position/direction changes, do NOT assume what low-level actions exist). The execution semantics will be determined by the actual environment code, not by this description.
+
+3. **DSL example block** (labeled `dsl` or `example`):
+```dsl
+ACTION1(VALUE1); ACTION2(VALUE2); ACTION3
 ```
+Use actual terminal function names and values from your CFG.
 
-You MUST NOT list:
-- PARAM (this is a parameter type, not a function)
-- PARAM1, PARAM2 (these are parameter types, not functions)
-- Any symbol that appears in enumeration rules (e.g., `PARAM ::= VALUE1 | VALUE2 | VALUE3`)
+---
 
-**Remember**: Terminal functions are the ACTION WORDS that start each statement alternative. They are what you CALL in programs. Parameters are what you PASS TO functions, not functions themselves. If a symbol appears in a rule like `SYMBOL ::= VALUE1 | VALUE2`, it is NOT a terminal function - it's a parameter type.
+## What to Do
 
-If the current CFG is already sufficient, restate it under "Updated CFG (BNF)" and note that no changes are required.
+Analyze the failure analysis recommendations and the current CFG:
+1. Identify which terminal functions or parameters should be added, removed, or modified based on the recommendations.
+2. Ensure all recommendations are incorporated while maintaining proper BNF format.
+3. Return the full, complete evolved CFG (not just changes) in the output format above.
+4. Provide a concise explanation of the evolution and how recommendations were addressed.
 ---

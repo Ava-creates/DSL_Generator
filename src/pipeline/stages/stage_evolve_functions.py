@@ -8,7 +8,6 @@ import os
 import sys
 import json
 import argparse
-from typing import Dict, List
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -97,10 +96,10 @@ def main():
         json.dump(stage_status, f, indent=2)
     
     if evolved:
-        print(f"\n Function evolution completed")
+        print("\n Function evolution completed")
         return 0
     else:
-        print(f"\n Function evolution failed or produced no results")
+        print("\n Function evolution failed or produced no results")
         return 1
 
 

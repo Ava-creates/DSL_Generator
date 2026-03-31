@@ -1,4 +1,4 @@
-from .misc.util import Struct, Index
+from .misc.util import Index
 
 import numpy as np
 import yaml

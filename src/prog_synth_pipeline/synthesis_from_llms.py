@@ -1,5 +1,4 @@
 from google import genai
-import requests
 with open("cfg/cfg.txt") as f:
     cfg = f.read()
 

@@ -9,8 +9,9 @@ import ast
 import json
 import os
 import re
-import time
 from typing import Dict, Optional, Tuple
+
+from src.pipeline.cfg_symbol_utils import build_cfg_rule_map, expand_symbol_to_terminals
 
 try:
     from vllm import SamplingParams
@@ -93,48 +94,15 @@ def _extract_allowed_arg_values_from_cfg(func_args: str, cfg_text: str) -> dict[
     if not arg_names:
         return {}
 
-    grammar_map: dict[str, set[str]] = {}
-    rule_pattern = re.compile(r"^([A-Z_][A-Z0-9_]*)\s*::=\s*(.*)$")
-
-    def _record_rhs_values(symbol: str, rhs: str) -> None:
-        if not symbol or rhs is None:
-            return
-        values = grammar_map.setdefault(symbol, set())
-        for part in rhs.split("|"):
-            v = part.strip().strip("'").strip('"')
-            if not v:
-                continue
-            if (
-                re.fullmatch(r"[A-Z_][A-Z0-9_]*", v)
-                or re.fullmatch(r"-?\d+", v)
-                or re.fullmatch(r"-?(?:\d+\.\d*|\d*\.\d+)", v)
-            ):
-                values.add(v)
-
-    current_symbol: str | None = None
-    for raw_line in cfg_text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-
-        m = rule_pattern.match(line)
-        if m:
-            current_symbol = m.group(1).strip()
-            _record_rhs_values(current_symbol, m.group(2).strip())
-            continue
-
-        if current_symbol and line.startswith("|"):
-            continuation_rhs = re.sub(r"^\|\s*", "", line)
-            _record_rhs_values(current_symbol, continuation_rhs)
-            continue
-
-        current_symbol = None
+    rule_map = build_cfg_rule_map(cfg_text)
 
     allowed: dict[str, set[str]] = {}
     for arg in arg_names:
         symbol = arg.upper()
-        if symbol in grammar_map:
-            allowed[arg] = grammar_map[symbol]
+        if symbol in rule_map:
+            expanded = expand_symbol_to_terminals(symbol, rule_map)
+            if expanded:
+                allowed[arg] = expanded
     return allowed
 
 
@@ -172,6 +140,9 @@ def _render_prompt(
     valid_tasks: list[str],
     existing_cases: list[Dict] | None = None,
     codebase_text: str = "",
+    positive_grids: int = 10,
+    negative_grids: int = 4,
+    edge_grids: int = 1,
 ) -> str:
     if existing_cases:
         summaries = []
@@ -211,6 +182,10 @@ def _render_prompt(
         "<<VALID_ITEMS>>": ", ".join(sorted(valid_items)),
         "<<VALID_TASKS>>": ", ".join(sorted(valid_tasks)),
         "<<EXISTING_CASES>>": existing_text,
+        "<<POSITIVE_GRIDS>>": str(positive_grids),
+        "<<NEGATIVE_GRIDS>>": str(negative_grids),
+        "<<EDGE_GRIDS>>": str(edge_grids),
+        "<<TOTAL_GRIDS>>": str(positive_grids + negative_grids + edge_grids),
     }
     for key, value in replacements.items():
         template = template.replace(key, value)
@@ -379,6 +354,9 @@ def ensure_function_grid_spec(
     codebase_text: str = "",
     require_test_type: bool = True,
     skip_positive_grids: bool = False,
+    positive_grids: int = 10,
+    negative_grids: int = 4,
+    edge_grids: int = 1,
 ) -> Optional[Dict]:
     cookbook = _get_cookbook(recipes_path)
     if cookbook is None:
@@ -405,19 +383,50 @@ def ensure_function_grid_spec(
             valid_tasks=valid_tasks,
             existing_cases=existing_cases,
             codebase_text=codebase_text or "",
+            positive_grids=positive_grids,
+            negative_grids=negative_grids,
+            edge_grids=edge_grids,
         )
         # print(f"[grid_generation] Prompt for {func_name}:\n{base_prompt}\n")
         # print(f"[grid_generation] Args for {func_name}: {func_args or 'None'}")
         params = SamplingParams(temperature=0.2, max_tokens=5000)
         attempts = max(1, int(attempts))
         last_error = ""
+        failed_attempts: list[dict] = []
+        
+        def _record_failed_attempt(reason: str, candidate: str) -> None:
+            failed_attempts.append({
+                "reason": reason,
+                "candidate": (candidate or "").strip(),
+            })
+
+        def _format_failed_attempts() -> str:
+            if not failed_attempts:
+                return ""
+            recent = failed_attempts[-5:]
+            older = failed_attempts[:-5]
+            lines = ["\n\nRecent failed attempts (last 5). fix these issues in the next attempt:"]
+            for idx, item in enumerate(recent, start=1):
+                candidate = item.get("candidate", "")
+                if len(candidate) > 1200:
+                    candidate = candidate[:1200] + "... [truncated]"
+                lines.append(
+                    f"\nAttempt context {idx} reason: {item.get('reason', 'unknown')}\n"
+                    f"Attempt context {idx} candidate:\n{candidate}"
+                )
+            if older:
+                lines.append("\nOther failure reasons:")
+                for idx, item in enumerate(older, start=1):
+                    lines.append(f"- Earlier failure {idx}: {item.get('reason', 'unknown')}")
+            lines.append("\nUse these failures to avoid repeating mistakes.")
+            return "\n".join(lines)
+
         for attempt in range(attempts):
             prompt = base_prompt
             if last_error:
                 prompt = (
                     base_prompt
-                    + "\n\nThe previous grid spec was invalid because: "
-                    + last_error
+                    + _format_failed_attempts()
                     + "\nRegenerate a valid JSON spec."
                 )
             print("prompt", prompt)
@@ -435,10 +444,12 @@ def ensure_function_grid_spec(
                     spec = ast.literal_eval(json_text)
                 except Exception:
                     last_error = f"grid JSON parse failed: {e}"
+                    _record_failed_attempt(last_error, raw)
                     print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
                     continue
             if not isinstance(spec, dict):
                 last_error = "response is not a JSON object"
+                _record_failed_attempt(last_error, json_text)
                 print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
                 continue
             required_keys = {"task_name", "width", "height", "grid"}
@@ -446,6 +457,7 @@ def ensure_function_grid_spec(
                 required_keys.add("test_type")
             if not required_keys.issubset(spec.keys()):
                 last_error = f"missing required keys: {sorted(required_keys - set(spec.keys()))}"
+                _record_failed_attempt(last_error, json.dumps(spec, ensure_ascii=True))
                 print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
                 continue
             normalized = _normalize_grid_spec(
@@ -463,6 +475,7 @@ def ensure_function_grid_spec(
             )
             if not args_ok:
                 last_error = args_error
+                _record_failed_attempt(last_error, json.dumps(normalized, ensure_ascii=True))
                 print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
                 continue
             print(normalized)
@@ -470,6 +483,7 @@ def ensure_function_grid_spec(
             if 'validate_grid_spec' in globals():
                 is_valid, last_error = validate_grid_spec(normalized, cookbook)
             if not is_valid:
+                _record_failed_attempt(last_error, json.dumps(normalized, ensure_ascii=True))
                 print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed (validate_grid_spec): {last_error}")
             if is_valid:
                 if skip_positive_grids and normalized.get('test_type') == 'positive':

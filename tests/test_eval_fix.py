@@ -7,7 +7,6 @@ in the explicit feedback generation processing.
 import os
 import sys
 import re
-import ast
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.abspath(__file__))

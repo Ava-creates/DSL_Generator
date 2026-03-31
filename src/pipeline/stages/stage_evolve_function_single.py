@@ -8,7 +8,6 @@ import os
 import sys
 import json
 import argparse
-from typing import Dict, List
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -59,8 +58,7 @@ def main():
     # Note: shared_vllm is initialized later, so we pass None here
     # LLM-based description generation will fall back to pattern-based if no vLLM is available
     from src.pipeline.integrated_pipeline import ensure_terminals_match_cfg
-    old_terminals = terminals.copy()  # Preserve existing descriptions
-    terminals = ensure_terminals_match_cfg(cfg, terminals, old_terminals=old_terminals, shared_vllm=None)
+    terminals = ensure_terminals_match_cfg(cfg, terminals, shared_vllm=None)
     
     if not terminals:
         print(" Invalid CFG data: no terminals found after extraction", file=sys.stderr)
@@ -139,13 +137,13 @@ def main():
             except ImportError:
                 pass  # torch not available for diagnostics
             
-            print(f"\n  Possible causes:", file=sys.stderr)
-            print(f"    1. GPU memory fragmentation (previous operations left fragmented memory)", file=sys.stderr)
+            print("\n  Possible causes:", file=sys.stderr)
+            print("    1. GPU memory fragmentation (previous operations left fragmented memory)", file=sys.stderr)
             print(f"    2. Insufficient free GPU memory (need ~{0.75 * 4 * 80:.0f}GB for 4 GPUs at 75% utilization)", file=sys.stderr)
-            print(f"    3. CUDA context issues from previous operations", file=sys.stderr)
-            print(f"    4. Another process/job using the same GPUs", file=sys.stderr)
-            print(f"\n  Failing stage to prevent multiple instances from being created (which would cause OOM)", file=sys.stderr)
-            print(f"  Shared instance is required to avoid GPU memory issues when running FunSearch and explicit feedback sequentially", file=sys.stderr)
+            print("    3. CUDA context issues from previous operations", file=sys.stderr)
+            print("    4. Another process/job using the same GPUs", file=sys.stderr)
+            print("\n  Failing stage to prevent multiple instances from being created (which would cause OOM)", file=sys.stderr)
+            print("  Shared instance is required to avoid GPU memory issues when running FunSearch and explicit feedback sequentially", file=sys.stderr)
             return 1
         except Exception as e:
             print(f" ERROR: Unexpected error creating shared vLLM instance: {e}", file=sys.stderr)
@@ -212,13 +210,13 @@ def main():
                 print(f"   Warning: Error during cleanup: {cleanup_error}")
         
         # Decrement function evolution counter and check if we should trigger funsearch
-        print(f"\n[Chaining] Decrementing function evolution count...")
+        print("\n[Chaining] Decrementing function evolution count...")
         remaining = decrement_function_evolution(args.experiment_dir)
         print(f"  Remaining function evolution jobs: {remaining}")
         
         # If this was the last function evolution job, submit funsearch jobs again
         if remaining == 0:
-            print(f"\n[Chaining] All function evolution jobs completed. Submitting FunSearch jobs for evolved functions...")
+            print("\n[Chaining] All function evolution jobs completed. Submitting FunSearch jobs for evolved functions...")
             
             # Load terminals
             cfg_path = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
@@ -243,14 +241,9 @@ def main():
             )
             print(f"  Updated func_evolution_round: {current_func_round} -> {new_func_round}")
             
-            scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "scripts", "stages")
-            spec_file = os.environ.get("SPEC_FILE", "prompt_specifications/specification_with_updated_nld.txt")
-            model_type = os.environ.get("MODEL_TYPE", "huggingface")
-            total_samples = os.environ.get("TOTAL_SAMPLES", "1000")  # Default: 1000 (matches other stages)
-            
             # Chaining will be handled by the SLURM script (chain_next_stage.sh)
             # It will submit FunSearch jobs when all function evolution jobs complete
-            print(f"\n[Chaining] State updated. Chaining script will submit FunSearch jobs when all function evolution jobs complete.")
+            print("\n[Chaining] State updated. Chaining script will submit FunSearch jobs when all function evolution jobs complete.")
         
         return 0 if evolved else 1
     except Exception as e:
@@ -294,15 +287,15 @@ def main():
                 json.dump(stage_status, f, indent=2)
         
         # Still decrement even on failure
-        print(f"\n[Chaining] Decrementing function evolution count (after failure)...")
+        print("\n[Chaining] Decrementing function evolution count (after failure)...")
         remaining = decrement_function_evolution(args.experiment_dir)
         print(f"  Remaining function evolution jobs: {remaining}")
         
         # If this was the last function evolution job, update state for chaining
         # The chaining script (chain_next_stage.sh) will handle FunSearch submission
         if remaining == 0:
-            print(f"\n[Chaining] All function evolution jobs completed (some may have failed).")
-            print(f"  Chaining script will submit FunSearch jobs when this job completes.")
+            print("\n[Chaining] All function evolution jobs completed (some may have failed).")
+            print("  Chaining script will submit FunSearch jobs when this job completes.")
             
             cfg_path = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
             with open(cfg_path, 'r', encoding='utf-8') as f:

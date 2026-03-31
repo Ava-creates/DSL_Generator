@@ -1,7 +1,10 @@
 experiment_dir:
 spec_file: prompt_specifications/specification_with_updated_nld.txt
+nld_path: prompt_specifications/nld.txt
 failure_analysis_prompt: prompt_specifications/failure_analysis.txt
 cfg_evolution_prompt: prompt_specifications/cfg_evolution.txt
+cfg_generator_prompt_path: prompt_specifications/cfg_generator.txt
+domain_context_template_path: prompt_specifications/more_domain_context.txt
 tasks:
   - get[gem]
   - get[iron]

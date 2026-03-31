@@ -8,16 +8,16 @@ import os
 import sys
 import json
 import argparse
-from typing import Dict, List
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, _project_root)
 
-from src.pipeline.integrated_pipeline import test_cfg_on_tasks, ensure_terminals_match_cfg, check_final_functions_exist
+from src.pipeline.integrated_pipeline import test_cfg_on_tasks, ensure_terminals_match_cfg
 from src.pipeline.cfg_to_funsearch_pipeline import sanitize_function_name
 from src.utils.results_tracker import ResultsTracker
 from src.utils.pipeline_state import update_state, read_state
+from src.utils.status_manager import write_status
 
 # Import vLLM for shared instance
 try:
@@ -109,8 +109,8 @@ def main():
                   f"but the following final function files are missing:", file=sys.stderr)
             for m in missing_for_round:
                 print(f"  - {m}", file=sys.stderr)
-            print(f"\n  The evolve stage must produce these files before test_tasks can run.", file=sys.stderr)
-            print(f"  Skipping test_tasks for this round.", file=sys.stderr)
+            print("\n  The evolve stage must produce these files before test_tasks can run.", file=sys.stderr)
+            print("  Skipping test_tasks for this round.", file=sys.stderr)
             return 1
     
     # Create shared vLLM instance
@@ -198,9 +198,7 @@ def main():
         "all_solved": all_solved,
         "failing_tasks": failing_tasks
     }
-    status_file = os.path.join(args.experiment_dir, "stage_test_tasks_status.json")
-    with open(status_file, 'w') as f:
-        json.dump(stage_status, f, indent=2)
+    write_status(args.experiment_dir, args.dsl_round, "test_tasks", stage_status)
     
     print(f"\n{'='*80}")
     print("Task Test Results")
@@ -231,7 +229,7 @@ def main():
     
     # After test_tasks completes: set function_impl_remaining to max and test_tasks_submitted to 1
     # This prepares for function evolution (which will reset both to 0 when done)
-    print(f"\n[Chaining] All test tasks completed. Updating state...")
+    print("\n[Chaining] All test tasks completed. Updating state...")
     state = read_state(args.experiment_dir)
     function_impl_total = state.get("function_implementation_total", 0)
     
@@ -240,7 +238,7 @@ def main():
         update_state(args.experiment_dir, 
                      test_tasks_submitted=0,
                      function_implementation_remaining=0)
-        print(f"  All tasks solved! Pipeline complete.")
+        print("  All tasks solved! Pipeline complete.")
     else:
         # If not all solved, set function_impl_remaining to max and test_tasks_submitted to 1
         # This prepares for function evolution
@@ -248,14 +246,14 @@ def main():
                      test_tasks_submitted=1,
                      function_implementation_remaining=function_impl_total)
         print(f"  Set function_implementation_remaining={function_impl_total}, test_tasks_submitted=1")
-        print(f"  Chaining script will handle function evolution submission.")
+        print("  Chaining script will handle function evolution submission.")
     
     if all_solved:
-        print(f"\n ALL TASKS SOLVED! Pipeline complete.")
+        print("\n ALL TASKS SOLVED! Pipeline complete.")
         update_state(args.experiment_dir, phase="complete")
     else:
         print(f"\n {len(failing_tasks)}/{len(tasks)} tasks failed: {failing_tasks}")
-        print(f"  Chaining script will check results and submit evolution jobs if needed.")
+        print("  Chaining script will check results and submit evolution jobs if needed.")
     
     # Clean up vLLM instance and GPU memory before exiting
     if shared_vllm is not None:
