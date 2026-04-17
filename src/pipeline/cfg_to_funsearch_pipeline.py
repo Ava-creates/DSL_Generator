@@ -19,11 +19,15 @@ import glob
 from funsearch.implementation.funsearch import FunSearch
 from funsearch.implementation import config as config_lib
 from src.utils.file_utils import version_file
+from src.utils.results_tracker import plot_funsearch_reward_vs_interactions
+from src.utils.config_loader import funsearch_grid_regen_kwargs_from_config, load_config
 from src.pipeline.grid_generation import ensure_function_grid_spec
 from src.pipeline.domain_templates import (
     craft_solve_template_basic,
+    craft_solve_template_task_env_basic,
     craft_evaluate_template,
     craft_env_setup,
+    craft_baseline_evaluate_template,
 )
 
 # Import vLLM for shared instance
@@ -317,6 +321,8 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
                              dsl_round: Optional[int] = None,
                              func_evolution_round: Optional[int] = None,
                              shared_vllm=None,
+                             forced_task_name: Optional[str] = None,
+                             use_task_env: bool = False,
                              grid_prompt_path: str = "prompt_specifications/grid_prompt.txt",
                              require_test_type: bool = True,
                              skip_positive_grids: bool = False,
@@ -347,11 +353,15 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
     # Get sanitized name for file naming
     safe_name = sanitize_function_name(func_name)
     
-    # Extract argument name(s) - prefer from function name, fallback to CFG
-    args = extract_function_args(func_name, cfg)
+    # Extract argument name(s) - prefer from function name, fallback to CFG when available.
     if args_list:
         args = ", ".join([a.strip().lower() for a in args_list if a.strip()])
-    if args == "arg" or not args:
+    elif cfg and str(cfg).strip():
+        args = extract_function_args(func_name, cfg)
+    else:
+        args = ""
+
+    if (args == "arg" or not args) and cfg and str(cfg).strip():
             from src.pipeline.cfg_parser import CFGParser
             parser = CFGParser(cfg)
             for fname, fargs in parser.get_terminal_functions():
@@ -397,7 +407,7 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
         func_call_args = "env"
         args_docstring = ""
 
-    default_task_name = None
+    default_task_name = forced_task_name
     recipes_path = "craft/resources/recipes.yaml"
     hints_path = "craft/resources/hints.yaml"
     # grid_prompt_path is passed as a parameter (default: prompt_specifications/grid_prompt.txt)
@@ -425,44 +435,50 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
     except Exception as e:
         print(f"  Warning: could not read codebase description ({codebase_path}): {e}")
         codebase_text = ""
-    grid_dir_override = os.environ.get("GRID_SPEC_DIR")
-    grid_dir = grid_dir_override if grid_dir_override else (os.path.join(experiment_dir, "grids") if experiment_dir else "grids")
-    os.makedirs(grid_dir, exist_ok=True)
-    num_grid_tests = (negative_grids + edge_grids) if skip_positive_grids else (positive_grids + negative_grids + edge_grids)
-    total_grid_generation_attempts = 200
     grid_spec_paths = []
     grid_spec = None
+    if use_task_env:
+        if not default_task_name:
+            raise ValueError(f"Missing forced_task_name for task-env mode: {func_name}")
+        task_name_for_env = default_task_name
+        grid_spec_path = None
+    else:
+        grid_dir_override = os.environ.get("GRID_SPEC_DIR")
+        grid_dir = grid_dir_override if grid_dir_override else (os.path.join(experiment_dir, "grids") if experiment_dir else "grids")
+        os.makedirs(grid_dir, exist_ok=True)
+        num_grid_tests = (negative_grids + edge_grids) if skip_positive_grids else (positive_grids + negative_grids + edge_grids)
+        total_grid_generation_attempts = 200
 
-    # Optional: reuse pre-generated grid specs via env vars.
-    use_existing_grids = str(os.environ.get("USE_EXISTING_GRID_SPECS", "")).lower() in {"1", "true", "yes"}
-    if use_existing_grids:
-        # Only scan grid_dir; prefer exact function/dsl matches, then fall back to any JSONs.
-        if os.path.isdir(grid_dir):
-            def _match(fname: str) -> bool:
-                if not fname.lower().endswith(".json"):
-                    return False
-                if dsl_round is not None:
-                    return f"{safe_name}_dsl{dsl_round}_" in fname
-                return f"{safe_name}_" in fname
+        # Optional: reuse pre-generated grid specs via env vars.
+        use_existing_grids = str(os.environ.get("USE_EXISTING_GRID_SPECS", "")).lower() in {"1", "true", "yes"}
+        if use_existing_grids:
+            # Only scan grid_dir; prefer exact function/dsl matches, then fall back to any JSONs.
+            if os.path.isdir(grid_dir):
+                def _match(fname: str) -> bool:
+                    if not fname.lower().endswith(".json"):
+                        return False
+                    if dsl_round is not None:
+                        return f"{safe_name}_dsl{dsl_round}_" in fname
+                    return f"{safe_name}_" in fname
 
-            for fname in sorted(os.listdir(grid_dir)):
-                if _match(fname):
-                    grid_spec_paths.append(os.path.join(grid_dir, fname))
-            if not grid_spec_paths:
-                # Fallback: match by function name alone (any dsl round)
                 for fname in sorted(os.listdir(grid_dir)):
-                    if fname.lower().endswith(".json") and f"{safe_name}_" in fname:
+                    if _match(fname):
                         grid_spec_paths.append(os.path.join(grid_dir, fname))
-            if not grid_spec_paths:
-                for fname in sorted(os.listdir(grid_dir)):
-                    if fname.lower().endswith(".json"):
-                        grid_spec_paths.append(os.path.join(grid_dir, fname))
-        if grid_spec_paths:
-            try:
-                with open(grid_spec_paths[0], "r", encoding="utf-8") as f:
-                    grid_spec = json.load(f)
-            except Exception as e:
-                print(f"  Warning: could not load first grid spec {grid_spec_paths[0]}: {e}")
+                if not grid_spec_paths:
+                    # Fallback: match by function name alone (any dsl round)
+                    for fname in sorted(os.listdir(grid_dir)):
+                        if fname.lower().endswith(".json") and f"{safe_name}_" in fname:
+                            grid_spec_paths.append(os.path.join(grid_dir, fname))
+                if not grid_spec_paths:
+                    for fname in sorted(os.listdir(grid_dir)):
+                        if fname.lower().endswith(".json"):
+                            grid_spec_paths.append(os.path.join(grid_dir, fname))
+            if grid_spec_paths:
+                try:
+                    with open(grid_spec_paths[0], "r", encoding="utf-8") as f:
+                        grid_spec = json.load(f)
+                except Exception as e:
+                    print(f"  Warning: could not load first grid spec {grid_spec_paths[0]}: {e}")
 
     if not grid_spec_paths and shared_vllm is not None:
         generated_cases = []  # all cases including positives, used for LLM context
@@ -568,11 +584,18 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
 
     
    
-    solve_func = craft_solve_template_basic(
-        func_name=func_name,
-        func_params=func_params,
-        func_call_args=func_call_args,
-    )
+    if use_task_env:
+        solve_func = craft_solve_template_task_env_basic(
+            func_name=func_name,
+            func_params=func_params,
+            func_call_args=func_call_args,
+        )
+    else:
+        solve_func = craft_solve_template_basic(
+            func_name=func_name,
+            func_params=func_params,
+            func_call_args=func_call_args,
+        )
 
     seed_body = _load_seed_body(experiment_dir, safe_name, dsl_round, func_evolution_round)
     if seed_body:
@@ -641,6 +664,225 @@ def {safe_name}({func_params}):
     return func_file, func_signature
 
 
+def generate_baseline_function_prompt(
+    func_name: str,
+    description: str,
+    cfg: str,
+    *,
+    specification: str,
+    experiment_dir: str,
+    dsl_round: Optional[int],
+    func_evolution_round: int,
+    task_name: str,
+    variant: str,
+    shared_vllm=None,
+    grid_prompt_path: str = "prompt_specifications/grid_prompt.txt",
+    require_test_type: bool = True,
+    skip_positive_grids: bool = False,
+    positive_grids: int = 10,
+    negative_grids: int = 4,
+    edge_grids: int = 1,
+) -> tuple[str, str]:
+    """Baseline-specific wrapper around generate_function_prompt.
+
+    Keeps baseline branching out of generic callers.
+    - task_env: direct task-name env evaluation (no testcase grids)
+    - testcase: current testcase-grid behavior
+    - two_phase_seeded_random: same prompt generation behavior as testcase;
+      phase orchestration is handled by src/baseline.py
+    """
+    mode = (variant or "").strip().lower()
+
+    if mode == "task_env":
+        return generate_function_prompt(
+            func_name=func_name,
+            description=description,
+            cfg=cfg,
+            specification=specification,
+            experiment_dir=experiment_dir,
+            dsl_round=dsl_round,
+            func_evolution_round=func_evolution_round,
+            shared_vllm=shared_vllm,
+            forced_task_name=task_name,
+            use_task_env=True,
+            grid_prompt_path=grid_prompt_path,
+            require_test_type=require_test_type,
+            skip_positive_grids=skip_positive_grids,
+            positive_grids=positive_grids,
+            negative_grids=negative_grids,
+            edge_grids=edge_grids,
+        )
+
+    if mode in {"testcase", "two_phase_seeded_random"}:
+        return generate_function_prompt(
+            func_name=func_name,
+            description=description,
+            cfg=cfg,
+            specification=specification,
+            experiment_dir=experiment_dir,
+            dsl_round=dsl_round,
+            func_evolution_round=func_evolution_round,
+            shared_vllm=shared_vllm,
+            forced_task_name=task_name,
+            use_task_env=False,
+            grid_prompt_path=grid_prompt_path,
+            require_test_type=require_test_type,
+            skip_positive_grids=skip_positive_grids,
+            positive_grids=positive_grids,
+            negative_grids=negative_grids,
+            edge_grids=edge_grids,
+        )
+
+    raise ValueError(
+        f"Unsupported baseline variant: {variant}. "
+        "Expected one of: task_env, testcase, two_phase_seeded_random"
+    )
+
+
+def _generate_baseline_task_env_prompt(
+    func_name: str,
+    description: str,
+    cfg: str,
+    *,
+    specification: str,
+    experiment_dir: str,
+    dsl_round: Optional[int],
+    func_evolution_round: int,
+    task_name: str,
+) -> tuple[str, str]:
+    """Baseline task-env prompt generation path (no testcase grids)."""
+    func_dir = os.path.join(experiment_dir, "function_specific_prompts")
+    os.makedirs(func_dir, exist_ok=True)
+
+    base_name, args_list = parse_function_name_and_args(func_name)
+    safe_name = sanitize_function_name(func_name)
+
+    if args_list:
+        args = ", ".join([a.strip().lower() for a in args_list if a.strip()])
+    elif cfg and str(cfg).strip():
+        args = extract_function_args(func_name, cfg)
+    else:
+        args = ""
+
+    if (args == "arg" or not args) and cfg and str(cfg).strip():
+        from src.pipeline.cfg_parser import CFGParser
+        parser = CFGParser(cfg)
+        for fname, fargs in parser.get_terminal_functions():
+            if fname.strip().lower() == base_name.strip().lower():
+                if fargs:
+                    args_list = [a.strip().lower() for a in fargs if a.strip()]
+                    args = ", ".join(args_list)
+                break
+
+    has_args = bool(args and args != "arg" and args.strip())
+    display_name = base_name
+    func_file = os.path.join(func_dir, f"{_versioned_name(safe_name, dsl_round, func_evolution_round)}.txt")
+
+    if has_args:
+        func_params = f"env, {args}"
+        func_call_args = f"env, {args}"
+        args_docstring = f"      {args} (str): Function-specific argument(s).\\n  "
+    else:
+        func_params = "env"
+        func_call_args = "env"
+        args_docstring = ""
+
+    solve_func = craft_solve_template_task_env_basic(
+        func_name=func_name,
+        func_params=func_params,
+        func_call_args=func_call_args,
+    )
+
+    evolve_func = f'''@funsearch.evolve
+def {safe_name}({func_params}):
+  """
+  {description}
+
+  Args:
+      env: The current environment instance.
+  {args_docstring}
+      Returns: List[int]: A sequence of raw integer action codes accepted by env.step().
+
+  """
+'''
+
+    eval_func = craft_baseline_evaluate_template(
+        display_name=display_name,
+        func_call_args=func_call_args,
+        task_name=task_name,
+        recipes_path="craft/resources/recipes.yaml",
+        hints_path="craft/resources/hints.yaml",
+        max_steps=400,
+    )
+
+    prompt_content = solve_func + "\n" + eval_func + "\n" + evolve_func
+    with open(func_file, "w", encoding="utf-8") as f:
+        f.write(prompt_content)
+
+    func_signature = f"def {safe_name}({func_params})"
+    print(f"Generated baseline task-env prompt: {func_file}")
+    return func_file, func_signature
+
+
+def generate_baseline_function_prompt(
+    func_name: str,
+    description: str,
+    cfg: str,
+    *,
+    specification: str,
+    experiment_dir: str,
+    dsl_round: Optional[int],
+    func_evolution_round: int,
+    task_name: str,
+    variant: str,
+    shared_vllm=None,
+    grid_prompt_path: str = "prompt_specifications/grid_prompt.txt",
+    require_test_type: bool = True,
+    skip_positive_grids: bool = False,
+    positive_grids: int = 10,
+    negative_grids: int = 4,
+    edge_grids: int = 1,
+) -> tuple[str, str]:
+    """Baseline-specific entrypoint without changing generic prompt API."""
+    normalized = (variant or "").strip().lower()
+
+    if normalized == "task_env":
+        return _generate_baseline_task_env_prompt(
+            func_name=func_name,
+            description=description,
+            cfg=cfg,
+            specification=specification,
+            experiment_dir=experiment_dir,
+            dsl_round=dsl_round,
+            func_evolution_round=func_evolution_round,
+            task_name=task_name,
+        )
+
+    if normalized in {"testcase", "two_phase_seeded_random"}:
+        return generate_function_prompt(
+            func_name=func_name,
+            description=description,
+            cfg=cfg,
+            specification=specification,
+            experiment_dir=experiment_dir,
+            dsl_round=dsl_round,
+            func_evolution_round=func_evolution_round,
+            shared_vllm=shared_vllm,
+            forced_task_name=task_name,
+            grid_prompt_path=grid_prompt_path,
+            require_test_type=require_test_type,
+            skip_positive_grids=skip_positive_grids,
+            positive_grids=positive_grids,
+            negative_grids=negative_grids,
+            edge_grids=edge_grids,
+        )
+
+    raise ValueError(
+        f"Unsupported baseline variant: {variant}. "
+        "Expected one of: task_env, testcase, two_phase_seeded_random"
+    )
+
+
 def generate_func_init(func_name: str, description: str, cfg: str = "", 
                        func_dir: str = "functions_generated",
                        experiment_dir: Optional[str] = None,
@@ -664,7 +906,13 @@ def generate_func_init(func_name: str, description: str, cfg: str = "",
     os.makedirs(func_dir, exist_ok=True)
     
     safe_name = sanitize_function_name(func_name)
-    args = extract_function_args(func_name, cfg)
+    base_name, args_list = parse_function_name_and_args(func_name)
+    if args_list:
+        args = ", ".join([arg.strip().lower() for arg in args_list if arg.strip()])
+    elif cfg and str(cfg).strip():
+        args = extract_function_args(func_name, cfg)
+    else:
+        args = ""
     
     func_init_file = os.path.join(func_dir, f"{_versioned_name(safe_name, dsl_round, func_evolution_round)}_func_init.py")
 
@@ -861,7 +1109,12 @@ def determine_inputs(func_name: str, description: str, cfg: str) -> list:
     return ["test_input"]
 
 
-def find_funsearch_log_file(func_name: str, results_dir: str) -> Optional[str]:
+def find_funsearch_log_file(
+    func_name: str,
+    results_dir: str,
+    dsl_round: Optional[int] = None,
+    func_evolution_round: Optional[int] = None,
+) -> Optional[str]:
     """Find the funsearch log file for a given function.
     
     Args:
@@ -875,7 +1128,18 @@ def find_funsearch_log_file(func_name: str, results_dir: str) -> Optional[str]:
     pattern = f"*{safe_name}*.log"
     log_files = glob.glob(os.path.join(results_dir, pattern))
     if log_files:
-        # Return the most recent one
+        context_matches = []
+        if dsl_round is not None and func_evolution_round is not None:
+            context_pattern = re.compile(
+                rf"{re.escape(safe_name)}_dsl{int(dsl_round)}_func{int(func_evolution_round)}\.txt"
+            )
+            context_matches = [
+                path for path in log_files
+                if context_pattern.search(os.path.basename(path))
+            ]
+        if context_matches:
+            return max(context_matches, key=os.path.getmtime)
+        # Fallback: return the most recent name match
         return max(log_files, key=os.path.getmtime)
     return None
 
@@ -885,7 +1149,8 @@ def run_explicit_feedback_generation(func_name: str, results_dir: str, func_file
                                      specification: str, k: int = 5,
                                      shared_vllm=None, func_signature: str = "",
                                      results_tracker=None, dsl_round: Optional[int] = None,
-                                     func_evolution_round: Optional[int] = None) -> Optional[str]:
+                                     func_evolution_round: Optional[int] = None,
+                                     num_iterations: int = 1) -> Optional[str]:
     """Run explicit feedback generation for a function using existing explicit_feedback_generation.py.
     
     Args:
@@ -905,7 +1170,12 @@ def run_explicit_feedback_generation(func_name: str, results_dir: str, func_file
     from src.pipeline.explicit_feedback_generation import parse_log_file, response_gen
     
     # Find the log file
-    log_file = find_funsearch_log_file(func_name, results_dir)
+    log_file = find_funsearch_log_file(
+        func_name,
+        results_dir,
+        dsl_round=dsl_round,
+        func_evolution_round=func_evolution_round,
+    )
     if not log_file:
         print(f"   Could not find log file for {func_name}")
         return None
@@ -943,7 +1213,8 @@ def run_explicit_feedback_generation(func_name: str, results_dir: str, func_file
     final_func = response_gen(
         funcs, k, eval_file, specification, func_signature, 
         explicit_feedback_dir, shared_vllm=shared_vllm, results_tracker=results_tracker,
-        dsl_round=dsl_round, func_evolution_round=func_evolution_round
+        dsl_round=dsl_round, func_evolution_round=func_evolution_round,
+        num_iterations=num_iterations,
     )
     
     return final_func
@@ -1163,32 +1434,87 @@ def get_cfg(
                     return "", {}, None, False
 
 
+def _dsl_generator_project_root() -> str:
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _resolve_spec_asset_path(rel_or_abs: str) -> str:
+    """Resolve a project-relative or absolute path to the NLD/codebase assets."""
+    if not rel_or_abs:
+        raise ValueError("Asset path must be non-empty")
+    if os.path.isabs(rel_or_abs):
+        return rel_or_abs
+    return os.path.join(_dsl_generator_project_root(), rel_or_abs)
+
+
+def apply_specification_template_placeholders(
+    specification: str,
+    *,
+    cfg: Optional[str] = None,
+    nld_path: Optional[str] = None,
+    codebase_path: Optional[str] = None,
+) -> str:
+    """Expand <<NLD>>, <<CODEBASE>>, and optionally <<CFG>> in a specification template.
+
+    Paths default to ``nld_path`` / ``codebase_path`` from :func:`load_config` (including
+    ``EXPERIMENT_CONFIG`` / env overrides such as ``NLD_PATH`` / ``CODEBASE_PATH``).
+    Explicit ``nld_path`` / ``codebase_path`` arguments override those defaults.
+    """
+    settings = load_config()
+    nld_rel = nld_path if nld_path is not None else settings.get("nld_path", "prompt_specifications/nld.txt")
+    codebase_rel = (
+        codebase_path
+        if codebase_path is not None
+        else settings.get("codebase_path", "prompt_specifications/codebase.txt")
+    )
+
+    spec = specification
+    if re.search(r'<<\s*NLD\s*>>', spec, flags=re.IGNORECASE):
+        nld_abs = _resolve_spec_asset_path(nld_rel)
+        if not os.path.isfile(nld_abs):
+            raise FileNotFoundError(
+                f"Specification contains <<NLD>> but NLD file not found: {nld_abs}"
+            )
+        with open(nld_abs, "r", encoding="utf-8") as f:
+            nld_text = f.read()
+        spec = replace_nld_placeholder_in_specification(spec, nld_text)
+    if re.search(r'<<\s*CODEBASE\s*>>', spec, flags=re.IGNORECASE):
+        codebase_abs = _resolve_spec_asset_path(codebase_rel)
+        if not os.path.isfile(codebase_abs):
+            raise FileNotFoundError(
+                f"Specification contains <<CODEBASE>> but codebase file not found: {codebase_abs}"
+            )
+        with open(codebase_abs, "r", encoding="utf-8") as f:
+            codebase_text = f.read()
+        spec = replace_codebase_placeholder_in_specification(spec, codebase_text)
+    if cfg:
+        spec = replace_dsl_section_in_specification(spec, cfg)
+    return spec
+
+
+def replace_nld_placeholder_in_specification(specification: str, nld: str) -> str:
+    """Replace <<NLD>> in the specification template with the natural language domain text."""
+    return re.sub(r'<<\s*NLD\s*>>', nld, specification, flags=re.IGNORECASE)
+
+
+def replace_codebase_placeholder_in_specification(specification: str, codebase: str) -> str:
+    """Replace <<CODEBASE>> in the specification template with the codebase description text."""
+    return re.sub(r'<<\s*CODEBASE\s*>>', codebase, specification, flags=re.IGNORECASE)
+
+
 def replace_dsl_section_in_specification(specification: str, cfg: str) -> str:
     """Replace the DSL block in the specification with the current CFG."""
-    if not cfg or not specification:
-        return specification
 
-    if "<<CFG>>" in specification:
-        return specification.replace("<<CFG>>", cfg)
+    # Work on a copy
+    spec = specification
 
-    dsl_pattern = r'(## DSL[^\n]*\n.*?"""\n)(.*?)(\n"""\n)'
-    dsl_match = re.search(dsl_pattern, specification, re.DOTALL)
-    if dsl_match:
-        header = dsl_match.group(1)
-        footer = dsl_match.group(3)
-        cfg_section = header + cfg + footer
-        return re.sub(dsl_pattern, cfg_section, specification, flags=re.DOTALL)
+    spec = re.sub(r'<<\s*CFG\s*>>', cfg, spec, flags=re.IGNORECASE)
 
-    dsl_pattern_simple = r'(## DSL[^\n]*\n"""\n)(.*?)(\n"""\n)'
-    dsl_match_simple = re.search(dsl_pattern_simple, specification, re.DOTALL)
-    if dsl_match_simple:
-        header = dsl_match_simple.group(1)
-        footer = dsl_match_simple.group(3)
-        cfg_section = header + cfg + footer
-        return re.sub(dsl_pattern_simple, cfg_section, specification, flags=re.DOTALL)
+    # Final safety check: if placeholders remain, warn so callers can act
+    if re.search(r'<<\s*CFG\s*>>', spec, flags=re.IGNORECASE) or re.search(r'(?m)^[ \t]*CFG[ \t]*$', spec):
+        print("\n[Step 2.1] Warning: DSL placeholder remains in specification after replacement")
 
-    print("\n[Step 2.1] Warning: Could not find DSL section in specification to replace")
-    return specification
+    return spec
 
 
 def implement_cfg(
@@ -1201,7 +1527,9 @@ def implement_cfg(
     shared_vllm=None,
     results_tracker=None,
     dsl_round: Optional[int] = None,
-    func_evolution_round: Optional[int] = None
+    func_evolution_round: Optional[int] = None,
+    nld_path: Optional[str] = None,
+    codebase_path: Optional[str] = None,
 ) -> Tuple[bool, Dict[str, str]]:
     """Implement CFG by generating prompts, running funsearch, and extracting final functions.
     
@@ -1221,6 +1549,8 @@ def implement_cfg(
         experiment_dir: Experiment directory
         model_type: Model type for funsearch ('huggingface', 'ollama', or 'gemini')
         shared_vllm: Optional shared vLLM instance
+        nld_path: Optional path to NLD file (default: from experiment config)
+        codebase_path: Optional path to codebase description (default: from experiment config)
         
     Returns:
         Tuple of (success: bool, final_functions: Dict[str, str])
@@ -1239,11 +1569,41 @@ def implement_cfg(
     if os.path.exists(spec_file):
         with open(spec_file, 'r', encoding='utf-8') as f:
             specification = f.read()
+        specification = apply_specification_template_placeholders(
+            specification,
+            cfg=cfg if cfg else None,
+            nld_path=nld_path,
+            codebase_path=codebase_path,
+        )
     
-    # Replace DSL section in specification with current CFG.
+    # Persisted spec includes NLD, CODEBASE, and CFG when cfg is set
     if cfg:
-        specification = replace_dsl_section_in_specification(specification, cfg)
-        print("\n[Step 2.1] Replaced DSL section in specification with current CFG")
+        print("\n[Step 2.1] Replaced template placeholders (NLD, CODEBASE, CFG) in specification")
+
+        # Persist the replaced specification so downstream jobs/readers never see the original template
+        try:
+            spec_with_cfg_path = os.path.join(experiment_dir, "spec_with_cfg.txt")
+            os.makedirs(os.path.dirname(spec_with_cfg_path), exist_ok=True)
+            with open(spec_with_cfg_path, 'w', encoding='utf-8') as _f:
+                _f.write(specification)
+
+            # Verify no placeholder remains in the written file
+            if re.search(r'<<\s*NLD\s*>>', specification, flags=re.IGNORECASE):
+                print(f"\n[Step 2.1] ERROR: NLD placeholder remained in written spec {spec_with_cfg_path}", file=sys.stderr)
+                raise RuntimeError("NLD placeholder remained after replacement")
+            if re.search(r'<<\s*CODEBASE\s*>>', specification, flags=re.IGNORECASE):
+                print(f"\n[Step 2.1] ERROR: CODEBASE placeholder remained in written spec {spec_with_cfg_path}", file=sys.stderr)
+                raise RuntimeError("CODEBASE placeholder remained after replacement")
+            if re.search(r'<<\s*CFG\s*>>', specification, flags=re.IGNORECASE) or re.search(r'(?m)^[ \t]*CFG[ \t]*$', specification):
+                print(f"\n[Step 2.1] ERROR: Placeholder remained in written spec {spec_with_cfg_path}", file=sys.stderr)
+                raise RuntimeError("DSL placeholder remained after replacement")
+
+            # Use the written file for downstream components
+            spec_file = spec_with_cfg_path
+            print(f"\n[Step 2.1] Wrote replaced specification to {spec_with_cfg_path}")
+        except Exception as e:
+            print(f"\n[Step 2.1] ERROR writing replaced specification: {e}", file=sys.stderr)
+            raise
     
     func_files = {}
     func_signatures = {}
@@ -1276,15 +1636,18 @@ def implement_cfg(
         
         with open(spec_file, 'r', encoding='utf-8') as f:
             specification = f.read()
-        
-        # Replace DSL section if CFG is available.
-        if cfg:
-            specification = replace_dsl_section_in_specification(specification, cfg)
+        specification = apply_specification_template_placeholders(
+            specification,
+            cfg=cfg if cfg else None,
+            nld_path=nld_path,
+            codebase_path=codebase_path,
+        )
     
 
     # Set total_samples=1000 to ensure we get exactly 1000 samples total.
-    regen_attempts = int(os.environ.get("GRID_REGENERATION_ATTEMPTS", 5))
+    regen_attempts = int(load_config().get("grid_regeneration_attempts", 5))
     config = config_lib.Config(
+        **funsearch_grid_regen_kwargs_from_config(),
         num_samplers=1,  # Single sampler - generates samples_per_prompt samples per iteration
         num_evaluators=2,  # Match samples_per_prompt - each evaluator handles one sample
         samples_per_prompt=2,  # 2 samples per prompt
@@ -1362,6 +1725,38 @@ def implement_cfg(
         raise RuntimeError(f"FunSearch failed for functions: {list(errors.keys())}")
     
     print(f"\n All {len(terminals)} functions completed FunSearch successfully")
+
+    # Generate FunSearch plots for all successful functions in package mode.
+    try:
+        dsl_plot_dir = os.path.join(
+            experiment_dir,
+            "results_tracking",
+            "funsearch",
+            f"dsl{dsl_round}" if dsl_round is not None else "dsl0",
+        )
+        os.makedirs(dsl_plot_dir, exist_ok=True)
+
+        plotted = 0
+        for func_name in terminals.keys():
+            log_file = find_funsearch_log_file(func_name, results_dir)
+            if not log_file:
+                print(f"   No FunSearch log found for plotting: {func_name}")
+                continue
+
+            try:
+                out = plot_funsearch_reward_vs_interactions(
+                    log_file=log_file,
+                    output_dir=dsl_plot_dir,
+                    function_name=func_name,
+                )
+                if out:
+                    plotted += 1
+            except Exception as plot_err:
+                print(f"   Failed to plot FunSearch metrics for {func_name}: {plot_err}")
+
+        print(f"   Generated FunSearch plots: {plotted}/{len(terminals)}")
+    except Exception as e:
+        print(f"   Warning: FunSearch plotting step failed: {e}")
     
     # Step 5: Run explicit feedback generation for each function (in parallel)
     print("\n[Step 5] Running explicit feedback generation for each function (in parallel)...")
@@ -1568,7 +1963,8 @@ def run_pipeline(spec_file: str, model_type: str = "huggingface",
                  skip_cfg_generation: bool = False, cfg_output_file: Optional[str] = None,
                  max_cfg_retries: int = 10, experiment_dir: Optional[str] = None,
                  nld_path: str = "prompt_specifications/nld.txt",
-                 recipes_path: str = "craft/resources/recipes.yaml"):
+                 recipes_path: str = "craft/resources/recipes.yaml",
+                 codebase_path: Optional[str] = None):
     """Main pipeline function.
     
     Args:
@@ -1580,6 +1976,7 @@ def run_pipeline(spec_file: str, model_type: str = "huggingface",
         experiment_dir: Optional experiment directory (if None, will create a new one)
         nld_path: Path to natural language domain description
         recipes_path: Path to recipes/domain file
+        codebase_path: Optional path for <<CODEBASE>> in spec template (default: experiment config)
     
     Returns:
         0 on success, 1 on error
@@ -1655,7 +2052,9 @@ def run_pipeline(spec_file: str, model_type: str = "huggingface",
         spec_file=spec_file,
         experiment_dir=experiment_dir,
         model_type=model_type,
-        shared_vllm=shared_vllm
+        shared_vllm=shared_vllm,
+        nld_path=nld_path,
+        codebase_path=codebase_path,
     )
     
     if not success:
@@ -1687,7 +2086,7 @@ def main():
     parser.add_argument(
         '--model_type',
         type=str,
-        choices=['huggingface', 'ollama', 'gemini'],
+        choices=['huggingface', 'ollama', 'gemini', 'openai_compat'],
         default='huggingface',
         help='Model type for funsearch'
     )
@@ -1715,6 +2114,12 @@ def main():
         help='Path to natural language domain description file'
     )
     parser.add_argument(
+        '--codebase_path',
+        type=str,
+        default=None,
+        help='Path to codebase description for <<CODEBASE>> in spec (default: codebase_path from experiment config)'
+    )
+    parser.add_argument(
         '--recipes_path',
         type=str,
         default='craft/resources/recipes.yaml',
@@ -1738,6 +2143,7 @@ def main():
         experiment_dir=args.experiment_dir,
         nld_path=args.nld_path,
         recipes_path=args.recipes_path,
+        codebase_path=args.codebase_path,
     )
 
 if __name__ == "__main__":

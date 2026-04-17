@@ -164,7 +164,7 @@ submit_test_tasks_job() {
         return 1
     fi
     
-                    ensure_log_dir
+    ensure_log_dir
     LOG_DIR="$(get_log_dir)"
     TASKS_STR="$tasks_str" JOB_PREFIX=$job_prefix FUNC_EVOLUTION_ROUND=$func_evolution_round LOG_DIR="$LOG_DIR" python3 << EOF
 import sys
@@ -173,6 +173,7 @@ import subprocess
 sys.path.insert(0, '/home/avani/projects/aip-lelis/avani/DSL_Generator')
 from src.utils.pipeline_state import mark_test_tasks_submitted, read_state, update_state
 import json
+import re
 
 if mark_test_tasks_submitted("$EXPERIMENT_DIR"):
     state = read_state("$EXPERIMENT_DIR")
@@ -233,43 +234,58 @@ if mark_test_tasks_submitted("$EXPERIMENT_DIR"):
     
     tasks = list(dict.fromkeys(tasks))
     num_unique_tasks = len(tasks)
-    # Note: test_tasks runs in a single job, so we don't need counters
-    # Just update test_tasks_total for informational purposes
-    update_state("$EXPERIMENT_DIR", 
-                 test_tasks_total=num_unique_tasks)
-    print(f"Updated test tasks count: {num_unique_tasks} unique tasks (after deduplication)")
+    update_state(
+        "$EXPERIMENT_DIR",
+        test_tasks_total=num_unique_tasks,
+        test_tasks_aggregate_submitted=0,
+    )
+    print(f"Updated test task count: {num_unique_tasks} unique tasks")
 
     scripts_dir = "$scripts_dir"
     job_prefix = os.environ.get("JOB_PREFIX", "exp")
-    tasks_space_sep = " ".join(tasks)
-    
-    env_vars = {
-        "EXPERIMENT_DIR": "$EXPERIMENT_DIR",
-        "TASKS": tasks_space_sep,
-        "RECIPES_PATH": os.environ.get("RECIPES_PATH", "craft/resources/recipes.yaml"),
-        "HINTS_PATH": os.environ.get("HINTS_PATH", "craft/resources/hints.yaml"),
-        "MAX_ATTEMPTS": os.environ.get("MAX_ATTEMPTS", "30"),
-        "DSL_ROUND": dsl_round
-    }
-    if func_evolution_round and func_evolution_round != "0":
-        env_vars["FUNC_EVOLUTION_ROUND"] = func_evolution_round
-    
-    env_str = ",".join([f"{k}={v}" for k, v in env_vars.items()])
-    job_name = f"{job_prefix}_test_tasks"
-    # Include EXPERIMENT_CONFIG if set
     experiment_config = os.environ.get("EXPERIMENT_CONFIG", "")
-    if experiment_config:
-        env_str = f"{env_str},EXPERIMENT_CONFIG={experiment_config}"
-    
     log_dir = os.environ.get("LOG_DIR", "scripts/log")
-    subprocess.run([
-        "sbatch", "--parsable", "--export", f"ALL,{env_str}",
-        "--job-name", job_name,
-        "--output", f"{log_dir}/stage_test_tasks_%j.out",
-        "--error", f"{log_dir}/stage_test_tasks_%j.err",
-        f"{scripts_dir}/stage_test_tasks.slurm"
-    ], check=False)
-    print(f"Submitted single test tasks job for {num_unique_tasks} tasks")
+
+    submitted = 0
+    for idx, task in enumerate(tasks):
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", task).strip("_") or f"task{idx}"
+        timeout = os.environ.get("TEST_TASKS_DEFAULT_TIME", "10:00:00")
+        long_timeout = os.environ.get("TEST_TASKS_LONG_TIME", "15:00:00")
+        if task in {"make[goldarrow]", "make[ladder]", "get[gold]", "get[gem]"}:
+            timeout = long_timeout
+
+        env_vars = {
+            "EXPERIMENT_DIR": "$EXPERIMENT_DIR",
+            "TASKS": task,
+            "SINGLE_TASK_JOB": "1",
+            "RECIPES_PATH": os.environ.get("RECIPES_PATH", "craft/resources/recipes.yaml"),
+            "HINTS_PATH": os.environ.get("HINTS_PATH", "craft/resources/hints.yaml"),
+            "MAX_ATTEMPTS": os.environ.get("MAX_ATTEMPTS", "30"),
+            "DSL_ROUND": dsl_round,
+        }
+        if func_evolution_round and func_evolution_round != "0":
+            env_vars["FUNC_EVOLUTION_ROUND"] = func_evolution_round
+
+        env_str = ",".join([f"{k}={v}" for k, v in env_vars.items()])
+        if experiment_config:
+            env_str = f"{env_str},EXPERIMENT_CONFIG={experiment_config}"
+
+        job_name = f"{job_prefix}_tt_{idx}"
+        result = subprocess.run([
+            "sbatch", "--parsable", "--export", f"ALL,{env_str}",
+            "--time", timeout,
+            "--job-name", job_name,
+            "--output", f"{log_dir}/stage_test_tasks_{safe}_%j.out",
+            "--error", f"{log_dir}/stage_test_tasks_{safe}_%j.err",
+            f"{scripts_dir}/stage_test_tasks.slurm"
+        ], capture_output=True, text=True)
+        if result.returncode == 0:
+            submitted += 1
+            print(f"Submitted test task job for {task}: {result.stdout.strip()}")
+        else:
+            print(f"Failed to submit test task job for {task}: {result.stderr.strip()}", file=sys.stderr)
+
+    print(f"Submitted {submitted}/{num_unique_tasks} single-task test jobs")
 else:
     print("Test task jobs already submitted by another process")
 EOF
@@ -322,6 +338,144 @@ verify_test_tasks_complete() {
         fi
     fi
     return 1
+}
+
+# Helper: verify per-task test status files are complete for this round.
+# Usage: verify_all_single_task_test_status_complete "func_evolution_round"
+verify_all_single_task_test_status_complete() {
+    local func_evolution_round="$1"
+    local current_dsl_round=$(get_state_value "dsl_round")
+    current_dsl_round="${current_dsl_round:-0}"
+    local tasks_str=$(get_state_value "tasks")
+
+    if [ -z "$tasks_str" ] || [ "$tasks_str" = "[]" ]; then
+        return 1
+    fi
+
+    TASKS_STR="$tasks_str" DSL_ROUND="$current_dsl_round" FUNC_EVOLUTION_ROUND="$func_evolution_round" python3 << 'EOF'
+import json
+import os
+import re
+import sys
+
+experiment_dir = os.environ.get('EXPERIMENT_DIR', '')
+tasks_str = os.environ.get('TASKS_STR', '[]')
+dsl_round = int(os.environ.get('DSL_ROUND', '0'))
+func_round = int(os.environ.get('FUNC_EVOLUTION_ROUND', '0'))
+
+if not experiment_dir:
+    sys.exit(1)
+
+try:
+    tasks = json.loads(tasks_str)
+except Exception:
+    tasks = []
+
+tasks = list(dict.fromkeys(tasks))
+if not tasks:
+    sys.exit(1)
+
+for task in tasks:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(task)).strip("_") or "task"
+    status_file = os.path.join(
+        experiment_dir,
+        'status',
+        f'dsl{dsl_round}',
+        'test_tasks_tasks',
+        f'{safe}.json',
+    )
+    if not os.path.exists(status_file):
+        sys.exit(1)
+    try:
+        with open(status_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        sys.exit(1)
+
+    status = data.get('status', '')
+    st_dsl = int(data.get('dsl_round', -1))
+    st_func = data.get('func_evolution_round')
+    st_func = 0 if st_func is None else int(st_func)
+    if status != 'completed' or st_dsl != dsl_round or st_func != func_round:
+        sys.exit(1)
+
+sys.exit(0)
+EOF
+
+    return $?
+}
+
+submit_test_tasks_aggregate_job() {
+    local func_evolution_round="$1"
+    local tasks_str=$(get_state_value "tasks")
+
+    if [ -z "$tasks_str" ] || [ "$tasks_str" = "[]" ]; then
+        echo "   No tasks found in state, cannot submit test task aggregation"
+        return 1
+    fi
+
+    ensure_log_dir
+    LOG_DIR="$(get_log_dir)"
+    TASKS_STR="$tasks_str" JOB_PREFIX=$job_prefix FUNC_EVOLUTION_ROUND="$func_evolution_round" LOG_DIR="$LOG_DIR" python3 << EOF
+import json
+import os
+import subprocess
+import sys
+
+sys.path.insert(0, '/home/avani/projects/aip-lelis/avani/DSL_Generator')
+from src.utils.pipeline_state import read_state, update_state
+
+state = read_state("$EXPERIMENT_DIR")
+if int(state.get("test_tasks_aggregate_submitted", 0)) == 1:
+    print("Test-task aggregation already submitted")
+    sys.exit(0)
+
+tasks_str = os.environ.get("TASKS_STR", "[]")
+try:
+    tasks = json.loads(tasks_str)
+except Exception:
+    tasks = []
+tasks = list(dict.fromkeys(tasks))
+if not tasks:
+    print("No tasks to aggregate")
+    sys.exit(1)
+
+dsl_round = str(state.get("dsl_round", 0))
+func_evolution_round = os.environ.get("FUNC_EVOLUTION_ROUND")
+if func_evolution_round is None or func_evolution_round == "":
+    func_evolution_round = str(state.get("func_evolution_round", 0))
+
+update_state("$EXPERIMENT_DIR", test_tasks_aggregate_submitted=1)
+
+env_vars = {
+    "EXPERIMENT_DIR": "$EXPERIMENT_DIR",
+    "TASKS": " ".join(tasks),
+    "DSL_ROUND": dsl_round,
+    "FUNC_EVOLUTION_ROUND": func_evolution_round,
+}
+env_str = ",".join([f"{k}={v}" for k, v in env_vars.items()])
+
+experiment_config = os.environ.get("EXPERIMENT_CONFIG", "")
+if experiment_config:
+    env_str = f"{env_str},EXPERIMENT_CONFIG={experiment_config}"
+
+job_prefix = os.environ.get("JOB_PREFIX", "exp")
+log_dir = os.environ.get("LOG_DIR", "scripts/log")
+
+result = subprocess.run([
+    "sbatch", "--parsable", "--export", f"ALL,{env_str}",
+    "--job-name", f"{job_prefix}_tt_agg",
+    "--output", f"{log_dir}/stage_test_tasks_aggregate_%j.out",
+    "--error", f"{log_dir}/stage_test_tasks_aggregate_%j.err",
+    "$scripts_dir/stage_test_tasks_aggregate.slurm"
+], capture_output=True, text=True)
+
+if result.returncode == 0:
+    print(f"Submitted test-task aggregation job: {result.stdout.strip()}")
+else:
+    print(f"Failed to submit test-task aggregation job: {result.stderr.strip()}", file=sys.stderr)
+    update_state("$EXPERIMENT_DIR", test_tasks_aggregate_submitted=0)
+EOF
 }
 
 # Function to submit next stage based on state
@@ -582,6 +736,23 @@ EOF
         else
             echo "Submitting test task jobs after implement_cfg package..."
             submit_test_tasks_job "$func_evolution_round"
+            return
+        fi
+    fi
+
+    # ========================================================================
+    # STAGE 3.5: After per-task Test Jobs -> Submit aggregate test_tasks stage
+    # ========================================================================
+    # In split mode, test task jobs run one task per job and write per-task status files.
+    # Aggregate once all per-task jobs finish, then write consolidated status/state updates.
+    if [ "$test_tasks_submitted" -eq 1 ] && [ "$function_impl_remaining" -eq 0 ]; then
+        if ! verify_test_tasks_complete; then
+            if verify_all_single_task_test_status_complete "$func_evolution_round"; then
+                echo "All single-task test jobs complete. Submitting aggregation stage..."
+                submit_test_tasks_aggregate_job "$func_evolution_round"
+            else
+                echo "Waiting for single-task test jobs to finish..."
+            fi
             return
         fi
     fi

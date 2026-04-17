@@ -9,6 +9,9 @@ It takes a CFG, terminal functions, program, and environment, and evaluates the 
 import os
 import sys
 import time
+import signal
+import threading
+from contextlib import contextmanager
 from typing import Dict, Any, Optional, Callable
 
 # Add paths for imports
@@ -69,6 +72,31 @@ class CFGEvaluator:
             env_step=step_env
         )
     
+    @staticmethod
+    @contextmanager
+    def _wall_clock_timeout(timeout_seconds: Optional[float]):
+        """Best-effort wall-clock timeout guard (main thread on Unix)."""
+        if timeout_seconds is None or timeout_seconds <= 0:
+            yield
+            return
+
+        if not hasattr(signal, "setitimer") or threading.current_thread() is not threading.main_thread():
+            # Fallback: no hard timeout support in this execution context.
+            yield
+            return
+
+        def _handle_timeout(signum, frame):
+            raise TimeoutError(f"Program evaluation timed out after {timeout_seconds} seconds")
+
+        previous_handler = signal.getsignal(signal.SIGALRM)
+        signal.signal(signal.SIGALRM, _handle_timeout)
+        signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+        try:
+            yield
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous_handler)
+
     def parse_program(self, program: str) -> bool:
         """Parse a program to check if it's valid according to the CFG.
         
@@ -118,8 +146,21 @@ class CFGEvaluator:
         # Reset environment
         self.env_reset(env)
         
-        # Evaluate using DSL evaluator
-        result = self.dsl_evaluator.evaluate_program(program, env=env, max_steps=max_steps)
+        # Evaluate using DSL evaluator, optionally bounded by wall-clock timeout
+        try:
+            with self._wall_clock_timeout(timeout):
+                result = self.dsl_evaluator.evaluate_program(program, env=env, max_steps=max_steps)
+        except TimeoutError as exc:
+            evaluation_time = time.time() - start_time
+            return {
+                "success": False,
+                "total_reward": 0.0,
+                "actions_taken": [],
+                "steps": 0,
+                "evaluation_time": evaluation_time,
+                "error": str(exc),
+                "inventory_trace": [],
+            }
         
         evaluation_time = time.time() - start_time
         

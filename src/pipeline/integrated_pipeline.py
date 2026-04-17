@@ -13,8 +13,13 @@ import re
 import json
 import argparse
 import glob
+import signal
+import threading
+import time
+import requests
 from typing import Dict, List, Tuple, Optional, Any
 import textwrap
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add project root to path (go up to project root)
@@ -26,7 +31,8 @@ from src.pipeline.cfg_to_funsearch_pipeline import (
     extract_function_args
 )
 from src.utils.file_utils import version_file
-from src.utils.config_loader import load_config
+from src.utils.config_loader import load_config, funsearch_grid_regen_kwargs_from_config
+from src.utils.openai_compat_key import resolve_openai_compat_api_key
 # Removed dependency on got120dsl_program_synthesis.py
 # Import grid_to_markdown from test.py instead
 from src.utils.test import grid_to_markdown
@@ -46,6 +52,113 @@ try:
 except ImportError as e:
     print(f"Warning: Could not import CFGEvaluator: {e}")
     CFG_EVALUATOR_AVAILABLE = False
+
+
+LLM_RESPONSE_TIMEOUT_SECONDS = float(os.environ.get("LLM_RESPONSE_TIMEOUT_SECONDS", "300"))
+PROGRAM_EVAL_TIMEOUT_SECONDS = float(os.environ.get("PROGRAM_EVAL_TIMEOUT_SECONDS", "180"))
+OPENAI_COMPAT_HTTP_TIMEOUT_SECONDS = float(os.environ.get("OPENAI_COMPAT_HTTP_TIMEOUT", "180"))
+TEST_TASKS_LLM_DEBUG = str(os.environ.get("TEST_TASKS_LLM_DEBUG", "0")).lower() in {"1", "true", "yes"}
+DEFAULT_TEST_SEEDS = list(range(0, 50, 5))
+
+
+def _safe_task_token(task: str) -> str:
+    token = re.sub(r"[^A-Za-z0-9._-]+", "_", str(task)).strip("_")
+    return token or "task"
+
+
+@contextmanager
+def _wall_clock_timeout(timeout_seconds: Optional[float]):
+    """Best-effort wall-clock timeout guard (main thread on Unix)."""
+    if timeout_seconds is None or timeout_seconds <= 0:
+        yield
+        return
+
+    if not hasattr(signal, "setitimer") or threading.current_thread() is not threading.main_thread():
+        # Fallback: no hard timeout support in this execution context.
+        yield
+        return
+
+    def _handle_timeout(signum, frame):
+        raise TimeoutError(f"LLM response timed out after {timeout_seconds} seconds")
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    signal.signal(signal.SIGALRM, _handle_timeout)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+
+def _chat_with_timeout(
+    llm,
+    conversation,
+    params,
+    timeout_seconds: Optional[float] = None,
+    request_label: str = "llm_chat",
+):
+    timeout_val = LLM_RESPONSE_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+    started = time.monotonic()
+    if TEST_TASKS_LLM_DEBUG:
+        print(f"[LLM][START] {request_label} timeout={timeout_val}s", flush=True)
+    with _wall_clock_timeout(timeout_val):
+        output = llm.chat(conversation, params)
+    if TEST_TASKS_LLM_DEBUG:
+        elapsed = time.monotonic() - started
+        print(f"[LLM][END] {request_label} elapsed={elapsed:.2f}s", flush=True)
+    return output
+
+
+class _OpenAICompatLLM:
+    """Minimal adapter that mimics vLLM.chat return structure."""
+
+    class _Output:
+        def __init__(self, text: str):
+            self.text = text
+
+    class _Response:
+        def __init__(self, text: str):
+            self.outputs = [_OpenAICompatLLM._Output(text)]
+
+    def __init__(self, base_url: str, api_key: str, model: str, chat_path: str) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.model = model
+        self.chat_path = chat_path
+
+    def chat(self, conversation, params=None):
+        prompt_parts = []
+        for msg in conversation:
+            role = str(msg.get("role", "user"))
+            content = str(msg.get("content", ""))
+            prompt_parts.append(f"{role}: {content}")
+        prompt = "\n\n".join(prompt_parts)
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+            "max_tokens": 10000,
+            "stream": False,
+        }
+        endpoint = self.chat_path
+        if not endpoint.startswith("http://") and not endpoint.startswith("https://"):
+            endpoint = f"{self.base_url}/{endpoint.lstrip('/')}"
+        response = requests.post(
+            endpoint,
+            headers=headers,
+            json=payload,
+            timeout=OPENAI_COMPAT_HTTP_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        body = response.json()
+        content = body["choices"][0]["message"]["content"]
+        return [self._Response(content)]
 
 
 def _filter_example_program(example_program: str, terminals: Dict[str, str]) -> str:
@@ -135,9 +248,15 @@ def _generate_example_from_terminal(func_name: str, cfg: str) -> str:
         return f"{func_name}({', '.join(arg_values)});"
 
 
-def _format_failed_program_with_inventory(program: str, inventory_trace: List[Dict[str, Any]]) -> str:
+def _format_failed_program_with_inventory(
+    program: str,
+    inventory_trace: List[Dict[str, Any]],
+    failure_reason: Optional[str] = None,
+) -> str:
     """Format a failed program and its inventory changes for the prog synth prompt."""
     lines = [f"Program:\n{program}"]
+    if failure_reason:
+        lines.append(f"Failure reason: {failure_reason}")
     if inventory_trace:
         lines.append("Inventory changes during the program (whole inventory after the function where the change happened):")
         for entry in inventory_trace:
@@ -162,6 +281,25 @@ def _get_final_function_descriptions(experiment_dir: str) -> str:
             content = f.read().strip()
         parts.append(f"## {name}\n```python\n{content}\n```")
     return "\n\n".join(parts) if parts else "(no .py files in final_functions)"
+
+
+def _format_final_functions_dict_for_prompt(
+    final_functions: Dict[str, str],
+    terminals: Optional[Dict[str, str]] = None,
+) -> str:
+    """Format version-resolved final-function sources (same dict as evaluation) for synthesis prompts."""
+    if not final_functions:
+        return "(no final function implementations loaded)"
+    safe_to_orig: Dict[str, str] = {}
+    if terminals:
+        for orig in terminals:
+            safe_to_orig[sanitize_function_name(orig)] = orig
+    parts = []
+    for safe_name in sorted(final_functions.keys()):
+        label = safe_to_orig.get(safe_name, safe_name)
+        code = final_functions[safe_name].strip()
+        parts.append(f"## {label}\n```python\n{code}\n```")
+    return "\n\n".join(parts)
 
 
 def ensure_terminals_match_cfg(cfg: str, terminals: Dict[str, str], shared_vllm=None) -> Dict[str, str]:
@@ -302,9 +440,10 @@ def extract_and_save_cfg(output_text, cfg_dir="cfg"):
       1. Failure Analysis
       2. Updated CFG (BNF)
       3. Terminal Functions
+            4. Example program
 
     Returns:
-      (filepath, cfg_text, term_text, failure_text, cfg_explanation)
+            (filepath, cfg_text, term_text, failure_text, cfg_explanation, example_text)
 
     - If CFG not found, returns (None, None, None, failure_text, None)
     - Also saves the CFG to a timestamped file if found.
@@ -332,18 +471,18 @@ def extract_and_save_cfg(output_text, cfg_dir="cfg"):
             print(failure_text)
         return None, None, None, failure_text, None
 
-    cfg_text, terminals_dict, _ = parse_generated_output(output_text)
+    cfg_text, terminals_dict, example_text = parse_generated_output(output_text)
     if not cfg_text:
         print(" No CFG block found in output_text.")
         if failure_text:
             print("\n Extracted Failure Analysis:\n")
             print(failure_text)
-        return None, None, None, failure_text, None
+        return None, None, None, failure_text, None, None
 
     term_text = json.dumps(terminals_dict or {}, ensure_ascii=False)
     cfg_explanation = ""
 
-    return None, cfg_text, term_text, failure_text, cfg_explanation
+    return None, cfg_text, term_text, failure_text, cfg_explanation, example_text
 
 
 def check_final_functions_exist(experiment_dir: str, terminals: Dict[str, str], 
@@ -554,7 +693,12 @@ def synthesize_and_test_programs(
     results_tracker=None,
     cfg_version: int = -1,
     func_evolution_round: Optional[int] = None,
-    synthesis_prompt_path: str = None
+    synthesis_prompt_path: str = None,
+    test_seeds: Optional[List[int]] = None,
+    seed_outcome_log_path: Optional[str] = None,
+    model_type: str = "huggingface",
+    include_final_functions_in_prompt: bool = False,
+    openai_compat_key_file: Optional[str] = None,
 ) -> Tuple[Dict[str, bool], Dict[str, List[str]]]:
     """Synthesize programs for each task and test if they solve the task.
     
@@ -630,7 +774,12 @@ def synthesize_and_test_programs(
         raise FileNotFoundError(error_msg)
     
     print(f"Loaded {len(final_functions)} final functions")
-    
+    final_functions_prompt_block = ""
+    if include_final_functions_in_prompt:
+        final_functions_prompt_block = _format_final_functions_dict_for_prompt(
+            final_functions, terminals
+        )
+
     # Load recipes
     with open(recipes_path, 'r') as f:
         recipes = f.read()
@@ -653,8 +802,20 @@ def synthesize_and_test_programs(
             except Exception as e:
                 print(f" Warning: Could not read NLD from {nld_abs}: {e}")
 
-    # Use shared vLLM instance if provided, otherwise create new one
-    if shared_vllm is not None:
+    # Use OpenAI-compatible API if requested, else use vLLM.
+    if model_type == "openai_compat":
+        base_url = os.environ.get("OPENAI_COMPAT_BASE_URL", "https://llm.vulcan.alliancecan.ca").strip()
+        api_key = resolve_openai_compat_api_key(openai_compat_key_file)
+        model_name = os.environ.get("OPENAI_COMPAT_MODEL", "qwen3-235b").strip()
+        chat_path = os.environ.get("OPENAI_COMPAT_CHAT_PATH", "/api/chat/completions").strip()
+        llm = _OpenAICompatLLM(
+            base_url=base_url,
+            api_key=api_key,
+            model=model_name,
+            chat_path=chat_path,
+        )
+        params = None
+    elif shared_vllm is not None:
         llm = shared_vllm
         params = SamplingParams(temperature=0.7, max_tokens=25000)
     else:
@@ -663,8 +824,55 @@ def synthesize_and_test_programs(
             params = SamplingParams(temperature=0.7, max_tokens=25000)
         except Exception as e:
             print(f" Error initializing LLM: {e}")
-            return {task: False for task in tasks}
+            return ({task: False for task in tasks}, {})
     
+    selected_seeds = list(test_seeds) if test_seeds else list(DEFAULT_TEST_SEEDS)
+    selected_seeds = [int(s) for s in selected_seeds]
+    print(f"Program synthesis test seeds: {selected_seeds}")
+    terminal_descriptions_str = "\n".join(
+        f"{name}: {desc}" for name, desc in (terminals or {}).items()
+    )
+
+    if not seed_outcome_log_path:
+        seed_outcome_log_path = os.path.join(
+            experiment_dir,
+            "results_tracking",
+            "program_synthesis_seed_outcomes.jsonl",
+        )
+    os.makedirs(os.path.dirname(seed_outcome_log_path), exist_ok=True)
+
+    def _append_seed_outcome(
+        task: str,
+        seed: int,
+        solved: bool,
+        solved_attempt: Optional[int],
+        solved_program: Optional[str],
+    ) -> None:
+        entry = {
+            "task": task,
+            "seed": int(seed),
+            "solved": bool(solved),
+            "solved_attempt": int(solved_attempt) if solved_attempt is not None else None,
+            "solved_program": solved_program,
+            "max_attempts_per_seed": int(max_attempts),
+            "cfg_version": int(cfg_version),
+            "func_evolution_round": func_evolution_round,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        with open(seed_outcome_log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+        per_task_dir = os.path.join(
+            os.path.dirname(seed_outcome_log_path),
+            "program_synthesis_seed_outcomes_by_task",
+        )
+        os.makedirs(per_task_dir, exist_ok=True)
+        per_task_path = os.path.join(
+            per_task_dir,
+            f"{_safe_task_token(task)}.jsonl",
+        )
+        with open(per_task_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+
     def _synthesize_single_task(task: str) -> Tuple[str, bool, List[str]]:
         """Synthesize and test a program for a single task.
         
@@ -673,194 +881,261 @@ def synthesize_and_test_programs(
         """
         print(f"[{task}] Starting program synthesis...")
         
-        # Create environment sampler for this task (thread-safe - each task gets its own)
-        task_env_sampler = env_factory.EnvironmentFactory(
-            recipes_path, hints_path, 7, max_steps=400,
-            reuse_environments=True, visualise=False
-        )
-        test_env = task_env_sampler.sample_environment(task_name=task)
-        test_env.reset()
-        
-        # Get initial grid state
-        try:
-            markdown = grid_to_markdown(
-                test_env._current_state.grid, 
-                test_env.world.cookbook, 
-                test_env._current_state.pos
-            )
-        except Exception as e:
-            print(f"[{task}]  Could not generate grid markdown: {e}")
-            markdown = "Grid state unavailable"
-        
-        # Try to synthesize a program that solves the task
-        success = False
+        # Try to synthesize a program across all configured seeds.
+        solved_any_seed = False
+        solved_seed_count = 0
+        # Keep a full cross-seed failure log for reporting.
         programs_tried = []
-        
-        for attempt in range(max_attempts):
-            # first get the env then markdown goes to prompt
-            test_env = task_env_sampler.sample_environment(task_name=task)
-            test_env.reset()
+
+        for seed in selected_seeds:
+            print(f"[{task}] Testing seed {seed} ({max_attempts} attempts)...")
+            # Keep prompt history seed-local so each seed starts independently.
+            seed_programs_tried = []
+            # Reuse environments keeps the same grid for all attempts of this task/seed.
+            task_env_sampler = env_factory.EnvironmentFactory(
+                recipes_path,
+                hints_path,
+                7,
+                max_steps=400,
+                seed=seed,
+                reuse_environments=True,
+                visualise=False,
+            )
+
+            seed_solved = False
+            for attempt in range(max_attempts):
+                # first get the env then markdown goes to prompt
+                test_env = task_env_sampler.sample_environment(task_name=task)
+                test_env.reset()
                 
-            try:
-                markdown = grid_to_markdown(
-                    test_env._current_state.grid, 
-                    test_env.world.cookbook, 
-                    test_env._current_state.pos
-                )
-            except Exception as e:
-                print(f"[{task}]  Could not generate grid markdown: {e}")
-                markdown = "Grid state unavailable"
-            try:
-                import hashlib
-                grid_md5 = hashlib.md5(test_env._current_state.grid.tobytes()).hexdigest()
-                print("=== GRID HASH ===")
-                print(f"[{task}] grid_md5={grid_md5}", flush=True)
-                # Persist grid hash + initial state snapshot for later debugging
-                grid_log_path = os.path.join(experiment_dir, "grid_hashes.log")
-                os.makedirs(os.path.dirname(grid_log_path), exist_ok=True)
-                state = test_env._current_state
-                pos = tuple(state.pos) if hasattr(state, "pos") else None
-                direction = int(state.dir) if hasattr(state, "dir") else None
-                inventory = getattr(state, "inventory", None)
-                if inventory is not None:
-                    inv_nonzero = [
-                        (test_env.world.cookbook.index.get(i, str(i)), float(v))
-                        for i, v in enumerate(inventory) if v
-                    ]
-                else:
-                    inv_nonzero = None
-                with open(grid_log_path, "a", encoding="utf-8") as f:
-                    f.write(
-                        f"[{task}] attempt={attempt+1} grid_md5={grid_md5} "
-                        f"pos={pos} dir={direction} inv={inv_nonzero}\n"
+                try:
+                    markdown = grid_to_markdown(
+                        test_env._current_state.grid,
+                        test_env.world.cookbook,
+                        test_env._current_state.pos,
+                        include_indices=True,
                     )
-                    f.write(markdown + "\n\n")
-            except Exception as e:
-                print(f"[{task}]  Could not hash grid: {e}")
-            # Prepare example program for prompt
-            # If no example provided, generate a simple example using available functions
-            if cfg_example:
-                # Filter example to only include functions that are actually implemented
-                example_program = _filter_example_program(cfg_example, terminals)
-                # If filtering removed all statements, generate a new example
-                if not example_program or not example_program.strip():
+                except Exception as e:
+                    print(f"[{task}]  Could not generate grid markdown: {e}")
+                    markdown = "Grid state unavailable"
+                try:
+                    import hashlib
+                    grid_md5 = hashlib.md5(test_env._current_state.grid.tobytes()).hexdigest()
+                    print("=== GRID HASH ===")
+                    print(f"[{task}] seed={seed} grid_md5={grid_md5}", flush=True)
+                    # Persist grid hash + initial state snapshot for later debugging
+                    grid_log_path = os.path.join(experiment_dir, "grid_hashes.log")
+                    os.makedirs(os.path.dirname(grid_log_path), exist_ok=True)
+                    state = test_env._current_state
+                    pos = tuple(state.pos) if hasattr(state, "pos") else None
+                    direction = int(state.dir) if hasattr(state, "dir") else None
+                    inventory = getattr(state, "inventory", None)
+                    if inventory is not None:
+                        inv_nonzero = [
+                            (test_env.world.cookbook.index.get(i, str(i)), float(v))
+                            for i, v in enumerate(inventory) if v
+                        ]
+                    else:
+                        inv_nonzero = None
+                    with open(grid_log_path, "a", encoding="utf-8") as f:
+                        f.write(
+                            f"[{task}] seed={seed} attempt={attempt+1} grid_md5={grid_md5} "
+                            f"pos={pos} dir={direction} inv={inv_nonzero}\n"
+                        )
+                        f.write(markdown + "\n\n")
+                except Exception as e:
+                    print(f"[{task}]  Could not hash grid: {e}")
+                # Prepare example program for prompt
+                # If no example provided, generate a simple example using available functions
+                if cfg_example:
+                    # Filter example to only include functions that are actually implemented
+                    example_program = _filter_example_program(cfg_example, terminals)
+                    # If filtering removed all statements, generate a new example
+                    if not example_program or not example_program.strip():
+                        if terminals and len(terminals) > 0:
+                            first_func = list(terminals.keys())[0]
+                            example_program = _generate_example_from_terminal(first_func, cfg)
+                        else:
+                            example_program = " "
+                else:
+                    # Generate a simple example using the first available function from terminals
                     if terminals and len(terminals) > 0:
                         first_func = list(terminals.keys())[0]
+                        # Generate example from CFG using actual terminal values
                         example_program = _generate_example_from_terminal(first_func, cfg)
                     else:
+                        # Fallback: use a generic example without hardcoding MOVE
                         example_program = " "
-            else:
-                # Generate a simple example using the first available function from terminals
-                if terminals and len(terminals) > 0:
-                    first_func = list(terminals.keys())[0]
-                    # Generate example from CFG using actual terminal values
-                    example_program = _generate_example_from_terminal(first_func, cfg)
-                else:
-                    # Fallback: use a generic example without hardcoding MOVE
-                    example_program = " "
-            # if "knife" in task:
-            print("markdown", markdown)
-            programs_str = "\n\n---\n\n".join(programs_tried)
-            prompt = synthesis_prompt_template.format(
-                markdown=markdown,
-                nld=nld_text,
-                recipes=recipes,
-                cfg=cfg,
-                task=task,
-                example_program=example_program,
-                programs_str=programs_str,
-            )
-            print(f"\n[{task}] === PROG SYNTH PROMPT (attempt {attempt + 1}) ===\n{prompt}\n=== END PROG SYNTH PROMPT ===\n")
-            
-            try:
-                conversation = [{"role": "user", "content": prompt, "chat_template_kwargs": {"reasoning_effort": "high"}}]
-                output = llm.chat(conversation, params)
-                response = output[0].outputs[0].text
-
-
-                # Extract program from response
-                marker_match = re.search(r'assistantfinal', response, re.IGNORECASE)
-                search_target = response
-                if marker_match:
-                    search_target = response[marker_match.end():]
-                
-                program_match = re.search(r'\$(.*?)\$', search_target, re.DOTALL)
-                if not program_match:
-                    continue
-                
-                program = program_match.group(1).strip()
-                
-
-                # Use CFG evaluator to test the program
-                if CFG_EVALUATOR_AVAILABLE:
-                    # Create a temporary directory with only the correct version functions
-                    # This ensures CFGEvaluator loads the correct versions
-                    import tempfile
-                    temp_func_dir = tempfile.mkdtemp(prefix="test_functions_")
-                    
-                    # Copy only the correct version files to temp directory
-                    for func_name, func_code in final_functions.items():
-                        # Write the function code to a temporary file
-                        safe_name = sanitize_function_name(func_name)
-                        temp_func_file = os.path.join(temp_func_dir, f"{safe_name}.py")
-                        with open(temp_func_file, 'w', encoding='utf-8') as f:
-                            f.write(func_code)
-                    
-                    try:
-                        evaluator = CFGEvaluator(
-                            cfg=cfg,
-                            final_functions_dir=temp_func_dir
-                        )
-                    finally:
-                          print()
-                    #     # Clean up temporary directory
-                    #     shutil.rmtree(temp_func_dir, ignore_errors=True)
-                    
-                    # Evaluate program with environment passed directly
-                    result = evaluator.evaluate_program(program, env=test_env, max_steps=400)
-                    print(f"[{task}] Result: {result}")
-                    success = result.get("success", False)
-                    reward = result.get("total_reward", 0.0)
-                    steps = result.get("steps", 0)  # Number of environment steps taken
-                    inventory_trace = result.get("inventory_trace", [])
-                else:
-                    # Fallback: simple test
-                    print(f"[{task}]  CFGEvaluator not available, using fallback")
-                    result = {"success": False, "inventory_trace": []}
-                    success = False
-                    reward = 0.0
-                    steps = 0
-                    inventory_trace = []
-                
-                # Track result if tracker is available
-                if results_tracker is not None:
-                    results_tracker.add_program_synthesis_result(
-                        task=task,
-                        cfg_version=cfg_version,
-                        program=program,
-                        reward=reward,
-                        steps=steps,
-                        func_evolution_round=func_evolution_round,
-                        success=success,
-                        raw_llm_response=response,
-                        prompt=prompt,
-                        inventory_trace=inventory_trace
+                print("markdown", markdown)
+                programs_str = "\n\n---\n\n".join(seed_programs_tried)
+                format_kwargs = {
+                    "markdown": markdown,
+                    "nld": nld_text,
+                    "recipes": recipes,
+                    "cfg": cfg,
+                    "terminal_descriptions": terminal_descriptions_str,
+                    "task": task,
+                    "example_program": example_program,
+                    "programs_str": programs_str,
+                }
+                if "{final_function_implementations}" in synthesis_prompt_template:
+                    format_kwargs["final_function_implementations"] = final_functions_prompt_block
+                prompt = synthesis_prompt_template.format(**format_kwargs)
+                if (
+                    include_final_functions_in_prompt
+                    and "{final_function_implementations}" not in synthesis_prompt_template
+                    and final_functions_prompt_block
+                ):
+                    insert = (
+                        "## Final Function Implementations\n\n"
+                        "Python source for each terminal primitive (same files used when your program is evaluated):\n\n"
+                        f"{final_functions_prompt_block}\n\n"
                     )
+                    if "\n## Task\n" in prompt:
+                        prompt = prompt.replace("\n## Task\n", f"\n{insert}## Task\n", 1)
+                    else:
+                        prompt = f"{prompt}\n\n{insert}"
+                if attempt == 0:
+                    print(
+                        f"\n[{task}] === PROG SYNTH PROMPT (seed {seed}, attempt {attempt + 1}) ===\n"
+                        f"{prompt}\n=== END PROG SYNTH PROMPT ===\n"
+                    )
+
+                try:
+                    conversation = [{"role": "user", "content": prompt, "chat_template_kwargs": {"reasoning_effort": "high"}}]
+                    output = _chat_with_timeout(
+                        llm,
+                        conversation,
+                        params,
+                        request_label=f"program_synthesis task={task} seed={seed} attempt={attempt + 1}",
+                    )
+                    response = output[0].outputs[0].text
+
+
+                    # Extract program from response
+                    marker_match = re.search(r'assistantfinal', response, re.IGNORECASE)
+                    search_target = response
+                    if marker_match:
+                        search_target = response[marker_match.end():]
+
+                    program_match = re.search(r'\$(.*?)\$', search_target, re.DOTALL)
+                    if not program_match:
+                        continue
+
+                    program = program_match.group(1).strip()
                 
-                if success:
-                    print(f"[{task}]  Task solved with program: {program}")
-                    return (task, True, [])
-                else:
-                    programs_tried.append(_format_failed_program_with_inventory(program, inventory_trace))
-                    print(f"[{task}] Attempt {attempt + 1}: Program failed - {program}")
-                    
-            except Exception as e:
-                print(f"[{task}]  Error in attempt {attempt + 1}: {e}")
-                continue
+
+                    # Use CFG evaluator to test the program
+                    if CFG_EVALUATOR_AVAILABLE:
+                        # Create a temporary directory with only the correct version functions
+                        # This ensures CFGEvaluator loads the correct versions
+                        import tempfile
+                        temp_func_dir = tempfile.mkdtemp(prefix="test_functions_")
+
+                        # Copy only the correct version files to temp directory
+                        for func_name, func_code in final_functions.items():
+                            # Write the function code to a temporary file
+                            safe_name = sanitize_function_name(func_name)
+                            temp_func_file = os.path.join(temp_func_dir, f"{safe_name}.py")
+                            with open(temp_func_file, 'w', encoding='utf-8') as f:
+                                f.write(func_code)
+
+                        try:
+                            evaluator = CFGEvaluator(
+                                cfg=cfg,
+                                final_functions_dir=temp_func_dir
+                            )
+                        finally:
+                              print()
+                        #     # Clean up temporary directory
+                        #     shutil.rmtree(temp_func_dir, ignore_errors=True)
+
+                        # Evaluate program with environment passed directly
+                        result = evaluator.evaluate_program(
+                            program,
+                            env=test_env,
+                            max_steps=400,
+                            timeout=PROGRAM_EVAL_TIMEOUT_SECONDS,
+                        )
+                        print(f"[{task}] seed={seed} attempt={attempt + 1} result: {result}")
+                        attempt_success = result.get("success", False)
+                        reward = result.get("total_reward", 0.0)
+                        steps = result.get("steps", 0)  # Number of environment steps taken
+                        inventory_trace = result.get("inventory_trace", [])
+                        failure_reason = result.get("error")
+                    else:
+                        # Fallback: simple test
+                        print(f"[{task}]  CFGEvaluator not available, using fallback")
+                        result = {"success": False, "inventory_trace": []}
+                        attempt_success = False
+                        reward = 0.0
+                        steps = 0
+                        inventory_trace = []
+                        failure_reason = "CFGEvaluator not available"
+                
+                    # Track result if tracker is available
+                    if results_tracker is not None:
+                        results_tracker.add_program_synthesis_result(
+                            task=task,
+                            cfg_version=cfg_version,
+                            program=program,
+                            reward=reward,
+                            steps=steps,
+                            func_evolution_round=func_evolution_round,
+                            success=attempt_success,
+                            raw_llm_response=response,
+                            prompt=prompt,
+                            inventory_trace=inventory_trace,
+                            seed=seed,
+                            attempt_in_seed=(attempt + 1),
+                        )
+
+                    if attempt_success:
+                        print(f"[{task}]  Task solved at seed={seed}, attempt={attempt + 1}: {program}")
+                        _append_seed_outcome(
+                            task=task,
+                            seed=seed,
+                            solved=True,
+                            solved_attempt=(attempt + 1),
+                            solved_program=program,
+                        )
+                        solved_any_seed = True
+                        solved_seed_count += 1
+                        seed_solved = True
+                        break
+                    else:
+                        formatted_failure = _format_failed_program_with_inventory(
+                            program,
+                            inventory_trace,
+                            failure_reason=failure_reason,
+                        )
+                        seed_programs_tried.append(formatted_failure)
+                        programs_tried.append(formatted_failure)
+                        print(f"[{task}] seed={seed} attempt={attempt + 1}: Program failed - {program}")
+
+                except Exception as e:
+                    print(f"[{task}]  Error at seed={seed}, attempt={attempt + 1}: {e}")
+                    continue
+
+            if not seed_solved:
+                _append_seed_outcome(
+                    task=task,
+                    seed=seed,
+                    solved=False,
+                    solved_attempt=None,
+                    solved_program=None,
+                )
+                print(f"[{task}] Seed {seed} not solved after {max_attempts} attempts")
         
-        if not success:
-            print(f"[{task}]  Could not be solved after {max_attempts} attempts")
+        if not solved_any_seed:
+            print(
+                f"[{task}]  Could not be solved after {max_attempts} attempts "
+                f"across {len(selected_seeds)} seeds"
+            )
             return (task, False, programs_tried)
+        
+        print(f"[{task}] Solved on {solved_seed_count}/{len(selected_seeds)} seeds")
+        return (task, True, [])
     
     # Run program synthesis sequentially for all tasks
     print(f"\nRunning program synthesis sequentially for {len(tasks)} tasks...")
@@ -1171,8 +1446,9 @@ def evolve_functions_with_failing_tasks(
     
     # Configure FunSearch with parallelization
     # Match evaluators to samples_per_prompt for clean parallelization
-    regen_attempts = int(os.environ.get("GRID_REGENERATION_ATTEMPTS", 5))
+    regen_attempts = int(load_config().get("grid_regeneration_attempts", 5))
     config = config_lib.Config(
+        **funsearch_grid_regen_kwargs_from_config(),
         num_samplers=1,  # Single sampler - generates samples_per_prompt samples per iteration
         num_evaluators=2,  # Match samples_per_prompt - each evaluator handles one sample
         samples_per_prompt=2,  # 2 samples per prompt
@@ -1624,7 +1900,12 @@ def test_cfg_on_tasks(
     results_tracker=None,
     cfg_version: Optional[int] = None,
     func_evolution_round: Optional[int] = None,
-    synthesis_prompt_path: str = None
+    synthesis_prompt_path: str = None,
+    test_seeds: Optional[List[int]] = None,
+    seed_outcome_log_path: Optional[str] = None,
+    model_type: str = "huggingface",
+    include_final_functions_in_prompt: bool = False,
+    openai_compat_key_file: Optional[str] = None,
 ) -> Dict[str, bool]:
     """Test the current CFG and functions on the given tasks.
     
@@ -1651,7 +1932,12 @@ def test_cfg_on_tasks(
         experiment_dir, tasks, cfg_path=cfg_path, terminals=terminals,
         recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
         shared_vllm=shared_vllm, results_tracker=results_tracker, cfg_version=cfg_version,
-        func_evolution_round=func_evolution_round, synthesis_prompt_path=synthesis_prompt_path
+        func_evolution_round=func_evolution_round, synthesis_prompt_path=synthesis_prompt_path,
+        test_seeds=test_seeds,
+        seed_outcome_log_path=seed_outcome_log_path,
+        model_type=model_type,
+        include_final_functions_in_prompt=include_final_functions_in_prompt,
+        openai_compat_key_file=openai_compat_key_file,
     )
     
     print("\nTask Results:")
@@ -1662,57 +1948,40 @@ def test_cfg_on_tasks(
     return task_results
 
 
-def evolve_dsl(
-    experiment_dir: str,
-    failing_tasks: List[str],
-    cfg: str,
-    recipes: str,
-    terminals: Dict[str, str],
-    shared_vllm=None,
-    failed_programs_by_task: Optional[Dict[str, List[str]]] = None,
-    new_dsl_round: Optional[int] = None,
-) -> Tuple[str, Dict[str, str], bool]:
-    """Evolve the DSL based on failing tasks (without implementing).
-    
-    This function only evolves the DSL and returns the new CFG and terminals.
-    It does NOT implement the CFG - that should be done separately.
-    
-    Args:
-        experiment_dir: Experiment directory
-        failing_tasks: List of tasks that failed
-        cfg: Current CFG string
-        recipes: Recipes string
-        terminals: Current terminal functions
-        shared_vllm: Optional shared vLLM instance
-        failed_programs_by_task: Optional dict task_name -> list of formatted failed programs with inventory (for failure analysis prompt)
-        
-    Returns:
-        Tuple of (new_cfg: str, new_terminals: Dict[str, str], success: bool)
-    """
-    print(f"\n{'='*80}")
-    print("Evolving DSL Based on Failing Tasks")
-    print(f"{'='*80}")
-    print(f"Failing tasks: {failing_tasks}")
-    
-    # Use shared vLLM instance if provided, otherwise create new one
+def _get_dsl_evolution_llm(shared_vllm=None):
+    """Return (llm, params) for DSL evolution (failure analysis + CFG evolution)."""
     if shared_vllm is not None:
         llm = shared_vllm
-        params = SamplingParams(temperature=0.7, max_tokens=25000)
     else:
         try:
             llm = LLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
-            params = SamplingParams(temperature=0.7, max_tokens=25000)
         except Exception as e:
-            print(f" Error initializing LLM: {e}")
-            return cfg, terminals, False
-    
-    # Get failure analysis (prompt path from experiment config)
+            raise RuntimeError(f" Error initializing LLM: {e}") from e
+    params = SamplingParams(temperature=0.7, max_tokens=25000)
+    return llm, params
+
+
+def run_failure_analysis_for_dsl_evolution(
+    experiment_dir: str,
+    failing_tasks: List[str],
+    cfg: str,
+    terminals: Dict[str, str],
+    failed_programs_by_task: Optional[Dict[str, List[str]]],
+    shared_vllm=None,
+) -> str:
+    """Run the failure-analysis LLM once. Call before retry loops that only re-run CFG evolution.
+
+    Returns:
+        Cleaned failure analysis text (after assistantfinal marker strip) for use in cfg_evolution prompt.
+    """
+    llm, params = _get_dsl_evolution_llm(shared_vllm)
+
     config = load_config()
     prompt_rel = config.get("failure_analysis_prompt", "prompt_specifications/failure_analysis.txt")
     failure_analysis_path = os.path.join(_project_root, prompt_rel) if not os.path.isabs(prompt_rel) else prompt_rel
     with open(failure_analysis_path, "r", encoding="utf-8") as f:
         failure_analysis_template = f.read()
-    # Format failed programs per task for the prompt (program + inventory changes for each failed attempt)
+
     failed_programs_per_task_str = ""
     if failed_programs_by_task:
         sections = []
@@ -1721,7 +1990,7 @@ def evolve_dsl(
             if blocks:
                 sections.append(f"Task: {t}\n" + "\n\n---\n\n".join(blocks))
         failed_programs_per_task_str = "\n\n".join(sections) if sections else ""
-    # Terminal descriptions: one per line (name: description)
+
     terminal_descriptions_str = "\n".join(f"{k}: {v}" for k, v in terminals.items()) if terminals else "(none)"
     final_function_descriptions_str = _get_final_function_descriptions(experiment_dir)
     format_kwargs = {
@@ -1745,23 +2014,60 @@ def evolve_dsl(
         format_kwargs["nld"] = nld_text
 
     failure_analysis_prompt = failure_analysis_template.format(**format_kwargs)
-    
+
+    conversation = [{"role": "user", "content": failure_analysis_prompt, "chat_template_kwargs": {"reasoning_effort": "high"}}]
     try:
-        conversation = [{"role": "user", "content": failure_analysis_prompt, "chat_template_kwargs": {"reasoning_effort": "high"}}]
-        output = llm.chat(conversation, params)
-        raw_failure_analysis = output[0].outputs[0].text
-        
-        print("\n" + "="*80, flush=True)
-        print("RAW LLM OUTPUT - FAILURE ANALYSIS:", flush=True)
-        print("="*80, flush=True)
-        print(raw_failure_analysis, flush=True)
-        print("="*80 + "\n", flush=True)
-        
-        failure_analysis = raw_failure_analysis
-        marker_match = re.search(r'assistantfinal', failure_analysis, re.IGNORECASE)
-        if marker_match:
-            failure_analysis = failure_analysis[marker_match.end():]
-        
+        output = _chat_with_timeout(llm, conversation, params)
+    except TimeoutError as e:
+        print(f"Warning: failure analysis LLM request timed out: {e}")
+        return f"Failure analysis request timed out: {e}"
+    raw_failure_analysis = output[0].outputs[0].text
+
+    print("\n" + "="*80, flush=True)
+    print("RAW LLM OUTPUT - FAILURE ANALYSIS:", flush=True)
+    print("="*80, flush=True)
+    print(raw_failure_analysis, flush=True)
+    print("="*80 + "\n", flush=True)
+
+    failure_analysis = raw_failure_analysis
+    marker_match = re.search(r'assistantfinal', failure_analysis, re.IGNORECASE)
+    if marker_match:
+        failure_analysis = failure_analysis[marker_match.end():]
+    return failure_analysis
+
+
+def evolve_dsl(
+    experiment_dir: str,
+    failing_tasks: List[str],
+    cfg: str,
+    recipes: str,
+    terminals: Dict[str, str],
+    failure_analysis: str,
+    shared_vllm=None,
+    new_dsl_round: Optional[int] = None,
+) -> Tuple[str, Dict[str, str], bool]:
+    """Evolve the DSL from a precomputed failure analysis (CFG evolution LLM only).
+
+    Call :func:`run_failure_analysis_for_dsl_evolution` first, then pass its return
+    value as ``failure_analysis``. Retries should reuse the same string.
+
+    Returns:
+        Tuple of (new_cfg: str, new_terminals: Dict[str, str], success: bool)
+    """
+    print(f"\n{'='*80}")
+    print("Evolving DSL Based on Failing Tasks")
+    print(f"{'='*80}")
+    print(f"Failing tasks: {failing_tasks}")
+
+    try:
+        llm, params = _get_dsl_evolution_llm(shared_vllm)
+    except RuntimeError as e:
+        print(str(e))
+        return cfg, terminals, False
+
+    config = load_config()
+
+    try:
         # Evolve CFG (prompt path from experiment config)
         cfg_evolution_rel = config.get("cfg_evolution_prompt", "prompt_specifications/cfg_evolution.txt")
         cfg_evolution_path = os.path.join(_project_root, cfg_evolution_rel) if not os.path.isabs(cfg_evolution_rel) else cfg_evolution_rel
@@ -1775,7 +2081,7 @@ def evolve_dsl(
         )
 
         conversation = [{"role": "user", "content": cfg_evolution_prompt, "chat_template_kwargs": {"reasoning_effort": "high"}}]
-        output = llm.chat(conversation, params)
+        output = _chat_with_timeout(llm, conversation, params)
         raw_cfg_evolution_response = output[0].outputs[0].text
         
         print("\n" + "="*80, flush=True)
@@ -1793,7 +2099,7 @@ def evolve_dsl(
         # PHASE 1: EXTRACT CFG AND TERMINAL DESCRIPTIONS FROM LLM RESPONSE
         # ============================================================================
         print("\n[Phase 1] Extracting CFG and terminal descriptions from LLM response...")
-        filepath, cfg_text, term_text, failure_text, cfg_explanation = extract_and_save_cfg(response)
+        filepath, cfg_text, term_text, failure_text, cfg_explanation, example_program = extract_and_save_cfg(response)
         
         if not cfg_text:
             print("   FAILED: Could not extract CFG from response")
@@ -1872,8 +2178,8 @@ def evolve_dsl(
         from src.pipeline.cfg_to_funsearch_pipeline import validate_cfg
         
         cfg_path = os.path.join(experiment_dir, "cfg", "cfg_output.json")
-        example = None
-        if os.path.exists(cfg_path):
+        example = example_program
+        if not example and os.path.exists(cfg_path):
             with open(cfg_path, 'r') as f:
                 cfg_data = json.load(f)
                 example = cfg_data.get("example", None)
@@ -1967,11 +2273,11 @@ def evolve_dsl_and_restart(
 ) -> Tuple[str, Dict[str, str], bool]:
     """Evolve the DSL based on failing tasks, implement the new CFG, and return results.
     
-    This function combines evolve_dsl() and implement_cfg() for convenience.
-    Retries DSL evolution if the evolved CFG is the same as the original.
+    Runs :func:`run_failure_analysis_for_dsl_evolution` once, then :func:`evolve_dsl`
+    (CFG evolution only) up to ``max_retries`` times until a new CFG is accepted.
     
     Args:
-        max_retries: Maximum number of retry attempts if CFG is same (default: 10)
+        max_retries: Maximum CFG-evolution attempts if extraction/validation fails or CFG unchanged
     
     Returns:
         Tuple of (new_cfg: str, terminals: Dict[str, str], success: bool)
@@ -1983,21 +2289,29 @@ def evolve_dsl_and_restart(
     dsl_success = False
     new_cfg = cfg
     new_terminals = terminals
-    
-    for dsl_attempt in range(1, max_retries + 1):
-        if dsl_attempt > 1:
-            print(f"\n[DSL Evolution Retry] Attempt {dsl_attempt}/{max_retries}")
-        
-    # Use evolve_dsl function (reusable)
-        new_cfg, new_terminals, attempt_success = evolve_dsl(
+
+    failure_analysis_cached = run_failure_analysis_for_dsl_evolution(
         experiment_dir=experiment_dir,
         failing_tasks=failing_tasks,
         cfg=cfg,
-        recipes=recipes,
         terminals=terminals,
-        shared_vllm=shared_vllm,
         failed_programs_by_task=failed_programs_by_task,
+        shared_vllm=shared_vllm,
     )
+
+    for dsl_attempt in range(1, max_retries + 1):
+        if dsl_attempt > 1:
+            print(f"\n[DSL Evolution Retry] Attempt {dsl_attempt}/{max_retries} (CFG evolution only)")
+
+        new_cfg, new_terminals, attempt_success = evolve_dsl(
+            experiment_dir=experiment_dir,
+            failing_tasks=failing_tasks,
+            cfg=cfg,
+            recipes=recipes,
+            terminals=terminals,
+            failure_analysis=failure_analysis_cached,
+            shared_vllm=shared_vllm,
+        )
         
         # Check if evolution was successful and CFG is different
         if attempt_success and new_cfg != cfg:
@@ -2067,8 +2381,11 @@ def run_integrated_pipeline(
     recipes_path: str = "craft/resources/recipes.yaml",
     hints_path: str = "craft/resources/hints.yaml",
     max_attempts: int = 1,
+    test_seeds: Optional[List[int]] = None,
     shared_vllm=None,
-    synthesis_prompt_path: str = None
+    synthesis_prompt_path: str = None,
+    include_final_functions_in_prompt: bool = False,
+    openai_compat_key_file: Optional[str] = None,
 ) -> int:
     """Run the complete integrated pipeline.
     
@@ -2178,7 +2495,10 @@ def run_integrated_pipeline(
     task_results, failed_programs_by_task = synthesize_and_test_programs(
         experiment_dir, tasks, cfg_path=cfg_path, terminals=terminals,
         recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
-        shared_vllm=shared_vllm, synthesis_prompt_path=synthesis_prompt_path
+        shared_vllm=shared_vllm, synthesis_prompt_path=synthesis_prompt_path,
+        test_seeds=test_seeds,
+        include_final_functions_in_prompt=include_final_functions_in_prompt,
+        openai_compat_key_file=openai_compat_key_file,
     )
     
     all_solved = all(task_results.values())
@@ -2225,7 +2545,10 @@ def run_integrated_pipeline(
             task_results, failed_programs_by_task = synthesize_and_test_programs(
                 experiment_dir, failing_tasks, cfg_path=cfg_path, terminals=terminals,
                 recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
-                shared_vllm=shared_vllm, synthesis_prompt_path=synthesis_prompt_path
+                shared_vllm=shared_vllm, synthesis_prompt_path=synthesis_prompt_path,
+                test_seeds=test_seeds,
+                include_final_functions_in_prompt=include_final_functions_in_prompt,
+                openai_compat_key_file=openai_compat_key_file,
             )
             
             all_solved = all(task_results.values())
@@ -2289,7 +2612,10 @@ def run_integrated_pipeline(
         task_results, failed_programs_by_task = synthesize_and_test_programs(
             experiment_dir, failing_tasks, cfg_path=cfg_path, terminals=current_terminals,
             recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
-            shared_vllm=shared_vllm, synthesis_prompt_path=synthesis_prompt_path
+            shared_vllm=shared_vllm, synthesis_prompt_path=synthesis_prompt_path,
+            test_seeds=test_seeds,
+            include_final_functions_in_prompt=include_final_functions_in_prompt,
+            openai_compat_key_file=openai_compat_key_file,
         )
         
         all_solved = all(task_results.values())
@@ -2371,10 +2697,28 @@ def main():
         help='Maximum number of attempts to synthesize a program for each task (default: 1)'
     )
     parser.add_argument(
+        '--test_seeds',
+        type=int,
+        nargs='+',
+        default=DEFAULT_TEST_SEEDS,
+        help='Seeds used for test-task synthesis (default: 0 5 10 15 20 25 30 35 40 45)'
+    )
+    parser.add_argument(
         '--synthesis_prompt',
         type=str,
         default=None,
         help='Path to synthesis prompt template file (default: prompt_specifications/prompt_synth_with_grid_and_failures.txt)'
+    )
+    parser.add_argument(
+        '--with_final_functions_in_prompt',
+        action='store_true',
+        help='Include final function Python source in the synthesis prompt (default: off; uses original prompt only)',
+    )
+    parser.add_argument(
+        '--openai_compat_key_file',
+        type=str,
+        default=None,
+        help='File with OpenAI-compatible API key (first non-empty line). Default: <repo>/key.txt if OPENAI_COMPAT_API_KEY unset.',
     )
     
     args = parser.parse_args()
@@ -2402,7 +2746,10 @@ def main():
         recipes_path=args.recipes_path,
         hints_path=args.hints_path,
         max_attempts=args.max_attempts,
-        synthesis_prompt_path=args.synthesis_prompt
+        test_seeds=args.test_seeds,
+        synthesis_prompt_path=args.synthesis_prompt,
+        include_final_functions_in_prompt=args.with_final_functions_in_prompt,
+        openai_compat_key_file=args.openai_compat_key_file,
     )
 
 

@@ -32,6 +32,8 @@ def main():
     parser.add_argument('--model_type', type=str, default="huggingface", help='Model type')
     parser.add_argument('--dsl_round', type=int, default=0, help='DSL evolution round number')
     parser.add_argument('--func_evolution_round', type=int, default=None, help='Function evolution round number')
+    parser.add_argument('--nld_path', type=str, default=None, help='NLD file for <<NLD>> (default: experiment config / NLD_PATH)')
+    parser.add_argument('--codebase_path', type=str, default=None, help='Codebase file for <<CODEBASE>> (default: experiment config / CODEBASE_PATH)')
     
     args = parser.parse_args()
     
@@ -89,7 +91,9 @@ def main():
             shared_vllm=shared_vllm,
             results_tracker=results_tracker,
             dsl_round=args.dsl_round,
-            func_evolution_round=args.func_evolution_round if args.func_evolution_round is not None else 0
+            func_evolution_round=args.func_evolution_round if args.func_evolution_round is not None else 0,
+            nld_path=args.nld_path,
+            codebase_path=args.codebase_path,
         )
         
         if not success:

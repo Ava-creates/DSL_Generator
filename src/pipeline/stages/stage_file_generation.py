@@ -8,14 +8,16 @@ import os
 import sys
 import json
 import argparse
-import re
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, _project_root)
 
 from src.pipeline.cfg_to_funsearch_pipeline import (
-    generate_function_prompt, generate_func_init, sanitize_function_name
+    generate_function_prompt,
+    generate_func_init,
+    sanitize_function_name,
+    apply_specification_template_placeholders,
 )
 from src.utils.pipeline_state import read_state, update_state
 from src.utils.status_manager import write_status
@@ -37,6 +39,8 @@ def main():
     parser.add_argument('--grid_prompt', type=str, default='prompt_specifications/grid_prompt.txt', help='Path to grid generation prompt template')
     parser.add_argument('--require_test_type', type=lambda x: x.lower() != 'false', default=True, help='Whether to require test_type in grid specs (set false for old prompts; defaults test_type to positive)')
     parser.add_argument('--skip_positive_grids', type=lambda x: x.lower() == 'true', default=False, help='When true, discard LLM-generated positive grids (only save negative/edge); useful for supplementing existing positives with new negative cases')
+    parser.add_argument('--nld_path', type=str, default=None, help='NLD file for <<NLD>> (default: nld_path from experiment config / NLD_PATH)')
+    parser.add_argument('--codebase_path', type=str, default=None, help='Codebase file for <<CODEBASE>> (default: codebase_path from experiment config / CODEBASE_PATH)')
     
     args = parser.parse_args()
     config = load_config()
@@ -135,23 +139,12 @@ def main():
     with open(args.spec_file, 'r', encoding='utf-8') as f:
         specification = f.read()
     
-    # Replace DSL section in specification with current CFG
-    if cfg:
-        dsl_pattern = r'(## DSL[^\n]*\n.*?"""\n)(.*?)(\n"""\n)'
-        dsl_match = re.search(dsl_pattern, specification, re.DOTALL)
-        if dsl_match:
-            header = dsl_match.group(1)
-            footer = dsl_match.group(3)
-            cfg_section = header + cfg + footer
-            specification = re.sub(dsl_pattern, cfg_section, specification, flags=re.DOTALL)
-        else:
-            dsl_pattern_simple = r'(## DSL[^\n]*\n"""\n)(.*?)(\n"""\n)'
-            dsl_match_simple = re.search(dsl_pattern_simple, specification, re.DOTALL)
-            if dsl_match_simple:
-                header = dsl_match_simple.group(1)
-                footer = dsl_match_simple.group(3)
-                cfg_section = header + cfg + footer
-                specification = re.sub(dsl_pattern_simple, cfg_section, specification, flags=re.DOTALL)
+    specification = apply_specification_template_placeholders(
+        specification,
+        cfg=cfg if cfg else None,
+        nld_path=args.nld_path,
+        codebase_path=args.codebase_path,
+    )
     
     # Ensure directories exist
     os.makedirs(os.path.join(args.experiment_dir, "function_specific_prompts"), exist_ok=True)

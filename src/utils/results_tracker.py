@@ -13,6 +13,7 @@ import json
 import sys
 import tempfile
 import shutil
+import textwrap
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
@@ -162,7 +163,9 @@ class ResultsTracker:
         success: bool = False,
         raw_llm_response: Optional[str] = None,
         prompt: Optional[str] = None,
-        inventory_trace: Optional[List] = None
+        inventory_trace: Optional[List] = None,
+        seed: Optional[int] = None,
+        attempt_in_seed: Optional[int] = None,
     ):
         """Add a program synthesis result.
         
@@ -214,7 +217,9 @@ class ResultsTracker:
             "success": bool(success) if success is not None else False,
             "raw_llm_response": raw_llm_response,
             "prompt": prompt,
-            "inventory_trace": inventory_trace
+            "inventory_trace": inventory_trace,
+            "seed": int(seed) if seed is not None else None,
+            "attempt_in_seed": int(attempt_in_seed) if attempt_in_seed is not None else None,
         }
         
         # Validate the result can be serialized before adding
@@ -314,7 +319,8 @@ class ResultsTracker:
         output_file: Optional[str] = None,
         tasks: Optional[List[str]] = None,
         dsl_round: Optional[int] = None,
-        func_evolution_round: Optional[int] = None
+        func_evolution_round: Optional[int] = None,
+        seed: Optional[int] = None,
     ):
         """Plot best reward vs total interactions.
         
@@ -323,6 +329,7 @@ class ResultsTracker:
             tasks: Optional list of tasks to plot (if None, plots all tasks)
             dsl_round: DSL round number (required)
             func_evolution_round: Optional function evolution round number for filename
+            seed: Optional seed filter; when provided, plots only points from that seed
         """
         dsl_round = self._require_dsl_round(dsl_round)
 
@@ -338,6 +345,10 @@ class ResultsTracker:
         
         # Filter by required dsl_round
         filtered_results = [r for r in filtered_results if r.get("cfg_version") == dsl_round]
+
+        # Filter by seed if specified
+        if seed is not None:
+            filtered_results = [r for r in filtered_results if r.get("seed") == seed]
         
         # Filter by func_evolution_round if specified (when plotting in a specific func round folder)
         # Show all rounds up to and including the specified round (e.g., func1 shows func0 and func1)
@@ -346,6 +357,22 @@ class ResultsTracker:
                 r for r in filtered_results 
                 if r.get("func_evolution_round") is not None and r.get("func_evolution_round") <= func_evolution_round
             ]
+
+        # Option 1: generate only seed-specific folders and skip all-seed aggregate plots.
+        if seed is None:
+            available_seeds = sorted({r.get("seed") for r in filtered_results if r.get("seed") is not None})
+            if not available_seeds:
+                print("No seed-specific results available to plot")
+                return
+            for seed_value in available_seeds:
+                self.plot_reward_vs_interactions(
+                    output_file=None,
+                    tasks=tasks,
+                    dsl_round=dsl_round,
+                    func_evolution_round=func_evolution_round,
+                    seed=int(seed_value),
+                )
+            return
         
         if not filtered_results:
             print("No results to plot after filtering")
@@ -401,6 +428,24 @@ class ResultsTracker:
                                 result.get("timestamp", "")
                             )
                             result_to_normalized_interaction[result_key] = normalized
+
+        # For seed-specific plots, aggregate interactions independently per task within the seed.
+        if seed is not None:
+            task_results_by_seed = defaultdict(list)
+            for result in filtered_results:
+                task_results_by_seed[result.get("task", "")].append(result)
+
+            for task_name, task_result_list in task_results_by_seed.items():
+                task_results_sorted = sorted(task_result_list, key=lambda x: x["total_interactions"])
+                task_accum = 0
+                for result in task_results_sorted:
+                    task_accum += int(result.get("steps", 0))
+                    result_key = (
+                        result.get("task", ""),
+                        result.get("program", ""),
+                        result.get("timestamp", ""),
+                    )
+                    result_to_normalized_interaction[result_key] = task_accum
         
         # Create figure
         fig, ax = plt.subplots(figsize=(12, 8))
@@ -415,8 +460,9 @@ class ResultsTracker:
             idx = int(func_round) % len(success_palette)
             return success_palette[idx] if is_success else fail_palette[idx]
 
-        round_status_seen = set()
-        
+        # (func_round, success?) -> task names using that color in this plot
+        color_group_tasks: Dict[tuple, set] = defaultdict(set)
+
         # Plot each task
         for task_idx, (task, cfg_data) in enumerate(task_cfg_func_data.items()):
             for cfg_version, func_data in cfg_data.items():
@@ -425,7 +471,7 @@ class ResultsTracker:
                     results_sorted = sorted(results, key=lambda x: x["total_interactions"])
                     
                     # Extract data
-                    if func_evolution_round is not None and func_round <= func_evolution_round and result_to_normalized_interaction:
+                    if result_to_normalized_interaction:
                         # Use normalized interactions for this round (if available)
                         interactions = []
                         for r in results_sorted:
@@ -441,7 +487,7 @@ class ResultsTracker:
                     series_success = any(bool(r.get("success", False)) for r in results_sorted)
                     color = _series_color(func_round, series_success)
                     success_label = "success" if series_success else "unsuccessful"
-                    round_status_seen.add((func_round, series_success))
+                    color_group_tasks[(func_round, series_success)].add(task)
 
                     # Keep linestyle encoding by function-evolution round.
                     linestyle = '-' if func_round == 0 else '--' if func_round == 1 else '-.' if func_round == 2 else ':'
@@ -461,6 +507,8 @@ class ResultsTracker:
         if func_evolution_round is not None:
             # Show 0-indexed number (func_evolution_round=0 shows "Func Evolution 0")
             title += f", Func Evolution {func_evolution_round}"
+        if seed is not None:
+            title += f", Seed {seed}"
         
         ax.set_title(title, fontsize=14, fontweight='bold')
         ax.grid(True, alpha=0.3)
@@ -469,26 +517,49 @@ class ResultsTracker:
         task_legend = ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9, title="Task Series")
         ax.add_artist(task_legend)
 
-        color_key_handles = []
-        for func_round, is_success in sorted(
-            round_status_seen,
-            key=lambda x: ((-1 if x[0] is None else int(x[0])), 0 if x[1] else 1),
-        ):
-            color = _series_color(func_round, is_success)
+        def _color_key_label(func_round, is_success: bool, tasks: set) -> str:
             round_label = f"func{func_round}" if func_round is not None else "func_init"
             status_label = "success" if is_success else "fail"
+            names = ", ".join(sorted(tasks))
+            wrapped = textwrap.fill(names, width=72, break_long_words=False, break_on_hyphens=False)
+            return f"{round_label} {status_label}:\n{wrapped}"
+
+        color_key_handles = []
+        for (func_round, is_success), tasks in sorted(
+            color_group_tasks.items(),
+            key=lambda item: (
+                -1 if item[0][0] is None else int(item[0][0]),
+                0 if item[0][1] else 1,
+            ),
+        ):
+            color = _series_color(func_round, is_success)
             color_key_handles.append(
-                Line2D([0], [0], color=color, marker='o', linestyle='-', linewidth=2,
-                       markersize=6, label=f"{round_label} {status_label}")
+                Line2D(
+                    [0],
+                    [0],
+                    color=color,
+                    marker="o",
+                    linestyle="-",
+                    linewidth=2,
+                    markersize=6,
+                    label=_color_key_label(func_round, is_success, tasks),
+                )
             )
         if color_key_handles:
-            ax.legend(handles=color_key_handles, loc='lower right', fontsize=8, title="Color Key")
+            ax.legend(
+                handles=color_key_handles,
+                loc="lower right",
+                fontsize=7,
+                title="Color key (tasks)",
+            )
         
         plt.tight_layout()
         
         # Create subdirectory for this DSL round and function evolution round
         func_round_str = f"func{func_evolution_round}" if func_evolution_round is not None else "func_init"
         plot_dir = os.path.join(self.results_dir, f"dsl{dsl_round}", func_round_str)
+        if seed is not None:
+            plot_dir = os.path.join(plot_dir, f"seed_{seed}")
         os.makedirs(plot_dir, exist_ok=True)
         
         # Generate filename with version numbers
@@ -505,8 +576,8 @@ class ResultsTracker:
         for task, cfg_data in task_cfg_func_data.items():
             # Create figure for this task
             fig, ax = plt.subplots(figsize=(10, 6))
-            round_status_seen_task = set()
-            
+            color_group_tasks_task: Dict[tuple, set] = defaultdict(set)
+
             # Plot each CFG version and func_evolution_round for this task
             for cfg_version, func_data in cfg_data.items():
                 for func_round, results in func_data.items():
@@ -514,7 +585,7 @@ class ResultsTracker:
                     results_sorted = sorted(results, key=lambda x: x["total_interactions"])
                     
                     # Extract data
-                    if func_evolution_round is not None and func_round <= func_evolution_round and result_to_normalized_interaction:
+                    if result_to_normalized_interaction:
                         # Use normalized interactions for this round (if available)
                         interactions = []
                         for r in results_sorted:
@@ -530,7 +601,7 @@ class ResultsTracker:
                     series_success = any(bool(r.get("success", False)) for r in results_sorted)
                     color = _series_color(func_round, series_success)
                     success_label = "success" if series_success else "unsuccessful"
-                    round_status_seen_task.add((func_round, series_success))
+                    color_group_tasks_task[(func_round, series_success)].add(task)
 
                     # Keep linestyle encoding by function-evolution round.
                     linestyle = '-' if func_round == 0 else '--' if func_round == 1 else '-.' if func_round == 2 else ':'
@@ -550,6 +621,8 @@ class ResultsTracker:
             if func_evolution_round is not None:
                 # Show 0-indexed number (func_evolution_round=0 shows "Func Evolution 0")
                 task_title += f", Func Evolution {func_evolution_round}"
+            if seed is not None:
+                task_title += f", Seed {seed}"
             
             ax.set_title(task_title, fontsize=14, fontweight='bold')
             ax.grid(True, alpha=0.3, linestyle='--')
@@ -559,21 +632,35 @@ class ResultsTracker:
                 series_legend = ax.legend(fontsize=9, loc='upper left', title="Series")
                 ax.add_artist(series_legend)
 
-            # Add compact color key legend for round/status.
+            # Color key: round + status + task names (same as main plot).
             color_key_handles_task = []
-            for func_round, is_success in sorted(
-                round_status_seen_task,
-                key=lambda x: ((-1 if x[0] is None else int(x[0])), 0 if x[1] else 1),
+            for (func_round, is_success), tasks in sorted(
+                color_group_tasks_task.items(),
+                key=lambda item: (
+                    -1 if item[0][0] is None else int(item[0][0]),
+                    0 if item[0][1] else 1,
+                ),
             ):
                 color = _series_color(func_round, is_success)
-                round_label = f"func{func_round}" if func_round is not None else "func_init"
-                status_label = "success" if is_success else "fail"
                 color_key_handles_task.append(
-                    Line2D([0], [0], color=color, marker='o', linestyle='-', linewidth=2,
-                           markersize=6, label=f"{round_label} {status_label}")
+                    Line2D(
+                        [0],
+                        [0],
+                        color=color,
+                        marker="o",
+                        linestyle="-",
+                        linewidth=2,
+                        markersize=6,
+                        label=_color_key_label(func_round, is_success, tasks),
+                    )
                 )
             if color_key_handles_task:
-                ax.legend(handles=color_key_handles_task, fontsize=8, loc='lower right', title="Color Key")
+                ax.legend(
+                    handles=color_key_handles_task,
+                    fontsize=7,
+                    loc="lower right",
+                    title="Color key (tasks)",
+                )
             
             # Set y-axis to start at 0 if all rewards are non-negative
             all_rewards = []
@@ -592,12 +679,15 @@ class ResultsTracker:
             plt.savefig(task_output_file, dpi=300, bbox_inches='tight')
             print(f"   Saved plot for {task} to {task_output_file}")
             plt.close()
+
+        return
     
     def plot_all_tasks_combined(
         self,
         output_file: Optional[str] = None,
         dsl_round: Optional[int] = None,
-        func_evolution_round: Optional[int] = None
+        func_evolution_round: Optional[int] = None,
+        seed: Optional[int] = None,
     ):
         """Plot all tasks on one plot, grouped by CFG version.
         
@@ -605,6 +695,7 @@ class ResultsTracker:
             output_file: Optional path to save plot (auto-generated if None)
             dsl_round: DSL round number (required)
             func_evolution_round: Optional function evolution round number for filename
+            seed: Optional seed filter; when provided, plots only points from that seed
         """
         dsl_round = self._require_dsl_round(dsl_round)
 
@@ -617,6 +708,23 @@ class ResultsTracker:
         filtered_results = [r for r in filtered_results if r.get("cfg_version") == dsl_round]
         if func_evolution_round is not None:
             filtered_results = [r for r in filtered_results if r.get("func_evolution_round") == func_evolution_round]
+        if seed is not None:
+            filtered_results = [r for r in filtered_results if r.get("seed") == seed]
+
+        # Option 1: generate only seed-specific folders and skip all-seed aggregate plots.
+        if seed is None:
+            available_seeds = sorted({r.get("seed") for r in filtered_results if r.get("seed") is not None})
+            if not available_seeds:
+                print("No seed-specific results available to plot")
+                return
+            for seed_value in available_seeds:
+                self.plot_all_tasks_combined(
+                    output_file=None,
+                    dsl_round=dsl_round,
+                    func_evolution_round=func_evolution_round,
+                    seed=int(seed_value),
+                )
+            return
 
         if not filtered_results:
             print("No results to plot after filtering")
@@ -645,9 +753,14 @@ class ResultsTracker:
             interactions = []
             best_rewards = []
             current_best = float('-inf')
+            seed_interaction_accum = 0
             
             for result in results_sorted:
-                interactions.append(result["total_interactions"])
+                if seed is not None:
+                    seed_interaction_accum += int(result.get("steps", 0))
+                    interactions.append(seed_interaction_accum)
+                else:
+                    interactions.append(result["total_interactions"])
                 if result["best_reward_so_far"] > current_best:
                     current_best = result["best_reward_so_far"]
                 best_rewards.append(current_best)
@@ -668,6 +781,8 @@ class ResultsTracker:
         if func_evolution_round is not None:
             # Show 0-indexed number (func_evolution_round=0 shows "Func Evolution 0")
             title += f", Func Evolution {func_evolution_round}"
+        if seed is not None:
+            title += f", Seed {seed}"
         
         ax.set_title(title, fontsize=14, fontweight='bold')
         ax.grid(True, alpha=0.3)
@@ -678,6 +793,8 @@ class ResultsTracker:
         # Create subdirectory for this DSL round and function evolution round
         func_round_str = f"func{func_evolution_round}" if func_evolution_round is not None else "func_init"
         plot_dir = os.path.join(self.results_dir, f"dsl{dsl_round}", func_round_str)
+        if seed is not None:
+            plot_dir = os.path.join(plot_dir, f"seed_{seed}")
         os.makedirs(plot_dir, exist_ok=True)
         
         # Generate filename with version numbers
@@ -688,6 +805,8 @@ class ResultsTracker:
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         print(f" Saved combined plot to {output_file}")
         plt.close()
+
+        return
     
     def get_summary(self) -> Dict:
         """Get summary statistics.
@@ -891,6 +1010,18 @@ def parse_funsearch_log(log_file: str) -> List[Dict]:
     return entries
 
 
+def best_funsearch_reward(log_file: str) -> Optional[float]:
+    """Return the best reward found in a FunSearch log file."""
+    entries = parse_funsearch_log(log_file)
+    rewards = [e.get("reward") for e in entries if e.get("reward") is not None]
+    if not rewards:
+        return None
+    try:
+        return max(float(r) for r in rewards)
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_explicit_feedback_file(feedback_file: str) -> List[Dict]:
     """Parse an explicit feedback JSON file into a list of metrics entries."""
     entries: List[Dict] = []
@@ -932,7 +1063,12 @@ def plot_funsearch_reward_vs_interactions(
     output_dir: str,
     function_name: Optional[str] = None,
 ) -> Optional[str]:
-    """Plot best reward vs cumulative env interactions from a FunSearch log."""
+    """Plot FunSearch reward curves from a FunSearch log.
+
+    Generates:
+    1) best reward so far vs cumulative env interactions
+    2) per-sample reward vs sample number
+    """
     entries = parse_funsearch_log(log_file)
     if not entries:
         print(f"No FunSearch log entries found in {log_file}")
@@ -955,10 +1091,12 @@ def plot_funsearch_reward_vs_interactions(
         cumulative_interactions.append(total)
         best_rewards.append(best if best != float("-inf") else 0.0)
 
-    os.makedirs(output_dir, exist_ok=True)
     safe_name = function_name.replace(" ", "_") if function_name else "funsearch"
-    plot_path = os.path.join(output_dir, f"{safe_name}_reward_vs_interactions.png")
-    metrics_path = os.path.join(output_dir, f"{safe_name}_reward_vs_interactions.json")
+    function_dir = os.path.join(output_dir, safe_name)
+    os.makedirs(function_dir, exist_ok=True)
+    plot_path = os.path.join(function_dir, "plot1.png")
+    sample_plot_path = os.path.join(function_dir, "plot2.png")
+    metrics_path = os.path.join(function_dir, "metrics.json")
 
     # Save metrics
     metrics = []
@@ -984,7 +1122,24 @@ def plot_funsearch_reward_vs_interactions(
     plt.tight_layout()
     plt.savefig(plot_path, dpi=300, bbox_inches="tight")
     plt.close()
+
+    # Plot per-sample reward vs sample number.
+    sample_numbers = list(range(1, len(entries) + 1))
+    sample_rewards = [r if r is not None else np.nan for r in raw_rewards]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(sample_numbers, sample_rewards, marker="o", linewidth=1.5, markersize=4)
+    ax.set_title("Reward vs Sample Number (FunSearch)")
+    ax.set_xlabel("Sample Number")
+    ax.set_ylabel("Reward")
+    ax.ticklabel_format(useOffset=False, style='plain', axis='y')
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(sample_plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
     print(f" Saved FunSearch plot to {plot_path}")
+    print(f" Saved FunSearch sample plot to {sample_plot_path}")
     return plot_path
 
 
@@ -992,6 +1147,7 @@ def plot_explicit_feedback_reward_vs_interactions(
     feedback_file: str,
     output_dir: str,
     function_name: Optional[str] = None,
+    seed_reward: Optional[float] = None,
 ) -> Optional[str]:
     """Plot best reward vs cumulative env interactions from explicit feedback."""
     entries = parse_explicit_feedback_file(feedback_file)
@@ -1006,6 +1162,17 @@ def plot_explicit_feedback_reward_vs_interactions(
     raw_rewards: List[Optional[float]] = []
     total = 0
     best = float("-inf")
+
+    # Optional anchor point at interaction 0 from best selected FunSearch seed.
+    # This makes explicit-feedback curves start from the seed quality instead of 0.
+    if seed_reward is not None:
+        try:
+            best = float(seed_reward)
+            cumulative_interactions.append(0)
+            best_rewards.append(best)
+            raw_rewards.append(best)
+        except (TypeError, ValueError):
+            best = float("-inf")
 
     for entry in entries:
         total += int(entry.get("env_interactions", 0))
@@ -1022,13 +1189,27 @@ def plot_explicit_feedback_reward_vs_interactions(
     metrics_path = os.path.join(output_dir, f"{safe_name}_explicit_feedback_reward_vs_interactions.json")
 
     metrics = []
-    for idx, entry in enumerate(entries):
+    start_idx = 0
+    if seed_reward is not None and len(cumulative_interactions) > len(entries):
+        metrics.append({
+            "iteration": 0,
+            "env_interactions": 0,
+            "cumulative_interactions": 0,
+            "reward": raw_rewards[0],
+            "best_reward_so_far": best_rewards[0],
+            "source": "funsearch_seed",
+        })
+        start_idx = 1
+
+    for i, entry in enumerate(entries):
+        idx = i + start_idx
         metrics.append({
             "iteration": entry.get("iteration"),
             "env_interactions": int(entry.get("env_interactions", 0)),
             "cumulative_interactions": cumulative_interactions[idx],
             "reward": raw_rewards[idx],
             "best_reward_so_far": best_rewards[idx],
+            "source": "explicit_feedback",
         })
     with open(metrics_path, "w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2)

@@ -1,0 +1,1 @@
+EXPERIMENT_CONFIG=config/baseline_config.yaml BASELINE_VARIANT=task_env TASK_ENV_ROUNDS=3 TOTAL_SAMPLES=2000 NUM_EXPLICIT_FEEDBACK_ITERATIONS=50 scripts/stages/submit_baseline.sh

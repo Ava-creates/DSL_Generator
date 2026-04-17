@@ -30,7 +30,10 @@ from src.pipeline.cfg_to_funsearch_pipeline import (
     get_cfg, implement_cfg
 )
 from src.pipeline.integrated_pipeline import (
-    test_cfg_on_tasks, evolve_functions_with_failing_tasks, evolve_dsl
+    test_cfg_on_tasks,
+    evolve_functions_with_failing_tasks,
+    evolve_dsl,
+    run_failure_analysis_for_dsl_evolution,
 )
 from src.utils.results_tracker import ResultsTracker
 
@@ -51,12 +54,14 @@ def run_unified_pipeline(
     cfg_output_file: Optional[str] = None,
     max_cfg_retries: int = 10,
     nld_path: str = "prompt_specifications/nld.txt",
+    codebase_path: Optional[str] = None,
     recipes_path: str = "craft/resources/recipes.yaml",
     hints_path: str = "craft/resources/hints.yaml",
     max_attempts: int = 1,
     model_type: str = "huggingface",
     shared_vllm=None,
-    resume_from_checkpoint: bool = False
+    resume_from_checkpoint: bool = False,
+    local: bool = False,
 ) -> int:
     """Run the unified pipeline with the structured flow.
     
@@ -225,7 +230,9 @@ def run_unified_pipeline(
                 shared_vllm=shared_vllm,
                 results_tracker=results_tracker,
                 dsl_round=dsl_round,
-                func_evolution_round=None  # Initial implementation, not a function evolution
+                func_evolution_round=None,  # Initial implementation, not a function evolution
+                nld_path=nld_path,
+                codebase_path=codebase_path,
             )
                 
             if not implementation_success:
@@ -245,7 +252,8 @@ def run_unified_pipeline(
                 shared_vllm=shared_vllm,
                 results_tracker=results_tracker,
                 cfg_version=dsl_round,
-                func_evolution_round=None  # Initial testing, not function evolution
+                func_evolution_round=None,  # Initial testing, not function evolution
+                model_type=model_type,
             )
             
             all_solved = all(task_results.values())
@@ -389,7 +397,8 @@ def run_unified_pipeline(
                 shared_vllm=shared_vllm,
                 results_tracker=results_tracker,
                 cfg_version=dsl_round,
-                func_evolution_round=func_round
+                func_evolution_round=func_round,
+                model_type=model_type,
             )
             
             all_solved = all(task_results.values())
@@ -465,18 +474,31 @@ def run_unified_pipeline(
             dsl_success = False
             new_cfg = cfg
             new_terminals = terminals
-            
+
+            failure_analysis_cached = run_failure_analysis_for_dsl_evolution(
+                experiment_dir=experiment_dir,
+                failing_tasks=failing_tasks,
+                cfg=cfg,
+                terminals=terminals,
+                failed_programs_by_task=None,
+                shared_vllm=shared_vllm,
+            )
+
             for dsl_attempt in range(1, max_dsl_retries + 1):
                 if dsl_attempt > 1:
-                    print(f"\n  [DSL Evolution Retry] Attempt {dsl_attempt}/{max_dsl_retries}")
-                
+                    print(
+                        f"\n  [DSL Evolution Retry] Attempt {dsl_attempt}/{max_dsl_retries} "
+                        f"(CFG evolution only)"
+                    )
+
                 new_cfg, new_terminals, attempt_success = evolve_dsl(
                     experiment_dir=experiment_dir,
                     failing_tasks=failing_tasks,
                     cfg=cfg,
                     recipes=recipes,
                     terminals=terminals,
-                    shared_vllm=shared_vllm
+                    failure_analysis=failure_analysis_cached,
+                    shared_vllm=shared_vllm,
                 )
                 
                 # Check if evolution was successful and CFG is different
@@ -530,8 +552,13 @@ def run_unified_pipeline(
                 # Also generate separate plots per task from evolution metrics
                 results_tracker.plot_tasks_separately_from_metrics(dsl_round=dsl_round, func_evolution_round=None)
                 
-                # Exit with special code to trigger job resubmission
                 if dsl_round < max_dsl_evolutions - 1:
+                    if local:
+                        print(f"\n  {'='*80}")
+                        print("  DSL EVOLVED - CONTINUING LOCALLY")
+                        print(f"  Next DSL round: {dsl_round + 2}/{max_dsl_evolutions}")
+                        print(f"  {'='*80}")
+                        continue
                     print(f"\n  {'='*80}")
                     print("  DSL EVOLVED - EXITING TO RESUBMIT JOB")
                     print(f"  Next DSL round will be: {dsl_round + 2}/{max_dsl_evolutions}")
@@ -635,6 +662,12 @@ def main():
         help='Path to natural language domain description file'
     )
     parser.add_argument(
+        '--codebase_path',
+        type=str,
+        default=None,
+        help='Path to codebase description for <<CODEBASE>> in spec (default: experiment config)'
+    )
+    parser.add_argument(
         '--recipes_path',
         type=str,
         default="craft/resources/recipes.yaml",
@@ -655,7 +688,7 @@ def main():
     parser.add_argument(
         '--model_type',
         type=str,
-        choices=['huggingface', 'ollama', 'gemini'],
+        choices=['huggingface', 'ollama', 'gemini', 'openai_compat'],
         default='huggingface',
         help='Model type for funsearch'
     )
@@ -663,6 +696,11 @@ def main():
         '--resume_from_checkpoint',
         action='store_true',
         help='Resume from checkpoint if available'
+    )
+    parser.add_argument(
+        '--local',
+        action='store_true',
+        help='Run fully locally in one process (do not exit with resubmission code after DSL evolution)'
     )
     
     args = parser.parse_args()
@@ -691,11 +729,13 @@ def main():
         cfg_output_file=args.cfg_output_file,
         max_cfg_retries=args.max_cfg_retries,
         nld_path=args.nld_path,
+        codebase_path=args.codebase_path,
         recipes_path=args.recipes_path,
         hints_path=args.hints_path,
         max_attempts=args.max_attempts,
         model_type=args.model_type,
-        resume_from_checkpoint=args.resume_from_checkpoint
+        resume_from_checkpoint=args.resume_from_checkpoint,
+        local=args.local,
     )
 
 

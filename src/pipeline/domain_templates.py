@@ -50,7 +50,10 @@ def craft_solve_template_basic(func_name: str, func_params: str, func_call_args:
   env_for_func = copy.deepcopy(env)
   actions_to_take = {safe_name}({func_call_args.replace("env", "env_for_func", 1)})
   if actions_to_take is None:
-    actions_to_take = []
+    raise RuntimeError(
+      "{safe_name} returned None; terminal functions must return a list of action codes "
+      "(use [] when no steps are required, never implicit None)."
+    )
 
   total_reward = 0.0
   actions_count = 0
@@ -119,19 +122,19 @@ def craft_solve_template_basic(func_name: str, func_params: str, func_call_args:
   if isinstance(inventory_after, list):
     inventory_after = _InvList(inventory_after)
   total_reward = 0
-  if pass_check:
-    passed = eval(pass_check, {{}}, {{
-      'pos_before': pos_before,
-      'pos_after': pos_after,
-      'inventory_before': inventory_before,
-      'inventory_after': inventory_after,
-      'grid_before_cells': grid_before_cells,
-      'grid_after_cells': grid_after_cells,
-      'dir_before': dir_before,
-      'dir_after': dir_after,
-    }})
-  else:
-    passed = False
+  context = {{
+    'pos_before': pos_before,
+    'pos_after': pos_after,
+    'inventory_before': inventory_before,
+    'inventory_after': inventory_after,
+    'grid_before_cells': grid_before_cells,
+    'grid_after_cells': grid_after_cells,
+    'dir_before': dir_before,
+    'dir_after': dir_after,
+}}
+
+  passed = eval(pass_check, context, context) if pass_check else False
+
   test_type = spec.get('test_type', 'positive') if spec is not None else 'positive'
   if passed:
     total_reward += 100.0 if test_type == 'positive' else 1.0
@@ -139,6 +142,34 @@ def craft_solve_template_basic(func_name: str, func_params: str, func_call_args:
   grid_after = None
 
   return [total_reward, actions_count, grid_before, dir_after]'''
+
+
+def craft_solve_template_task_env_basic(func_name: str, func_params: str, func_call_args: str) -> str:
+    """Craft a minimal solve() template for task-env baseline runs."""
+    safe_name = _safe_name(func_name)
+    return f'''def solve({func_params}, visualise=False):
+  """Runs the environment with a {safe_name} function that returns list of actions to take and returns total reward."""
+  import copy
+
+  # Execute function to get actions using a deepcopy (function call uses the copied env)
+  env_for_func = copy.deepcopy(env)
+  actions_to_take = {safe_name}({func_call_args.replace("env", "env_for_func", 1)})
+  if actions_to_take is None:
+    raise RuntimeError(
+      "{safe_name} returned None; terminal functions must return a list of action codes "
+      "(use [] when no steps are required, never implicit None)."
+    )
+
+  total_reward = 0.0
+  actions_count = 0
+  for action in actions_to_take:
+    reward, done, observations = env.step(action)
+    total_reward += reward
+    actions_count += 1
+    if done:
+      break
+
+  return [total_reward, actions_count, "", ""]'''
 
 
 def craft_evaluate_template(
@@ -229,37 +260,39 @@ def craft_env_setup(
   """
 
 
-def craft_env_setup_from_var(
-    recipes_path: str,
-    hints_path: str,
+def craft_baseline_evaluate_template(
+    display_name: str,
+    func_call_args: str,
     task_name: str,
-    grid_spec_path_var: str,
+    recipes_path: str = "craft/resources/recipes.yaml",
+    hints_path: str = "craft/resources/hints.yaml",
+    max_steps: int = 400,
 ) -> str:
-    """Craft env setup block using a grid_spec_path variable."""
-    return f"""
-  import os
-  import json
-  recipes_path = "{recipes_path}"
-  hints_path = "{hints_path}"
-  grid_spec_path = {grid_spec_path_var}
-  task_name = "{task_name}"
-  grid_spec = None
-  if grid_spec_path and os.path.exists(grid_spec_path):
-    try:
-      with open(grid_spec_path, "r", encoding="utf-8") as f:
-        grid_spec = json.load(f)
-      task_name = grid_spec.get("task_name", task_name) or task_name
-    except Exception:
-      pass
-  custom_grid_path = grid_spec_path if grid_spec_path and os.path.exists(grid_spec_path) else None
-  env_sampler = env_factory.EnvironmentFactory(
-      recipes_path, hints_path, 7, max_steps=300, reuse_environments=False,
-            visualise=visualise, custom_grid_path=custom_grid_path)
-  env = env_sampler.sample_environment(task_name=task_name)
-  # Attach grid_spec to scenario so pass_check is available in solve()
-  try:
-    if grid_spec is not None and hasattr(env, "scenario"):
-      env.scenario.spec = grid_spec
-  except Exception:
-    pass
-  """
+    """Craft evaluate() template for baseline runs without testcase grids.
+
+    This is intentionally separate from craft_evaluate_template so baseline
+    orchestration can use a dedicated template path without toggling flags in
+    the generic template helpers.
+    """
+    return f'''@funsearch.run
+def evaluate():
+  """Evaluates {display_name} behavior on a sampled task environment."""
+  visualise = False
+  seeds = range(2, 20, 2)
+  total_reward = 0 
+  total_actions = 0
+  for seed in seeds:
+    env_sampler = env_factory.EnvironmentFactory(
+        "{recipes_path}", "{hints_path}", 7, max_steps={int(max_steps)}, seed = seed, 
+        reuse_environments=False, visualise=visualise)
+    env = env_sampler.sample_environment(task_name="{task_name}")
+    env.reset()
+    
+    r, a , _,_ = solve({func_call_args}, visualise=visualise)
+    total_reward += r
+    total_actions += a
+  # Return as list: [total_reward, actions_count, grid_before, grid_after]
+  return [total_reward, total_actions, "", ""]
+'''
+
+

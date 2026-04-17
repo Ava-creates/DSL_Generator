@@ -53,6 +53,9 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         try:
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f) or {}
+            # Canonical key: positive_grids (YAML typo positive_girds is accepted)
+            if "positive_girds" in config and "positive_grids" not in config:
+                config["positive_grids"] = config["positive_girds"]
             # Print to stderr to avoid interfering with bash eval
             print(f" Loaded config from: {config_path}", file=sys.stderr)
         except Exception as e:
@@ -67,6 +70,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "EXPERIMENT_DIR": "experiment_dir",
         "SPEC_FILE": "spec_file",
         "NLD_PATH": "nld_path",
+        "CODEBASE_PATH": "codebase_path",
         "TASKS": "tasks",  # Can be JSON array or space-separated
         "MAX_DSL_EVOLUTIONS": "max_dsl_evolutions",
         "MAX_FUNCTION_EVOLUTIONS": "max_function_evolutions",
@@ -80,21 +84,31 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "CFG_OUTPUT_FILE": "cfg_output_file",
         "MAX_CFG_RETRIES": "max_cfg_retries",
         "GRID_REGENERATION_ATTEMPTS": "grid_regeneration_attempts",
+        "GRID_PROMPT_PATH": "grid_prompt_path",
+        "POSITIVE_GRIDS": "positive_grids",
+        "NEGATIVE_GRIDS": "negative_grids",
+        "EDGE_GRIDS": "edge_grids",
+        "SKIP_POSITIVE_GRIDS": "skip_positive_grids",
+        "GRID_SPEC_LLM_ATTEMPTS": "grid_spec_llm_attempts",
         "USE_EXISTING_GRID_SPECS": "use_existing_grid_specs",
         "GRID_SPEC_DIR": "grid_spec_dir",
         "FAILURE_ANALYSIS_PROMPT": "failure_analysis_prompt",
         "CFG_EVOLUTION_PROMPT": "cfg_evolution_prompt",
         "CFG_GENERATOR_PROMPT_PATH": "cfg_generator_prompt_path",
         "DOMAIN_CONTEXT_TEMPLATE_PATH": "domain_context_template_path",
+        "CFG_TEXT": "cfg_text",
+        "JOB_PREFIX": "job_prefix",
     }
     
     for env_var, config_key in env_mappings.items():
         env_value = os.environ.get(env_var)
         if env_value is not None:
             # Convert string values to appropriate types
-            if config_key in ["max_dsl_evolutions", "max_function_evolutions", 
+            if config_key in ["max_dsl_evolutions", "max_function_evolutions",
                              "total_samples", "num_explicit_feedback_iterations",
-                             "max_attempts", "max_cfg_retries", "grid_regeneration_attempts"]:
+                             "max_attempts", "max_cfg_retries", "grid_regeneration_attempts",
+                             "positive_grids", "negative_grids", "edge_grids",
+                             "grid_spec_llm_attempts"]:
                 try:
                     config[config_key] = int(env_value)
                 except ValueError:
@@ -103,7 +117,11 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
                 config[config_key] = env_value.lower() in ("true", "1", "yes")
             elif config_key == "use_existing_grid_specs":
                 config[config_key] = env_value.lower() in ("true", "1", "yes")
-            elif config_key in ("grid_spec_dir", "failure_analysis_prompt", "cfg_evolution_prompt", "synthesis_prompt", "nld_path", "cfg_generator_prompt_path", "domain_context_template_path"):
+            elif config_key == "skip_positive_grids":
+                config[config_key] = env_value.lower() in ("true", "1", "yes")
+            elif config_key in ("grid_spec_dir", "grid_prompt_path", "failure_analysis_prompt", "cfg_evolution_prompt", "synthesis_prompt", "nld_path", "codebase_path", "cfg_generator_prompt_path", "domain_context_template_path"):
+                config[config_key] = env_value
+            elif config_key in ("cfg_text", "job_prefix"):
                 config[config_key] = env_value
             elif config_key == "tasks":
                 # Handle tasks - can be JSON array or space-separated
@@ -121,6 +139,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "experiment_dir": None,
         "spec_file": "prompt_specifications/specification_with_updated_nld.txt",
         "nld_path": "prompt_specifications/nld.txt",
+        "codebase_path": "prompt_specifications/codebase.txt",
         "tasks": [],
         "max_dsl_evolutions": 2,
         "max_function_evolutions": 1,
@@ -134,6 +153,12 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "cfg_output_file": None,
         "max_cfg_retries": 10,
         "grid_regeneration_attempts": 5,
+        "grid_prompt_path": "prompt_specifications/grid_prompt.txt",
+        "positive_grids": 10,
+        "negative_grids": 4,
+        "edge_grids": 1,
+        "skip_positive_grids": False,
+        "grid_spec_llm_attempts": 5,
         "use_existing_grid_specs": False,
         "grid_spec_dir": None,
         "failure_analysis_prompt": "prompt_specifications/failure_analysis.txt",
@@ -141,6 +166,8 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "synthesis_prompt": "prompt_specifications/prompt_synth_with_grid_and_failures.txt",
         "cfg_generator_prompt_path": "prompt_specifications/cfg_generator.txt",
         "domain_context_template_path": None,
+        "cfg_text": "",
+        "job_prefix": None,
     }
     
     for key, default_value in defaults.items():
@@ -161,6 +188,7 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
         "experiment_dir": "EXPERIMENT_DIR",
         "spec_file": "SPEC_FILE",
         "nld_path": "NLD_PATH",
+        "codebase_path": "CODEBASE_PATH",
         "tasks": "TASKS",  # Will be converted to space-separated string
         "max_dsl_evolutions": "MAX_DSL_EVOLUTIONS",
         "max_function_evolutions": "MAX_FUNCTION_EVOLUTIONS",
@@ -174,6 +202,12 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
         "cfg_output_file": "CFG_OUTPUT_FILE",
         "max_cfg_retries": "MAX_CFG_RETRIES",
         "grid_regeneration_attempts": "GRID_REGENERATION_ATTEMPTS",
+        "grid_prompt_path": "GRID_PROMPT_PATH",
+        "positive_grids": "POSITIVE_GRIDS",
+        "negative_grids": "NEGATIVE_GRIDS",
+        "edge_grids": "EDGE_GRIDS",
+        "skip_positive_grids": "SKIP_POSITIVE_GRIDS",
+        "grid_spec_llm_attempts": "GRID_SPEC_LLM_ATTEMPTS",
         "use_existing_grid_specs": "USE_EXISTING_GRID_SPECS",
         "grid_spec_dir": "GRID_SPEC_DIR",
         "failure_analysis_prompt": "FAILURE_ANALYSIS_PROMPT",
@@ -181,6 +215,8 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
         "synthesis_prompt": "SYNTHESIS_PROMPT",
         "cfg_generator_prompt_path": "CFG_GENERATOR_PROMPT_PATH",
         "domain_context_template_path": "DOMAIN_CONTEXT_TEMPLATE_PATH",
+        "cfg_text": "CFG_TEXT",
+        "job_prefix": "JOB_PREFIX",
     }
     
     for config_key, env_var in env_mappings.items():
@@ -189,12 +225,52 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
             if config_key == "tasks" and isinstance(value, list):
                 # Convert list to space-separated string for SLURM
                 os.environ[env_var] = " ".join(str(t) for t in value)
-            elif config_key in ("skip_cfg_generation", "use_existing_grid_specs"):
+            elif config_key in ("skip_cfg_generation", "use_existing_grid_specs", "skip_positive_grids"):
                 os.environ[env_var] = "true" if value else "false"
             elif config_key == "grid_spec_dir" and value is not None:
                 os.environ[env_var] = str(value)
             else:
                 os.environ[env_var] = str(value)
+
+
+def funsearch_grid_regen_kwargs_from_config(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Build kwargs for funsearch.implementation.config.Config grid-regeneration fields.
+
+    Single source of truth: load_config() — YAML file (EXPERIMENT_CONFIG or
+    config/experiment_config.yaml), then env overrides, then defaults in load_config().
+    """
+    cfg = load_config(config_path)
+
+    def _to_int(key: str) -> int:
+        v = cfg[key]
+        if isinstance(v, bool):
+            raise ValueError(f"config {key} must be numeric, got bool")
+        return int(v)
+
+    sp = cfg.get("skip_positive_grids", False)
+    if isinstance(sp, bool):
+        skip_positive = sp
+    else:
+        skip_positive = str(sp).lower() in ("true", "1", "yes")
+
+    llm = _to_int("grid_spec_llm_attempts")
+    if llm < 1:
+        llm = 1
+
+    return {
+        "grid_prompt_path": str(cfg["grid_prompt_path"]),
+        "positive_grids": _to_int("positive_grids"),
+        "negative_grids": _to_int("negative_grids"),
+        "edge_grids": _to_int("edge_grids"),
+        "skip_positive_grids": skip_positive,
+        "grid_spec_llm_attempts": llm,
+    }
+
+
+def funsearch_grid_regen_kwargs_from_env() -> Dict[str, Any]:
+    """Backward-compatible alias: same as funsearch_grid_regen_kwargs_from_config(None)."""
+    return funsearch_grid_regen_kwargs_from_config(None)
 
 
 def get_config_value(config: Dict[str, Any], key: str, default: Any = None) -> Any:

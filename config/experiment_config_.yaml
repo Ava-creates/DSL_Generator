@@ -1,8 +1,10 @@
 experiment_dir:
 spec_file: prompt_specifications/specification_with_updated_nld.txt
 nld_path: prompt_specifications/nld.txt
+codebase_path: prompt_specifications/codebase.txt
 failure_analysis_prompt: prompt_specifications/failure_analysis.txt
 cfg_evolution_prompt: prompt_specifications/cfg_evolution.txt
+synthesis_prompt: prompt_specifications/prompt_synth_with_grid_and_failures.txt
 cfg_generator_prompt_path: prompt_specifications/cfg_generator.txt
 domain_context_template_path: prompt_specifications/more_domain_context.txt
 tasks:
@@ -23,21 +25,25 @@ tasks:
   - make[shears]
   - make[ladder]
   - make[goldarrow]
-max_dsl_evolutions: 0
+max_dsl_evolutions: 2
 max_function_evolutions: 0
-total_samples: 1000
-num_explicit_feedback_iterations: 30
-max_attempts: 30
+total_samples: 2000
+num_explicit_feedback_iterations: 50
+max_attempts: 50 #program synthesis X tries per task
 model_type: huggingface
 recipes_path: craft/resources/recipes.yaml
 hints_path: craft/resources/hints.yaml
-skip_cfg_generation: true
-cfg_output_file: experiments/experiment_20260305_161332_5380/cfg/cfg_output_0.json #generates the new experiemnt with this cfg 
+skip_cfg_generation: false
+cfg_output_file:
 max_cfg_retries: 10
-grid_regeneration_attempts: 15
-## so use existing_grid_specs is set to true, then we will not generate new grids and instead use the existing grids in the grid_spec_dir
+grid_regeneration_attempts: 15 #this is for funsearch regen total numebr of times we do regen with llm sttempts with check ==-1
+# positive_grids (YAML typo positive_girds is also accepted)
+positive_girds: 10
+negative_grids: 4
+edge_grids: 1
+grid_spec_llm_attempts: 5 #llm retry for one grid spec used in funsearch regen in file gen it is hardcoded it is max 2*gris_regeneration_qattempt 
 use_existing_grid_specs: false
-# grid_spec_dir: experiments/experiment_success/grids
-grid_prompt_path: prompt_specifications/grid_prompt.txt
-require_test_type: true #if true then we are using ld test script and that does not have test type so this flag forces the pipeline to add test type positive to the grids generated
-skip_positive_grids: true  #helps skip generation of positive grids
+grid_spec_dir: ""
+grid_prompt_path: prompt_specifications/grid_prompt_withcoordinateinfo.txt
+require_test_type: true
+skip_positive_grids: false ##this was for experiemnt to see utility of neagtive test cases

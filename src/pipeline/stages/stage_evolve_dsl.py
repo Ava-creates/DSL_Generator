@@ -14,7 +14,7 @@ from typing import Dict, List
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, _project_root)
 
-from src.pipeline.integrated_pipeline import evolve_dsl
+from src.pipeline.integrated_pipeline import evolve_dsl, run_failure_analysis_for_dsl_evolution
 from src.utils.pipeline_state import read_state, update_state
 from src.utils.file_utils import version_file
 from src.utils.status_manager import write_status
@@ -207,19 +207,30 @@ def main():
     # Extract failed programs from synthesis results for context
     print("\n[Step 1] Extracting failed programs from synthesis results...")
     failed_programs_by_task = extract_failed_programs_from_synthesis_results(args.experiment_dir, args.failing_tasks, args.dsl_version)
-    
+
+    # Failure analysis LLM runs once; retries only re-run CFG evolution with the same analysis.
+    print("\n[Step 2] Running failure analysis (once per session)...")
+    failure_analysis_cached = run_failure_analysis_for_dsl_evolution(
+        experiment_dir=args.experiment_dir,
+        failing_tasks=args.failing_tasks,
+        cfg=cfg,
+        terminals=terminals,
+        failed_programs_by_task=failed_programs_by_task,
+        shared_vllm=shared_vllm,
+    )
+
     for dsl_attempt in range(1, args.max_retries + 1):
         if dsl_attempt > 1:
-            print(f"\n[DSL Evolution Retry] Attempt {dsl_attempt}/{args.max_retries}")
-        
+            print(f"\n[DSL Evolution Retry] Attempt {dsl_attempt}/{args.max_retries} (CFG evolution only)")
+
         new_cfg, new_terminals, attempt_success = evolve_dsl(
             experiment_dir=args.experiment_dir,
             failing_tasks=args.failing_tasks,
             cfg=cfg,
             recipes=recipes,
             terminals=terminals,
+            failure_analysis=failure_analysis_cached,
             shared_vllm=shared_vllm,
-            failed_programs_by_task=failed_programs_by_task,
             new_dsl_round=args.dsl_version + 1,
         )
         

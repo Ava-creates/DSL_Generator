@@ -4,7 +4,7 @@ In this project, we are working on general DSL generator pipeline that can be us
 
 ## Quick Start
 
-**Full Pipeline**: Use `scripts/submit_with_config.sh` to run the complete pipeline on vulcan.
+**Full Pipeline**: Use `bash scripts/submit_with_config.sh` to run the complete pipeline on vulcan.
 Please update the config script before running to adjust hyperparameters.
 
 **Interactive Node**: `salloc --account=aip-lelis --gres=gpu:4 --mem=256G --time=04:00:00`
@@ -126,9 +126,6 @@ cd /home/avani/projects/aip-lelis/avani/DSL_Generator && source new_dsl_env/bin/
  `--experiment_dir` is where the cfg is read from and that is the directory where the grid logs would be stored 
 
 
-## Things hardcoded - 
-`target` for number of grids in 
-
 
 
 ### Testing dsl prompts-
@@ -167,3 +164,15 @@ python /home/avani/projects/aip-lelis/avani/DSL_Generator/tests/test_dsl_evoluti
   --out-dir \
     /home/avani/projects/aip-lelis/avani/DSL_Generator/experiments/prompt_tests/failure_analysis_nld_compare
 `
+
+##To run locally with llm vulvan api
+
+python src/pipeline/unified_pipeline.py \
+  --local \
+  --experiment_dir "experiments/experiment_20260410_154438_13050 copy 2" \
+  --spec_file prompt_specifications/specification_with_updated_nld.txt \
+  --model_type openai_compat \
+  --max_dsl_evolutions 2 \
+  --max_function_evolutions 3 \
+  --max_attempts 50 \
+  --tasks "get[gem]" "get[iron]" "get[wood]" "get[grass]" "get[gold]" "make[plank]" "make[stick]" "make[cloth]" "make[rope]" "make[bridge]" "make[bundle]" "make[flag]" "make[bed]" "make[axe]" "make[shears]" "make[ladder]" "make[goldarrow]"

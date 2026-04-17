@@ -34,6 +34,8 @@ for key, value in config.items():
         env_mapping = {
             'experiment_dir': 'EXPERIMENT_DIR',
             'spec_file': 'SPEC_FILE',
+            'nld_path': 'NLD_PATH',
+            'codebase_path': 'CODEBASE_PATH',
             'failure_analysis_prompt': 'FAILURE_ANALYSIS_PROMPT',
             'cfg_evolution_prompt': 'CFG_EVOLUTION_PROMPT',
             'synthesis_prompt': 'SYNTHESIS_PROMPT',
@@ -48,6 +50,10 @@ for key, value in config.items():
             'cfg_output_file': 'CFG_OUTPUT_FILE',
             'max_cfg_retries': 'MAX_CFG_RETRIES',
             'grid_regeneration_attempts': 'GRID_REGENERATION_ATTEMPTS',
+            'positive_grids': 'POSITIVE_GRIDS',
+            'negative_grids': 'NEGATIVE_GRIDS',
+            'edge_grids': 'EDGE_GRIDS',
+            'grid_spec_llm_attempts': 'GRID_SPEC_LLM_ATTEMPTS',
             'use_existing_grid_specs': 'USE_EXISTING_GRID_SPECS',
             'grid_spec_dir': 'GRID_SPEC_DIR',
             'grid_prompt_path': 'GRID_PROMPT_PATH',
@@ -55,6 +61,12 @@ for key, value in config.items():
             'skip_positive_grids': 'SKIP_POSITIVE_GRIDS',
             'cfg_generator_prompt_path': 'CFG_GENERATOR_PROMPT_PATH',
             'domain_context_template_path': 'DOMAIN_CONTEXT_TEMPLATE_PATH',
+            'cfg_text': 'CFG_TEXT',
+            'job_prefix': 'JOB_PREFIX',
+            'baseline_variant': 'BASELINE_VARIANT',
+            'phase2_only': 'PHASE2_ONLY',
+            'phase2_seed_round': 'PHASE2_SEED_ROUND',
+            'task_env_rounds': 'TASK_ENV_ROUNDS',
         }
         if key == 'use_existing_grid_specs':
             if not os.environ.get('USE_EXISTING_GRID_SPECS'):
@@ -65,6 +77,9 @@ for key, value in config.items():
         elif key == 'skip_positive_grids':
             if not os.environ.get('SKIP_POSITIVE_GRIDS'):
                 print(f"export SKIP_POSITIVE_GRIDS=\"{'true' if value else 'false'}\"")
+        elif key == 'phase2_only':
+            if not os.environ.get('PHASE2_ONLY'):
+                print(f"export PHASE2_ONLY=\"{'true' if value else 'false'}\"")
         elif key in env_mapping:
             env_var = env_mapping[key]
             if not os.environ.get(env_var):

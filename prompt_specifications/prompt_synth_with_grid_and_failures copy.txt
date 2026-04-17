@@ -19,6 +19,11 @@ Here is the context-free grammar (CFG) that defines the DSL. Strictly follow thi
 Here are the terminal functions and what each does:
 {terminal_descriptions}
 
+## Final Function Implementations
+Below is the Python source for each terminal primitive, loaded from this experiment’s `final_functions` directory for the current DSL and function-evolution round. Use it to understand exactly what each call does at runtime when you compose programs.
+
+{final_function_implementations}
+
 ## Task
 Generate a program that solves the following task:
 

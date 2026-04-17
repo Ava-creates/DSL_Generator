@@ -38,18 +38,20 @@ Each suggested terminal must be independently implementable and MUST NOT call an
 ## YOUR OUTPUT — Produce Both Sections Below
 
 ### Diagnostic Reasons
-Provide exactly 3 bullet points explaining why the CFG is failing to produce successful programs. Focus only on aspects the CFG controls: which terminal functions exist, what parameter values they accept, and how statements are sequenced. Do NOT attribute failures to implementation bugs or environment issues.
+Provide exactly 5 bullet points explaining why the CFG is failing to produce successful programs. Focus only on aspects the CFG controls: which terminal functions exist, what parameter values they accept, and how statements are sequenced. Do NOT attribute failures to implementation bugs or environment issues.
 
 - Reason 1: ...
 - Reason 2: ...
 - Reason 3: ...
+- Reason 4: ...
+- Reason 5: ...
 
 ### CFG Recommendations
 For each recommendation, use exactly one of these directive formats:
 
 - ADD terminal: `FUNCTION_NAME LPAR PARAM RPAR` — purpose: <why this function is needed>
 - ADD terminal (no args): `FUNCTION_NAME` — purpose: <why this function is needed>
-- REMOVE terminal: `FUNCTION_NAME` — reason: <why it is not useful or is misleading>
+- REMOVE terminal: `FUNCTION_NAME` — reason: <why it is not useful or redundant or is misleading>
 - CHANGE parameter set: `PARAM_NAME` — remove `VALUE_X`, add `VALUE_Y` — reason: <why>
 - ADD production: `NONTERMINAL -> RHS` — purpose: <what programs this enables>
 - REMOVE production: `NONTERMINAL -> RHS` — reason: <why this derivation is unhelpful>

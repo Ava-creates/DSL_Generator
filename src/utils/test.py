@@ -1,6 +1,6 @@
 import pandas as pd
 import io
-def grid_to_markdown(grid, cookbook, agent_pos=None) -> str:
+def grid_to_markdown(grid, cookbook, agent_pos=None, include_indices=False) -> str:
     width, height, n_kinds = grid.shape
     inv_index = cookbook.index.reverse_contents  # index -> item name
     table = []
@@ -14,6 +14,13 @@ def grid_to_markdown(grid, cookbook, agent_pos=None) -> str:
                 cell_repr = f"Agent({cell_repr})" if cell_repr != "." else "Agent"
             row.append(cell_repr)
         table.append(row)
+
+    if include_indices:
+        # Domain indexing: (0,0) at top-left, x increases right, y increases down.
+        col_labels = [f"x={x}" for x in range(width)]
+        row_labels = [f"y={y}" for y in range(height)]
+        df = pd.DataFrame(table, columns=col_labels, index=row_labels)
+        return df.to_markdown(index=True)
 
     df = pd.DataFrame(table)
     return df.to_markdown(index=False, headers=[])

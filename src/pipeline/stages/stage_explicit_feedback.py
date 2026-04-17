@@ -29,7 +29,7 @@ def main():
     parser = argparse.ArgumentParser(description="Stage 4: Explicit Feedback Generation")
     parser.add_argument('--experiment_dir', type=str, required=True, help='Experiment directory')
     parser.add_argument('--spec_file', type=str, required=True, help='Path to specification file')
-    parser.add_argument('--model_type', type=str, default='huggingface', choices=['huggingface', 'ollama', 'gemini'])
+    parser.add_argument('--model_type', type=str, default='huggingface', choices=['huggingface', 'ollama', 'gemini', 'openai_compat'])
     parser.add_argument('--dsl_round', type=int, default=0, help='DSL evolution round number')
     parser.add_argument('--func_evolution_round', type=int, default=None, help='Function evolution round number')
     parser.add_argument('--num_iterations', type=int, default=30, help='Number of explicit feedback iterations')

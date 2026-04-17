@@ -60,12 +60,11 @@ def _load_prompt_template(prompt_path: str) -> str:
     try:
         with open(prompt_path, "r", encoding="utf-8") as f:
             return f.read()
-    except Exception:
-        return (
-            "Return ONLY valid JSON for a Craft grid spec with keys:\n"
-            "task_name, width, height, include_boundary, init_pos, init_dir, grid.\n"
-            "Output JSON only."
-        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to load grid prompt template '{prompt_path}': {e}. "
+            "Stopping stage to avoid using an unintended fallback prompt."
+        ) from e
 
 
 def _extract_allowed_arg_values_from_cfg(func_args: str, cfg_text: str) -> dict[str, set[str]]:
@@ -143,6 +142,7 @@ def _render_prompt(
     positive_grids: int = 10,
     negative_grids: int = 4,
     edge_grids: int = 1,
+    init_check_failure: str = "",
 ) -> str:
     if existing_cases:
         summaries = []
@@ -186,6 +186,7 @@ def _render_prompt(
         "<<NEGATIVE_GRIDS>>": str(negative_grids),
         "<<EDGE_GRIDS>>": str(edge_grids),
         "<<TOTAL_GRIDS>>": str(positive_grids + negative_grids + edge_grids),
+        "<<INIT_CHECK_FAILURE>>": init_check_failure if init_check_failure.strip() else "",
     }
     for key, value in replacements.items():
         template = template.replace(key, value)
@@ -357,6 +358,7 @@ def ensure_function_grid_spec(
     positive_grids: int = 10,
     negative_grids: int = 4,
     edge_grids: int = 1,
+    init_check_failure: str = "",
 ) -> Optional[Dict]:
     cookbook = _get_cookbook(recipes_path)
     if cookbook is None:
@@ -386,6 +388,7 @@ def ensure_function_grid_spec(
             positive_grids=positive_grids,
             negative_grids=negative_grids,
             edge_grids=edge_grids,
+            init_check_failure=init_check_failure or "",
         )
         # print(f"[grid_generation] Prompt for {func_name}:\n{base_prompt}\n")
         # print(f"[grid_generation] Args for {func_name}: {func_args or 'None'}")
@@ -460,15 +463,21 @@ def ensure_function_grid_spec(
                 _record_failed_attempt(last_error, json.dumps(spec, ensure_ascii=True))
                 print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
                 continue
-            normalized = _normalize_grid_spec(
-                spec=spec if isinstance(spec, dict) else {},
-                width=width,
-                height=height,
-                valid_items=valid_items,
-                cookbook=cookbook,
-                default_task_name=default_task_name,
-                require_test_type=require_test_type,
-            )
+            try:
+                normalized = _normalize_grid_spec(
+                    spec=spec if isinstance(spec, dict) else {},
+                    width=width,
+                    height=height,
+                    valid_items=valid_items,
+                    cookbook=cookbook,
+                    default_task_name=default_task_name,
+                    require_test_type=require_test_type,
+                )
+            except ValueError as e:
+                last_error = f"invalid test case: {e}"
+                _record_failed_attempt(last_error, json.dumps(spec, ensure_ascii=True))
+                print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
+                continue
             args_ok, args_error = _validate_arg_values_against_cfg(
                 normalized.get("arg_values", {}),
                 allowed_arg_values,

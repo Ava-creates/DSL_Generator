@@ -96,16 +96,16 @@ def run_program_with_inventory(
     cfg = _load_cfg(experiment_dir, cfg_version)
 
     final_functions_dir = os.path.join(experiment_dir, "final_functions")
-    # Only load implementations for DSL 0, func 0 to mirror the
-    # configuration used during evaluation runs.
+    # Load implementations for this CFG round (cfg_output_N.json -> *_dslN_func0.py).
     import tempfile
     import shutil
 
+    dsl_tag = f"_dsl{cfg_version}_func0"
     temp_dir = tempfile.mkdtemp(prefix="inv_functions_")
     for filename in os.listdir(final_functions_dir):
         if not filename.endswith(".py"):
             continue
-        if "_dsl0_func0" not in filename:
+        if dsl_tag not in filename:
             continue
         src = os.path.join(final_functions_dir, filename)
         dst = os.path.join(temp_dir, filename)
@@ -267,7 +267,7 @@ def main() -> None:
         "--cfg_version",
         type=int,
         default=0,
-        help="CFG version index (uses cfg_output_<n>.json). Default: 0",
+        help="CFG round index: loads cfg/cfg_output_<n>.json and final_functions/*_dsl<n>_func0.py. Default: 0",
     )
     parser.add_argument(
         "--program",

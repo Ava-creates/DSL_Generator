@@ -11,9 +11,8 @@ Function Arguments Needed: <<ARGUMENTS>>
 - Choose arg_values from valid CFG/grammar values for this function.
 - For string arguments, use uppercase tokens matching the grammar (e.g., "WOOD").
 
-## Code base for the game
 <<CODEBASE>>
-
+<<INIT_CHECK_FAILURE>>
 Return ONLY valid JSON with the following keys:
 - task_name (string) must be one of: <<VALID_TASKS>>
 - width (int) must be 12
@@ -25,10 +24,11 @@ Return ONLY valid JSON with the following keys:
 - arg_values (object mapping function argument name -> value)
 - pass_check (string Python expression returning true/false)
 - grid (list of 12 rows, each row is a list of 12 strings)
-- test_type (string) REQUIRED: must be one of "negative", "positive", or "edge"
+- test_type (string) REQUIRED: must be EXACTLY one of these three literals: "negative", "positive", or "edge" (nothing else).
 
 Grid cells must be empty "" or one of these item names:
 <<VALID_ITEMS>>
+
 
 Do NOT place boundary items in the grid; boundaries are added automatically.
 The agent's init_pos must be on an empty cell (no item there).

@@ -487,6 +487,8 @@ env_sampler = env_factory.EnvironmentFactory(
             recipes_path, hints_path, 7, max_steps=400, 
             reuse_environments=False, visualise=False)
 
+PROGRAM_EVAL_TIMEOUT_SECONDS = 180
+
 
 with open("src/prog_synth_pipeline/task_config.json", "r") as f:
         config = json.load(f)
@@ -502,7 +504,12 @@ def evaluate_program_with_evaluator(evaluator, program_str: str, env, max_steps=
     """
     if evaluator is None:
         raise ValueError("Evaluator is None. Cannot evaluate program.")
-    result = evaluator.evaluate_program(program_str, env=env, max_steps=max_steps)
+    result = evaluator.evaluate_program(
+        program_str,
+        env=env,
+        max_steps=max_steps,
+        timeout=PROGRAM_EVAL_TIMEOUT_SECONDS,
+    )
     # Map CFGEvaluator result format to expected format
     actions = result.get("actions_taken", [])
     success = result.get("success", False)
@@ -605,7 +612,12 @@ def evaluate(program_str, task , env, inter, reward):
     if evaluator is None:
         # Fallback: return failure if evaluator not initialized
         return [], program_str, {0}, False, 0.0, 0.0, task, None, [0], [0.0], None
-    result = evaluator.evaluate_program(program_str, env=env, max_steps=400)
+    result = evaluator.evaluate_program(
+        program_str,
+        env=env,
+        max_steps=400,
+        timeout=PROGRAM_EVAL_TIMEOUT_SECONDS,
+    )
     results.add(1 if result.get("success", False) else 0)
     # Map CFGEvaluator result format to expected format
     actions = result.get("actions_taken", [])

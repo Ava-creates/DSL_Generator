@@ -8,6 +8,8 @@ import os
 import sys
 import json
 import argparse
+import re
+import shutil
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -26,6 +28,18 @@ except ImportError:
     vLLM = None
 
 
+DEFAULT_TEST_SEEDS = list(range(0, 50, 5))
+
+
+def _safe_task_token(task: str) -> str:
+    token = re.sub(r"[^A-Za-z0-9._-]+", "_", str(task)).strip("_")
+    return token or "task"
+
+
+def _task_status_filename(task: str) -> str:
+    return f"{_safe_task_token(task)}.json"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Stage 5: Test Tasks")
     parser.add_argument('--experiment_dir', type=str, required=True, help='Experiment directory')
@@ -33,9 +47,33 @@ def main():
     parser.add_argument('--recipes_path', type=str, default="craft/resources/recipes.yaml", help='Path to recipes YAML')
     parser.add_argument('--hints_path', type=str, default="craft/resources/hints.yaml", help='Path to hints YAML')
     parser.add_argument('--max_attempts', type=int, default=30, help='Maximum attempts per task')
+    parser.add_argument(
+        '--test_seeds',
+        type=int,
+        nargs='+',
+        default=DEFAULT_TEST_SEEDS,
+        help='Seeds used for test-task synthesis (default: 0 5 10 15 20 25 30 35 40 45)',
+    )
     parser.add_argument('--synthesis_prompt', type=str, default=None, help='Path to synthesis prompt template file (default: prompt_specifications/prompt_synth_with_grid_and_failures.txt)')
+    parser.add_argument(
+        '--with_final_functions_in_prompt',
+        action='store_true',
+        help='Include final function Python source in the synthesis prompt (default: off; default prompt unchanged)',
+    )
+    parser.add_argument(
+        '--openai_compat_key_file',
+        type=str,
+        default=None,
+        help='File with OpenAI-compatible API key (first non-empty line). Default: <repo>/key.txt if OPENAI_COMPAT_API_KEY unset.',
+    )
+    parser.add_argument('--model_type', type=str, default='huggingface', choices=['huggingface', 'ollama', 'gemini', 'openai_compat'], help='Model type for program synthesis')
     parser.add_argument('--dsl_round', type=int, default=int(os.environ.get("DSL_ROUND", "0")), help='DSL evolution round number')
     parser.add_argument('--func_evolution_round', type=int, default=None, help='Function evolution round number')
+    parser.add_argument(
+        '--single_task_job',
+        action='store_true',
+        help='Run in single-task job mode and write per-task status/results for later aggregation',
+    )
     
     args = parser.parse_args()
     
@@ -66,6 +104,12 @@ def main():
     
     # Deduplicate tasks
     tasks = list(dict.fromkeys(tasks))  # Preserves order while removing duplicates
+    if args.single_task_job and len(tasks) > 1:
+        print(f"[Config] single_task_job enabled with multiple tasks; using only first task: {tasks[0]}")
+        tasks = [tasks[0]]
+
+    test_seeds = list(dict.fromkeys(int(s) for s in args.test_seeds))
+    print(f"[Config] Test seeds: {test_seeds}")
     
     # Load CFG - use dsl_round to select which cfg version
     cfg_filename = f"cfg_output_{args.dsl_round}.json" if args.dsl_round > 0 else "cfg_output.json"
@@ -113,9 +157,9 @@ def main():
             print("  Skipping test_tasks for this round.", file=sys.stderr)
             return 1
     
-    # Create shared vLLM instance
+    # Create shared vLLM instance (not used when model_type is openai_compat — skip to avoid GPU init noise)
     shared_vllm = None
-    if vLLM is not None:
+    if args.model_type != "openai_compat" and vLLM is not None:
         try:
             # Aggressive GPU memory cleanup before creating new instance
             import gc
@@ -165,8 +209,27 @@ def main():
                 torch.cuda.synchronize()
             shared_vllm = None
     
-    # Create ResultsTracker to track results for plotting
-    results_tracker = ResultsTracker(args.experiment_dir)
+    # Create ResultsTracker. In parallel single-task mode we isolate writes per task
+    # to avoid cross-process write races, then aggregate later.
+    if args.single_task_job and tasks:
+        func_round = args.func_evolution_round if args.func_evolution_round is not None else 0
+        task_root = os.path.join(
+            args.experiment_dir,
+            "task_runs",
+            "test_tasks",
+            f"dsl{args.dsl_round}",
+            f"func{func_round}",
+            _safe_task_token(tasks[0]),
+        )
+        os.makedirs(task_root, exist_ok=True)
+        task_results_dir = os.path.join(task_root, "results_tracking")
+        if os.path.isdir(task_results_dir):
+            shutil.rmtree(task_results_dir)
+        results_tracker = ResultsTracker(task_root)
+        print(f"[Config] Single-task results root: {task_root}")
+    else:
+        results_tracker = ResultsTracker(args.experiment_dir)
+        task_root = None
     
     # Test CFG on tasks
     print(f"\n[Step 5] Testing CFG on {len(tasks)} tasks...")
@@ -178,15 +241,65 @@ def main():
         recipes_path=args.recipes_path,
         hints_path=args.hints_path,
         max_attempts=args.max_attempts,
+        test_seeds=test_seeds,
         shared_vllm=shared_vllm,
         results_tracker=results_tracker,
         cfg_version=args.dsl_round,
         func_evolution_round=args.func_evolution_round,
-        synthesis_prompt_path=args.synthesis_prompt
+        synthesis_prompt_path=args.synthesis_prompt,
+        model_type=args.model_type,
+        include_final_functions_in_prompt=args.with_final_functions_in_prompt,
+        openai_compat_key_file=args.openai_compat_key_file,
+        seed_outcome_log_path=(
+            os.path.join(task_root, "results_tracking", "program_synthesis_seed_outcomes.jsonl")
+            if task_root
+            else None
+        ),
     )
     
     all_solved = all(task_results.values())
     failing_tasks = [task for task, success in task_results.items() if not success]
+
+    if args.single_task_job:
+        task_name = tasks[0] if tasks else "unknown_task"
+        task_status = {
+            "stage": "test_tasks",
+            "mode": "single_task_job",
+            "status": "completed",
+            "task": task_name,
+            "dsl_round": args.dsl_round,
+            "func_evolution_round": args.func_evolution_round,
+            "success": bool(task_results.get(task_name, False)),
+            "task_results": task_results,
+            "all_solved": all_solved,
+            "failing_tasks": failing_tasks,
+        }
+        write_status(
+            args.experiment_dir,
+            args.dsl_round,
+            "test_tasks_tasks",
+            task_status,
+            filename=_task_status_filename(task_name),
+        )
+        print(f"[Single Task Job] Wrote status for task '{task_name}'")
+
+        # Per-task jobs intentionally skip consolidated plotting/state updates.
+        # Aggregation is handled once all task jobs complete.
+        if shared_vllm is not None:
+            try:
+                print("\n[Cleanup] Cleaning up vLLM instance and GPU memory...")
+                del shared_vllm
+                import gc
+                import torch
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+                print(" Cleanup complete")
+            except Exception as e:
+                print(f" Warning: Error during cleanup: {e}")
+
+        return 0
     
     # Save consolidated stage completion marker (single file for all tasks)
     stage_status = {
