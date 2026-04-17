@@ -2,10 +2,91 @@ import os
 import json
 import subprocess
 import re
+import requests as _requests
 from typing import List, Tuple, Dict, Any, Optional
 import time
-from vllm import SamplingParams
-from vllm import LLM as vLLM
+
+try:
+    from vllm import SamplingParams
+    from vllm import LLM as vLLM
+except ImportError:
+    vLLM = None
+    SamplingParams = None
+
+
+class _TextOutput:
+    def __init__(self, text: str):
+        self.text = text
+
+
+class _CompletionOutput:
+    def __init__(self, text: str):
+        self.outputs = [_TextOutput(text)]
+
+
+class OpenAICompatLLMWrapper:
+    """Drop-in replacement for a vLLM instance that calls an OpenAI-compatible API.
+
+    Implements the subset of vLLM's ``generate()`` interface used by
+    ``response_gen``:
+        outputs = llm.generate([prompt], sampling_params=params)
+        text    = outputs[0].outputs[0].text
+    """
+
+    def __init__(self, key_file: Optional[str] = None) -> None:
+        from src.utils.openai_compat_key import resolve_openai_compat_api_key
+        self._api_key = resolve_openai_compat_api_key(key_file)
+        self._base_url = os.environ.get(
+            "OPENAI_COMPAT_BASE_URL", "https://llm.vulcan.alliancecan.ca"
+        ).rstrip("/")
+        self._model = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-4o-mini").strip()
+        chat_path = os.environ.get(
+            "OPENAI_COMPAT_CHAT_PATH", "/api/chat/completions"
+        ).strip()
+        if chat_path.startswith("http://") or chat_path.startswith("https://"):
+            self._endpoint = chat_path
+        else:
+            self._endpoint = f"{self._base_url}/{chat_path.lstrip('/')}"
+
+    def generate(self, prompts: list, sampling_params=None) -> list:
+        temperature = 0.7
+        max_tokens = 35000
+        if sampling_params is not None:
+            temperature = getattr(sampling_params, "temperature", temperature)
+            max_tokens = getattr(sampling_params, "max_tokens", max_tokens)
+
+        results = []
+        for prompt in prompts:
+            text = self._call(prompt, temperature, max_tokens)
+            results.append(_CompletionOutput(text))
+        return results
+
+    def _call(self, prompt: str, temperature: float, max_tokens: int) -> str:
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self._model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        response = _requests.post(
+            self._endpoint, headers=headers, json=payload, timeout=180
+        )
+        if response.status_code >= 400:
+            print(
+                f"[OpenAICompatLLMWrapper] API error {response.status_code}: {response.text}"
+            )
+            return ""
+        body = response.json()
+        choices = body.get("choices", [])
+        if not choices:
+            print("[OpenAICompatLLMWrapper] API returned no choices")
+            return ""
+        return choices[0].get("message", {}).get("content", "")
 
 def get_end_score(scores: Dict[str, Any]) -> Optional[float]:
     if not isinstance(scores, dict) or not scores:
@@ -443,7 +524,8 @@ print(evaluate())
 def response_gen(funcs: List[Tuple[float, str]], k: int, file: str, 
                  specification: str, func_signature: str, 
                  output_dir: str, shared_vllm=None, results_tracker=None,
-                 dsl_round: Optional[int] = None, func_evolution_round: Optional[int] = None) -> Optional[str]:
+                 dsl_round: Optional[int] = None, func_evolution_round: Optional[int] = None,
+                 num_iterations: int = 1) -> Optional[str]:
     """Generate feedback and extract the best improved function.
     
     Args:
@@ -458,23 +540,20 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
     Returns:
         Best function code as string, or None if extraction failed
     """
+    funcs = [(float(score), body) for score, body in funcs if body and body.strip()]
+    funcs.sort(key=lambda x: x[0], reverse=True)
+    pool: List[Tuple[float, str]] = funcs[:max(1, int(k))]
+
     funcs_text = "\n\n".join(
-        [f"### Score: {score}\n```python\n{body}\n```" for score, body in funcs]
+        [f"### Score: {score}\n```python\n{body}\n```" for score, body in pool]
     )
     print(f"\n  Function signature: {func_signature}")
-    print(f"  Adding {len(funcs)} functions to prompt:")
-    for i, (score, body) in enumerate(funcs, 1):
+    print(f"  Starting pool size: {len(pool)} (k={k})")
+    for i, (score, body) in enumerate(pool, 1):
         body_preview = body[:200] + "..." if len(body) > 200 else body
         print(f"    Function {i} (score: {score:.4f}):")
         print(f"      {repr(body_preview)}")
         print(f"      Length: {len(body)} chars")
-    
-    prompt = (
-        specification
-        + f"\n\nHere are different implementations of `{func_signature}`\n"
-        + funcs_text
-        + "\n\nAnalyse the functions and give natural language feedback in bullet points."
-    )
 
     # Use shared vLLM if available
     # Note: If shared_vllm is None, we create a new one. However, in stages that explicitly
@@ -482,31 +561,17 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
     # and pass it here to ensure only ONE instance is created and shared.
     if shared_vllm is not None:
         llm = shared_vllm
-    else:
-        # Fallback: create new instance if shared one not provided
-        # This should only happen if the calling stage didn't create a shared instance
-        # Use lower memory utilization since multiple jobs may run in parallel
+    elif vLLM is not None:
         print("   Warning: No shared vLLM instance provided, creating new one with reduced memory settings")
         llm = vLLM(
-            model="/scratch/avani/gpt", 
+            model="/scratch/avani/gpt",
             tensor_parallel_size=4,
-            gpu_memory_utilization=0.6  # Reduced to 60% to handle parallel jobs
+            gpu_memory_utilization=0.6,
         )
+    else:
+        print("   vLLM not available — using OpenAI-compatible API for explicit feedback")
+        llm = OpenAICompatLLMWrapper()
     params = SamplingParams(temperature=0.7, max_tokens=35000)
-    
-    output = llm.generate([prompt], sampling_params=params)
-    response = output[0].outputs[0]
-    feedback = response.text
-    print(f"\n  Generated feedback (length: {len(feedback)} chars)")
-    print(f"  Using same {len(funcs)} functions in correction prompt")
-    correction_prompt = (
-      specification
-      + "\n\nFeedback:\n"
-      + feedback
-      + f"\n\nHere are the candidate functions for `{func_signature}`\n"
-      + funcs_text
-      + "\n\nReturn a corrected and improved version of the function and ."
-    )
     
     # Extract function name from signature for filename
     func_name_match = re.search(r'def\s+(\w+)', func_signature)
@@ -521,26 +586,63 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
             log_filename = os.path.join(output_dir, f"feedback_{func_name}_dsl{dsl_round}_func0.json")
     else:
         log_filename = os.path.join(output_dir, f"feedback_{func_name}.json")
+
+    def _ensure_signature(code: str, signature: str) -> str:
+        """Ensure returned function code includes the expected def signature."""
+        if not code:
+            return code
+        if re.search(r'^\s*def\s+\w+\s*\(', code, re.MULTILINE):
+            return code
+
+        sig_clean = re.sub(r'\s*->\s*[^:]+', '', (signature or '').strip())
+        if not sig_clean:
+            return code
+        if not sig_clean.endswith(':'):
+            sig_clean += ':'
+
+        body = code.strip('\n')
+        indented = "\n".join((f"    {ln}" if ln.strip() else "") for ln in body.splitlines())
+        return f"{sig_clean}\n{indented}\n"
     
-    best_func = None
-    best_score = float('-inf')
-    best_runs_ok = False
-    
-    # Store best function from log as fallback (will evaluate only if LLM generation fails)
-    best_log_func = None
-    best_log_score = float('-inf')
+    best_func = pool[0][1] if pool else None
+    best_score = pool[0][0] if pool else float('-inf')
+    best_runs_ok = bool(pool)
     
     # Track feedback per iteration for logging
     feedback_entries = []
     
-    # Now try to generate improved functions via LLM (single iteration)
-    i = 0 # number of iterations
-    max_iterations = 1
+    # Iterate pool update loop: critique pool -> generate candidate -> evaluate -> optionally replace worst.
+    i = 0
+    max_iterations = max(1, int(num_iterations))
     while i < max_iterations:
+        funcs_text = "\n\n".join(
+            [f"### Score: {score}\n```python\n{body}\n```" for score, body in pool]
+        )
+        prompt = (
+            specification
+            + f"\n\nHere are different implementations of `{func_signature}`\n"
+            + funcs_text
+            + "\n\nAnalyse the functions and give natural language feedback in bullet points."
+        )
+
+        output = llm.generate([prompt], sampling_params=params)
+        response = output[0].outputs[0]
+        feedback = response.text
+        print(f"\n  Iteration {i + 1}/{max_iterations}: generated feedback (length: {len(feedback)} chars)")
+        correction_prompt = (
+          specification
+          + "\n\nFeedback:\n"
+          + feedback
+          + f"\n\nHere are the candidate functions for `{func_signature}`\n"
+          + funcs_text
+          + "\n\nReturn a corrected and improved version of the function and ."
+        )
+
         output = llm.generate([correction_prompt], sampling_params=params)
         response = output[0].outputs[0]
         feedback = response.text
         b = response.text
+        extracted_ok = False
         try:
             # Extract function code from markdown code block
             if "```python" in b:
@@ -558,6 +660,16 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
                 if func_match:
                     b = func_match.group(0)
                 else:
+                    feedback_entries.append({
+                        "iteration": i + 1,
+                        "feedback": feedback,
+                        "score": None,
+                        "runs_ok": False,
+                        "pool_best_score_before": pool[0][0] if pool else None,
+                        "pool_worst_score_before": pool[-1][0] if pool else None,
+                        "inserted_into_pool": False,
+                        "reason": "candidate_extraction_failed",
+                    })
                     i += 1
                     continue
             
@@ -578,7 +690,18 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
                         # Replace the function signature with correct params
                         b = re.sub(rf'def\s+{re.escape(func_name)}\s*\([^)]+\)', 
                                  f'def {func_name}({expected_params})', b, count=1)
+            extracted_ok = True
         except:
+            feedback_entries.append({
+                "iteration": i + 1,
+                "feedback": feedback,
+                "score": None,
+                "runs_ok": False,
+                "pool_best_score_before": pool[0][0] if pool else None,
+                "pool_worst_score_before": pool[-1][0] if pool else None,
+                "inserted_into_pool": False,
+                "reason": "candidate_parse_exception",
+            })
             i += 1
             continue
         
@@ -598,12 +721,27 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
         
         # Skip writing per-iteration feedback logs
         
-        # Track best function (only consider functions that run successfully)
-        # Use >= to allow updating when scores are equal (prefer later/better implementations)
-        if runs_ok and (best_func is None or score >= best_score):
-            best_score = score
-            best_func = b
-            best_runs_ok = runs_ok
+        inserted_into_pool = False
+        replaced_score = None
+        if extracted_ok and runs_ok:
+            is_duplicate = any(existing_body.strip() == b.strip() for _, existing_body in pool)
+            if not is_duplicate:
+                if len(pool) < max(1, int(k)):
+                    pool.append((float(score), b))
+                    inserted_into_pool = True
+                else:
+                    worst_idx = min(range(len(pool)), key=lambda idx: pool[idx][0])
+                    worst_score = pool[worst_idx][0]
+                    if float(score) > float(worst_score):
+                        replaced_score = float(worst_score)
+                        pool[worst_idx] = (float(score), b)
+                        inserted_into_pool = True
+            pool.sort(key=lambda x: x[0], reverse=True)
+
+        if pool:
+            best_score = float(pool[0][0])
+            best_func = pool[0][1]
+            best_runs_ok = True
         
         # Record this iteration's output
         feedback_entries.append({
@@ -614,184 +752,46 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
             "env_interactions": int(actions_count) if actions_count is not None else 0,
             "actions_count": int(actions_count) if actions_count is not None else 0,
             "function": b,
+            "pool_size_after": len(pool),
+            "pool_best_score_after": pool[0][0] if pool else None,
+            "pool_worst_score_after": pool[-1][0] if pool else None,
+            "inserted_into_pool": inserted_into_pool,
+            "replaced_score": replaced_score,
         })
+
+        print(
+            f"  Iteration {i}/{max_iterations}: candidate_score={score:.4f} runs_ok={runs_ok} "
+            f"inserted={inserted_into_pool} pool_best={pool[0][0] if pool else 'NA'}"
+        )
     
     # Decide which function to return:
     # 1. Prefer generated function if it runs successfully
     # 2. Fall back to best function from log if generation failed
     # 3. If nothing works, return a stub function that returns []
     
-    if best_runs_ok:
-        # Generated function works - use it
-        print(f"   Using generated function (score: {best_score:.4f})")
-        # Ensure the function has a signature before using it
-        # Extract function name from signature to check if it's the main function
-        func_name_match = re.search(r'def\s+(\w+)', func_signature) if func_signature else None
-        func_name = func_name_match.group(1) if func_name_match else None
-        
-        # Check if the function body contains a COMPLETE function definition with the expected name
-        # If it does, we should NOT prepend - the function definition already exists
-        # A complete definition must have: def func_name(...): followed by indented code
-        has_main_def = False
-        if func_name and best_func:
-            stripped = best_func.strip()
-            # Look for a COMPLETE function definition (def func_name(...): followed by indented body)
-            # Pattern: def func_name(...): followed by whitespace and then indented code (starts with space/tab)
-            # This ensures we only match complete functions, not just signatures
-            complete_func_pattern = rf'def\s+{re.escape(func_name)}\s*\([^)]*\)[^:]*:\s*\n\s+[^\n]'
-            if re.search(complete_func_pattern, stripped, re.MULTILINE):
-                # Found a complete function definition with this name - don't prepend
-                has_main_def = True
-            else:
-                # Also check if it's at the start and has indented content immediately after
-                start_pattern = rf'^\s*def\s+{re.escape(func_name)}\s*\([^)]*\)[^:]*:\s*\n\s+[^\n]'
-                if re.search(start_pattern, stripped, re.MULTILINE):
-                    has_main_def = True
-        
-        if func_signature and best_func and not has_main_def:
-            # Function body is missing signature, prepend it
-            # No need to remove existing definitions since has_main_def=False means none exist
-            sig_clean = re.sub(r'\s*->\s*[^:]+', '', func_signature).strip()
-            if not sig_clean.endswith(':'):
-                sig_clean += ':'
-            
-            # Indent the function body properly (normalize to 4 spaces)
-            # Preserve relative indentation by dedenting to minimum level first
-            body_lines = best_func.split('\n')
-            
-            # Find minimum indentation (excluding empty lines)
-            min_indent = None
-            for line in body_lines:
-                if line.strip():  # Non-empty line
-                    indent = len(line) - len(line.lstrip())
-                    if min_indent is None or indent < min_indent:
-                        min_indent = indent
-            
-            # Dedent all lines by minimum indent, then add 4-space base indent
-            # This preserves relative indentation structure
-            indented_body_lines = []
-            for line in body_lines:
-                if line.strip():  # Non-empty line
-                    # Calculate current indent and relative indent
-                    current_indent = len(line) - len(line.lstrip())
-                    relative_indent = current_indent - (min_indent if min_indent is not None else 0)
-                    stripped_line = line.lstrip()
-                    # Add 4-space base indent + preserve relative indent
-                    indented_body_lines.append('    ' + (' ' * relative_indent) + stripped_line)
-                else:
-                    indented_body_lines.append(line)  # Keep empty lines as-is
-            
-            indented_body = '\n'.join(indented_body_lines)
-            best_func = f"{sig_clean}\n{indented_body}"
-            print("    Prepended signature to generated function (with indentation)")
-        final_func = best_func
+    if pool:
+        final_func = pool[0][1]
+        best_score = float(pool[0][0])
+        best_runs_ok = True
+        print(f"   Final pool best selected (score: {best_score:.4f}, pool_size={len(pool)})")
     else:
-        # Generated function failed, use best function from log as fallback
-        # Functions in log are already evaluated, so we can use their scores directly
-        # Filter out functions with score -1 (runs_ok=False) and use the best one
-        print("   Generated function failed, using best function from log as fallback...")
-        
-        # Find the best function from log based on existing scores
-        # funcs is already sorted by score (highest first) from parse_log_file
-        # Filter out functions with score -1 (these had runs_ok=False)
-        working_funcs = [(score, func) for score, func in funcs if score > -1]
-        
-        if working_funcs:
-            # Use the function with the highest score (first in the list)
-            best_log_score, best_log_func = working_funcs[0]
-            
-            # Ensure the function has a signature before using it
-            # Extract function name from signature to check if it's the main function
-            func_name_match = re.search(r'def\s+(\w+)', func_signature) if func_signature else None
-            func_name = func_name_match.group(1) if func_name_match else None
-            
-            # Check if the function body contains a COMPLETE function definition with the expected name
-            # If it does, we should NOT prepend - the function definition already exists
-            # A complete definition must have: def func_name(...): followed by indented code
-            has_main_def = False
-            if func_name and best_log_func:
-                stripped = best_log_func.strip()
-                # Look for a COMPLETE function definition (def func_name(...): followed by indented body)
-                # Pattern: def func_name(...): followed by whitespace and then indented code (starts with space/tab)
-                # This ensures we only match complete functions, not just signatures
-                complete_func_pattern = rf'def\s+{re.escape(func_name)}\s*\([^)]*\)[^:]*:\s*\n\s+[^\n]'
-                if re.search(complete_func_pattern, stripped, re.MULTILINE):
-                    # Found a complete function definition with this name - don't prepend
-                    has_main_def = True
-                else:
-                    # Also check if it's at the start and has indented content immediately after
-                    start_pattern = rf'^\s*def\s+{re.escape(func_name)}\s*\([^)]*\)[^:]*:\s*\n\s+[^\n]'
-                    if re.search(start_pattern, stripped, re.MULTILINE):
-                        has_main_def = True
-            
-            if func_signature and not has_main_def:
-                # Function body is missing signature, prepend it
-                # No need to remove existing definitions since has_main_def=False means none exist
-                sig_clean = re.sub(r'\s*->\s*[^:]+', '', func_signature).strip()
-                if not sig_clean.endswith(':'):
-                    sig_clean += ':'
-                
-                # Indent the function body properly (normalize to 4 spaces)
-                # Preserve relative indentation by dedenting to minimum level first
-                body_lines = best_log_func.split('\n')
-                
-                # Find minimum indentation (excluding empty lines)
-                min_indent = None
-                for line in body_lines:
-                    if line.strip():  # Non-empty line
-                        indent = len(line) - len(line.lstrip())
-                        if min_indent is None or indent < min_indent:
-                            min_indent = indent
-                
-                # Dedent all lines by minimum indent, then add 4-space base indent
-                # This preserves relative indentation structure
-                indented_body_lines = []
-                for line in body_lines:
-                    if line.strip():  # Non-empty line
-                        # Calculate current indent and relative indent
-                        current_indent = len(line) - len(line.lstrip())
-                        relative_indent = current_indent - (min_indent if min_indent is not None else 0)
-                        stripped_line = line.lstrip()
-                        # Add 4-space base indent + preserve relative indent
-                        indented_body_lines.append('    ' + (' ' * relative_indent) + stripped_line)
-                    else:
-                        indented_body_lines.append(line)  # Keep empty lines as-is
-                
-                indented_body = '\n'.join(indented_body_lines)
-                best_log_func = f"{sig_clean}\n{indented_body}"
-                print("    Prepended signature to log function (with indentation)")
-            
-            print(f"   Using best function from log (score: {best_log_score:.4f}, already evaluated)")
-            final_func = best_log_func
-            # Update best_score and best_runs_ok to reflect the fallback function
-            best_score = best_log_score
-            best_runs_ok = True  # Functions from log that pass the filter (score > -1) are working
-        else:
-            
-            print("   No working functions found. Creating stub function that returns []")
-            # Extract function name and parameters from signature
-            func_name_match = re.search(r'def\s+(\w+)', func_signature)
-            func_name = func_name_match.group(1) if func_name_match else "function"
-            
-            # Extract parameters from signature
-            params_match = re.search(r'def\s+\w+\s*\(([^)]*)\)', func_signature)
-            params = params_match.group(1) if params_match else ""
-            
-            # Create stub function
-            final_func = f"""def {func_name}({params}):
+        print("   No functions in pool. Creating stub function that returns []")
+        func_name_match = re.search(r'def\s+(\w+)', func_signature)
+        func_name = func_name_match.group(1) if func_name_match else "function"
+        params_match = re.search(r'def\s+\w+\s*\(([^)]*)\)', func_signature)
+        params = params_match.group(1) if params_match else ""
+        final_func = f"""def {func_name}({params}):
     \"\"\"
     Stub implementation - no working function found.
     Returns empty list as fallback.
     \"\"\"
     return []
 """
-            print(f"   Created stub function: {func_name}({params}) -> []")
-            # Update best_score and best_runs_ok for stub function
-            best_score = -1.0  # Stub function has score -1
-            best_runs_ok = False  # Stub function doesn't actually run
+        best_score = -1.0
+        best_runs_ok = False
         
-    # Use final_func for the rest of the processing
-    best_func = final_func
+    # Use final_func for the rest of the processing and ensure a valid signature is present.
+    best_func = _ensure_signature(final_func, func_signature)
     
     # Extract imports from specification and add them to the final function
     if best_func:

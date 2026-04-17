@@ -9,21 +9,24 @@ import sys
 import json
 import argparse
 import glob
+import re
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, _project_root)
 
 from src.pipeline.cfg_to_funsearch_pipeline import (
-    determine_inputs, 
+    determine_inputs,
     run_explicit_feedback_generation,
     sanitize_function_name,
     find_funsearch_log_file,
+    apply_specification_template_placeholders,
 )
 from funsearch.implementation.funsearch import FunSearch
 from funsearch.implementation import config as config_lib
 from src.utils.results_tracker import (
     ResultsTracker,
+    best_funsearch_reward,
     plot_funsearch_reward_vs_interactions,
     plot_explicit_feedback_reward_vs_interactions,
     plot_baseline_reward_vs_interactions,
@@ -32,6 +35,7 @@ from src.utils.pipeline_state import (
     decrement_function_implementation
 )
 from src.utils.status_manager import read_status, write_function_status
+from src.utils.config_loader import funsearch_grid_regen_kwargs_from_config, load_config
 
 # Import vLLM for shared instance
 try:
@@ -41,11 +45,13 @@ except ImportError:
 
 
 def main():
+    _exp_cfg = load_config()
+    _default_grid_regen = int(_exp_cfg.get("grid_regeneration_attempts", 5))
     parser = argparse.ArgumentParser(description="Stage: Implement CFG Single Function (FunSearch + Explicit Feedback Package)")
     parser.add_argument('--experiment_dir', type=str, required=True, help='Experiment directory')
     parser.add_argument('--spec_file', type=str, required=True, help='Path to specification file')
     parser.add_argument('--function_name', type=str, required=True, help='Name of the function to process')
-    parser.add_argument('--model_type', type=str, default='huggingface', choices=['huggingface', 'ollama', 'gemini'])
+    parser.add_argument('--model_type', type=str, default='huggingface', choices=['huggingface', 'ollama', 'gemini', 'openai_compat'])
     parser.add_argument('--dsl_round', type=int, default=0, help='DSL evolution round number')
     parser.add_argument('--func_evolution_round', type=int, default=None, help='Function evolution round number')
     parser.add_argument('--total_samples', type=int, default=1000, help='Total number of samples for FunSearch (default: 1000)')
@@ -53,11 +59,20 @@ def main():
     parser.add_argument(
         '--grid_regeneration_attempts',
         type=int,
-        default=int(os.environ.get("GRID_REGENERATION_ATTEMPTS", 5)),
-        help='Attempts to regenerate grids when initial pass_check fails'
+        default=_default_grid_regen,
+        help='Attempts to regenerate grids when initial pass_check fails (default: experiment config / GRID_REGENERATION_ATTEMPTS)',
     )
-    
+    parser.add_argument('--nld_path', type=str, default=None, help='NLD file for <<NLD>> (default: experiment config / NLD_PATH)')
+    parser.add_argument('--codebase_path', type=str, default=None, help='Codebase file for <<CODEBASE>> (default: experiment config / CODEBASE_PATH)')
+    parser.add_argument('--baseline_mode', action='store_true', help='Allow baseline runs with empty cfg text')
+    parser.add_argument('--openai_compat_key_file', type=str, default=None, help='File with OpenAI-compatible API key (first non-empty line). Default: <repo>/key.txt if OPENAI_COMPAT_API_KEY unset.')
+
     args = parser.parse_args()
+
+    # If a key file is given, resolve and export it so deep callers (sampler, evaluator) pick it up.
+    if args.openai_compat_key_file and not os.environ.get("OPENAI_COMPAT_API_KEY", "").strip():
+        from src.utils.openai_compat_key import resolve_openai_compat_api_key
+        os.environ["OPENAI_COMPAT_API_KEY"] = resolve_openai_compat_api_key(args.openai_compat_key_file)
     
     # Read state file to get current DSL and function evolution rounds
     # This ensures consistency after DSL evolution (which resets func_evolution_round to 0)
@@ -97,9 +112,14 @@ def main():
     cfg = cfg_data.get("cfg", "")
     terminals = cfg_data.get("terminals", {})
     
-    if not cfg or not terminals:
+    if not terminals:
         print(" Invalid CFG data", file=sys.stderr)
         return 1
+    if not cfg and not args.baseline_mode:
+        print(" Invalid CFG data", file=sys.stderr)
+        return 1
+    if not cfg and args.baseline_mode:
+        print(" Warning: Empty CFG text allowed in baseline mode", file=sys.stderr)
     
     if args.function_name not in terminals:
         print(f" Function {args.function_name} not found in terminals", file=sys.stderr)
@@ -132,31 +152,21 @@ def main():
     with open(args.spec_file, 'r', encoding='utf-8') as f:
         specification = f.read()
     
-    # Replace DSL section in specification with current CFG
-    import re
-    if cfg:
-        dsl_pattern = r'(## DSL[^\n]*\n.*?"""\n)(.*?)(\n"""\n)'
-        dsl_match = re.search(dsl_pattern, specification, re.DOTALL)
-        if dsl_match:
-            header = dsl_match.group(1)
-            footer = dsl_match.group(3)
-            cfg_section = header + cfg + footer
-            specification = re.sub(dsl_pattern, cfg_section, specification, flags=re.DOTALL)
-        else:
-            dsl_pattern_simple = r'(## DSL[^\n]*\n"""\n)(.*?)(\n"""\n)'
-            dsl_match_simple = re.search(dsl_pattern_simple, specification, re.DOTALL)
-            if dsl_match_simple:
-                header = dsl_match_simple.group(1)
-                footer = dsl_match_simple.group(3)
-                cfg_section = header + cfg + footer
-                specification = re.sub(dsl_pattern_simple, cfg_section, specification, flags=re.DOTALL)
+    specification = apply_specification_template_placeholders(
+        specification,
+        cfg=cfg if cfg else None,
+        nld_path=args.nld_path,
+        codebase_path=args.codebase_path,
+    )
     
-    # Create shared vLLM instance (used by both FunSearch and explicit feedback)
-    # This ensures we only create ONE instance instead of separate ones for each stage
-    # If creation fails, fail the stage to prevent OOM from multiple instances
-    # Clean up GPU memory before creating new instance (in case previous stage left memory allocated)
+    # Create shared LLM instance used by both FunSearch and explicit feedback.
+    # For openai_compat, use a lightweight HTTP wrapper (no GPU needed).
     shared_vllm = None
-    if args.model_type == "huggingface" and vLLM is not None:
+    if args.model_type == "openai_compat":
+        from src.pipeline.explicit_feedback_generation import OpenAICompatLLMWrapper
+        shared_vllm = OpenAICompatLLMWrapper(args.openai_compat_key_file)
+        print("[Setup] Using OpenAI-compatible API for LLM inference (no GPU required)")
+    elif args.model_type == "huggingface" and vLLM is not None:
         try:
             # Aggressive GPU memory cleanup before creating new instance
             import gc
@@ -248,6 +258,7 @@ def main():
     print(f"\n[Step 1] Running FunSearch for {args.function_name}...")
     
     config = config_lib.Config(
+        **funsearch_grid_regen_kwargs_from_config(),
         num_samplers=1,
         num_evaluators=2,
         samples_per_prompt=2,
@@ -293,15 +304,20 @@ def main():
 
         # Plot FunSearch reward vs interactions for this function
         try:
-            log_file = find_funsearch_log_file(args.function_name, results_dir)
+            log_file = find_funsearch_log_file(
+                args.function_name,
+                results_dir,
+                dsl_round=args.dsl_round,
+                func_evolution_round=func_evolution_round,
+            )
             if log_file:
                 funsearch_plot_dir = os.path.join(
-                    args.experiment_dir, "results_tracking", "funsearch"
+                    args.experiment_dir, "results_tracking", "funsearch", f"dsl{args.dsl_round}"
                 )
                 plot_funsearch_reward_vs_interactions(
                     log_file=log_file,
                     output_dir=funsearch_plot_dir,
-                    function_name=args.function_name,
+                    function_name=sanitize_function_name(args.function_name),
                 )
             else:
                 print(f"   No FunSearch log found for plotting: {args.function_name}")
@@ -339,46 +355,28 @@ def main():
         print(f"   Warning: Could not read FunSearch result file: {e}", file=sys.stderr)
     
     try:
-        current_func_code = funsearch_result_code  # Start with FunSearch result
-        
-        # Run multiple iterations
-        final_func = None
-        import tempfile
-        for iteration in range(max(args.num_iterations, 1)):
-            # Use temporary file for this iteration (will be cleaned up automatically)
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp_file:
-                tmp_file.write(current_func_code)
-                tmp_file_path = tmp_file.name
-            
-            try:
-                iter_func = run_explicit_feedback_generation(
-                    args.function_name, results_dir, func_file, args.experiment_dir, explicit_feedback_dir,
-                    specification, k=5, shared_vllm=shared_vllm, 
-                    func_signature=func_signatures.get(args.function_name, ""),
-                    results_tracker=results_tracker,
-                    dsl_round=args.dsl_round, func_evolution_round=args.func_evolution_round
-                )
-                
-                if iter_func:
-                    final_func = iter_func
-                    current_func_code = iter_func  # Update for next iteration
-                else:
-                    # Explicit feedback didn't return improved function, keep current
-                    final_func = current_func_code
-            finally:
-                # Clean up temporary file immediately
-                try:
-                    os.remove(tmp_file_path)
-                except OSError:
-                    pass
+        final_func = run_explicit_feedback_generation(
+            args.function_name,
+            results_dir,
+            func_file,
+            args.experiment_dir,
+            explicit_feedback_dir,
+            specification,
+            k=5,
+            shared_vllm=shared_vllm,
+            func_signature=func_signatures.get(args.function_name, ""),
+            results_tracker=results_tracker,
+            dsl_round=args.dsl_round,
+            func_evolution_round=args.func_evolution_round,
+            num_iterations=max(args.num_iterations, 1),
+        )
         
         # If no explicit feedback iterations ran or all failed, use FunSearch result
-        if final_func is None and current_func_code:
-            final_func = current_func_code
-        
-        # Final fallback: if everything failed, use FunSearch result
         if final_func is None and funsearch_result_code:
             final_func = funsearch_result_code
+        
+        # Final fallback: if everything failed, use FunSearch result
+        if final_func is None:
             print("   Using FunSearch result as final function (explicit feedback failed)")
         
         if final_func:
@@ -449,16 +447,31 @@ def main():
                     args.experiment_dir, "results_tracking", "explicit_feedback", dsl_folder
                 )
                 if os.path.exists(feedback_file):
+                    seed_reward = None
+                    log_file = find_funsearch_log_file(
+                        args.function_name,
+                        results_dir,
+                        dsl_round=args.dsl_round,
+                        func_evolution_round=func_evolution_round,
+                    )
+                    if log_file:
+                        seed_reward = best_funsearch_reward(log_file)
                     plot_explicit_feedback_reward_vs_interactions(
                         feedback_file=feedback_file,
                         output_dir=explicit_plot_dir,
-                        function_name=args.function_name,
+                        function_name=sanitize_function_name(args.function_name),
+                        seed_reward=seed_reward,
                     )
                 else:
                     print(f"   No explicit feedback file found for plotting: {feedback_file}")
                 
                 # Combined baseline plot (FunSearch + Explicit Feedback)
-                log_file = find_funsearch_log_file(args.function_name, results_dir)
+                log_file = find_funsearch_log_file(
+                    args.function_name,
+                    results_dir,
+                    dsl_round=args.dsl_round,
+                    func_evolution_round=func_evolution_round,
+                )
                 if log_file and os.path.exists(feedback_file):
                     baseline_plot_dir = os.path.join(
                         args.experiment_dir, "results_tracking", "baseline", dsl_folder
@@ -467,7 +480,7 @@ def main():
                         funsearch_log_file=log_file,
                         explicit_feedback_file=feedback_file,
                         output_dir=baseline_plot_dir,
-                        function_name=args.function_name,
+                        function_name=sanitize_function_name(args.function_name),
                     )
             except Exception as plot_error:
                 print(f"   Failed to plot explicit feedback/baseline metrics: {plot_error}")
@@ -514,7 +527,12 @@ def main():
             import re
             
             # Find the log file
-            log_file = find_funsearch_log_file(args.function_name, results_dir)
+            log_file = find_funsearch_log_file(
+                args.function_name,
+                results_dir,
+                dsl_round=args.dsl_round,
+                func_evolution_round=func_evolution_round,
+            )
             if log_file:
                 # Parse top function from log (highest score)
                 funcs = parse_log_file(log_file, k=1)

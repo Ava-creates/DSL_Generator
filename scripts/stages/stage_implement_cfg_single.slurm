@@ -33,6 +33,18 @@ else
     FUNC_ROUND_ARG=""
 fi
 
+if [ "${BASELINE_MODE:-0}" = "1" ] || [ "${BASELINE_MODE:-false}" = "true" ]; then
+    BASELINE_MODE_ARG="--baseline_mode"
+else
+    BASELINE_MODE_ARG=""
+fi
+
+if [ -n "${OPENAI_COMPAT_KEY_FILE:-}" ]; then
+    OPENAI_KEY_FILE_ARG="--openai_compat_key_file $OPENAI_COMPAT_KEY_FILE"
+else
+    OPENAI_KEY_FILE_ARG=""
+fi
+
 python src/pipeline/stages/stage_implement_cfg_single.py \
     --experiment_dir "$EXPERIMENT_DIR" \
     --spec_file "${SPEC_FILE:-prompt_specifications/specification_with_updated_nld.txt}" \
@@ -41,7 +53,9 @@ python src/pipeline/stages/stage_implement_cfg_single.py \
     --dsl_round "${DSL_ROUND:-0}" \
     --total_samples "${TOTAL_SAMPLES:-1000}" \
     --num_iterations "${NUM_EXPLICIT_FEEDBACK_ITERATIONS:-30}" \
-    $FUNC_ROUND_ARG
+    $FUNC_ROUND_ARG \
+    $BASELINE_MODE_ARG \
+    $OPENAI_KEY_FILE_ARG
 
 stage_rc=$?
 
