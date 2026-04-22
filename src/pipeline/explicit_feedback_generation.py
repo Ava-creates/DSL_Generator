@@ -3,6 +3,8 @@ import json
 import subprocess
 import re
 import requests as _requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from typing import List, Tuple, Dict, Any, Optional
 import time
 
@@ -39,7 +41,10 @@ class OpenAICompatLLMWrapper:
         self._base_url = os.environ.get(
             "OPENAI_COMPAT_BASE_URL", "https://llm.vulcan.alliancecan.ca"
         ).rstrip("/")
-        self._model = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-4o-mini").strip()
+        self._model = os.environ.get("OPENAI_COMPAT_MODEL", "qwen3-235b").strip()
+        self._timeout_seconds = float(os.environ.get("OPENAI_COMPAT_HTTP_TIMEOUT", "500"))
+        self._retry_total = int(os.environ.get("OPENAI_COMPAT_MAX_RETRIES", "4"))
+        self._backoff_factor = float(os.environ.get("OPENAI_COMPAT_BACKOFF_FACTOR", "1.0"))
         chat_path = os.environ.get(
             "OPENAI_COMPAT_CHAT_PATH", "/api/chat/completions"
         ).strip()
@@ -73,8 +78,22 @@ class OpenAICompatLLMWrapper:
             "max_tokens": max_tokens,
             "stream": False,
         }
-        response = _requests.post(
-            self._endpoint, headers=headers, json=payload, timeout=180
+        retry = Retry(
+            total=self._retry_total,
+            connect=self._retry_total,
+            read=self._retry_total,
+            status=self._retry_total,
+            backoff_factor=self._backoff_factor,
+            status_forcelist=(408, 429, 500, 502, 503, 504),
+            allowed_methods=frozenset(["POST"]),
+            raise_on_status=False,
+        )
+        session = _requests.Session()
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        response = session.post(
+            self._endpoint, headers=headers, json=payload, timeout=self._timeout_seconds
         )
         if response.status_code >= 400:
             print(
@@ -86,7 +105,17 @@ class OpenAICompatLLMWrapper:
         if not choices:
             print("[OpenAICompatLLMWrapper] API returned no choices")
             return ""
-        return choices[0].get("message", {}).get("content", "")
+        first_choice = choices[0]
+        message = first_choice.get("message")
+        if isinstance(message, dict):
+            content = message.get("content", "")
+        elif isinstance(first_choice.get("text"), str):
+            content = first_choice.get("text", "")
+        else:
+            content = ""
+        if not isinstance(content, str):
+            content = str(content)
+        return content
 
 def get_end_score(scores: Dict[str, Any]) -> Optional[float]:
     if not isinstance(scores, dict) or not scores:

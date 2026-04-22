@@ -65,10 +65,25 @@ if [ -n "${EXPERIMENT_DIR:-}" ]; then
     LOG_DIR="scripts/log/$(basename "$EXPERIMENT_DIR")"
 fi
 mkdir -p "$LOG_DIR"
-sbatch --export=ALL,EXPERIMENT_CONFIG="$CONFIG_FILE" \
-    --output="${LOG_DIR}/stage_get_cfg_%j.out" \
-    --error="${LOG_DIR}/stage_get_cfg_%j.err" \
-    scripts/stages/stage_get_cfg.slurm
+SBATCH_CMD=(
+    sbatch
+    --export=ALL,EXPERIMENT_CONFIG="$CONFIG_FILE"
+    --output="${LOG_DIR}/stage_get_cfg_%j.out"
+    --error="${LOG_DIR}/stage_get_cfg_%j.err"
+)
+
+if [ "${MODEL_TYPE:-huggingface}" = "openai_compat" ]; then
+    echo "API mode detected for staged pipeline: overriding stage_get_cfg resources to CPU-only."
+    SBATCH_CMD+=(
+        --cpus-per-task "${API_CFG_CPUS:-4}"
+        --mem "${API_CFG_MEM:-8G}"
+        --gres "gpu:0"
+        --time "${API_CFG_TIME:-00:20:00}"
+    )
+fi
+
+SBATCH_CMD+=(scripts/stages/stage_get_cfg.slurm)
+"${SBATCH_CMD[@]}"
 
 echo ""
 echo "Pipeline job submitted!"

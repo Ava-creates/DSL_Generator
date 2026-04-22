@@ -47,10 +47,18 @@ def main():
         print(f"{'='*80}\n", flush=True)
         sys.stdout.flush()
     
-    # Create shared vLLM instance if needed
+    # Create shared LLM instance if needed.
+    # openai_compat uses HTTP API wrapper; other modes keep existing vLLM behavior.
     shared_vllm = None
     if not args.skip_cfg_generation:
-        if vLLM is not None:
+        model_type = os.environ.get("MODEL_TYPE", "huggingface").strip().lower()
+        if model_type == "openai_compat":
+            from src.pipeline.explicit_feedback_generation import OpenAICompatLLMWrapper
+            key_file = os.environ.get("OPENAI_COMPAT_KEY_FILE", "").strip() or None
+            print("\n[Setup] Using OpenAI-compatible API for CFG generation...")
+            shared_vllm = OpenAICompatLLMWrapper(key_file)
+            print(" OpenAI-compatible API wrapper created")
+        elif vLLM is not None:
             try:
                 print("\n[Setup] Initializing shared vLLM instance...")
                 shared_vllm = vLLM(model="/scratch/avani/gpt", tensor_parallel_size=4)

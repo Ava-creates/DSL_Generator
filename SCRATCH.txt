@@ -1,0 +1,1 @@
+python src/run_single_seed_program.py   --task "make[goldarrow]"   --seed 5   --program "CRAFT(BRIDGE, WORKSHOP1); USE_TOOL(BRIDGE, WATER); CRAFT(BRIDGE, WORKSHOP1); USE_TOOL(BRIDGE, WATER); CRAFT(GOLDARROW, WORKSHOP0)"   --experiment_dir "experiments/experiment_20260410_154438_13050 copy 3"

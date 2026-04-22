@@ -272,7 +272,7 @@ if mark_test_tasks_submitted("$EXPERIMENT_DIR"):
 
         job_name = f"{job_prefix}_tt_{idx}"
         result = subprocess.run([
-            "sbatch", "--parsable", "--export", f"ALL,{env_str}",
+            "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", f"ALL,{env_str}",
             "--time", timeout,
             "--job-name", job_name,
             "--output", f"{log_dir}/stage_test_tasks_{safe}_%j.out",
@@ -463,7 +463,7 @@ job_prefix = os.environ.get("JOB_PREFIX", "exp")
 log_dir = os.environ.get("LOG_DIR", "scripts/log")
 
 result = subprocess.run([
-    "sbatch", "--parsable", "--export", f"ALL,{env_str}",
+    "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", f"ALL,{env_str}",
     "--job-name", f"{job_prefix}_tt_agg",
     "--output", f"{log_dir}/stage_test_tasks_aggregate_%j.out",
     "--error", f"{log_dir}/stage_test_tasks_aggregate_%j.err",
@@ -567,7 +567,7 @@ if mark_file_generation_submitted("$EXPERIMENT_DIR"):
     
     log_dir = os.environ.get("LOG_DIR", "scripts/log")
     subprocess.run([
-        "sbatch", "--parsable", "--export", export_str,
+        "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", export_str,
         "--job-name", job_name,
         "--output", f"{log_dir}/stage_file_generation_%j.out",
         "--error", f"{log_dir}/stage_file_generation_%j.err",
@@ -682,7 +682,7 @@ for func_name in terminals.keys():
     job_name = f"{job_prefix}_impl_{func_name}"
     log_dir = os.environ.get("LOG_DIR", "scripts/log")
     result = subprocess.run([
-        "sbatch", "--parsable", "--export", f"ALL,{env_str}",
+        "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", f"ALL,{env_str}",
         "--job-name", job_name,
         "--output", f"{log_dir}/stage_implement_cfg_%x_%j.out",
         "--error", f"{log_dir}/stage_implement_cfg_%x_%j.err",
@@ -931,7 +931,7 @@ if mark_function_evolution_submitted("$EXPERIMENT_DIR"):
         job_name = f"{job_prefix}_evf_{func_name}"
         log_dir = os.environ.get("LOG_DIR", "scripts/log")
         subprocess.run([
-            "sbatch", "--parsable", "--export", f"ALL,{env_str}",
+            "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", f"ALL,{env_str}",
             "--job-name", job_name,
             "--output", f"{log_dir}/stage_evolve_function_%x_%j.out",
             "--error", f"{log_dir}/stage_evolve_function_%x_%j.err",
@@ -1012,7 +1012,7 @@ if mark_dsl_evolution_submitted("$EXPERIMENT_DIR"):
     job_name = f"{job_prefix}_evdsl"
     log_dir = os.environ.get("LOG_DIR", "scripts/log")
     subprocess.run([
-        "sbatch", "--parsable", "--export", f"ALL,{env_str}",
+        "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", f"ALL,{env_str}",
         "--job-name", job_name,
         "--output", f"{log_dir}/stage_evolve_dsl_%j.out",
         "--error", f"{log_dir}/stage_evolve_dsl_%j.err",
@@ -1121,7 +1121,7 @@ if mark_file_generation_submitted("$EXPERIMENT_DIR"):
     job_name = f"{job_prefix}_file_gen"
     log_dir = os.environ.get("LOG_DIR", "scripts/log")
     subprocess.run([
-        "sbatch", "--parsable", "--export", export_str,
+        "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", export_str,
         "--job-name", job_name,
         "--output", f"{log_dir}/stage_file_generation_%j.out",
         "--error", f"{log_dir}/stage_file_generation_%j.err",

@@ -75,9 +75,17 @@ def main():
     
     print(f"[File Generation] Using dsl_round={args.dsl_round}, func_evolution_round={args.func_evolution_round}")
 
-    # Create shared vLLM instance
+    # Create shared LLM instance for terminal extraction/grid generation.
+    # openai_compat uses HTTP API wrapper; other modes keep existing vLLM behavior.
     shared_vllm = None
-    if vLLM is not None:
+    model_type = os.environ.get("MODEL_TYPE", "huggingface").strip().lower()
+    if model_type == "openai_compat":
+        from src.pipeline.explicit_feedback_generation import OpenAICompatLLMWrapper
+        key_file = os.environ.get("OPENAI_COMPAT_KEY_FILE", "").strip() or None
+        print("\n[Setup] Using OpenAI-compatible API for file generation...")
+        shared_vllm = OpenAICompatLLMWrapper(key_file)
+        print(" OpenAI-compatible API wrapper created")
+    elif vLLM is not None:
         try:
             print("\n[Setup] Initializing shared vLLM instance...")
             shared_vllm = vLLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
