@@ -7,8 +7,9 @@ Craft description :
 <<ENV_DESCRIPTION>>
 Recipes : <<RECIPES>>
 Function Arguments Needed: <<ARGUMENTS>>
+<<ARG_SCHEMA>>
 - Include every function argument (excluding env) in arg_values with correct types.
-- Choose arg_values from valid CFG/grammar values for this function.
+- arg_values keys MUST match the required keys above exactly (from the CFG).
 - For string arguments, use uppercase tokens matching the grammar (e.g., "WOOD").
 
 <<CODEBASE>>

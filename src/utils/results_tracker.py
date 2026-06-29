@@ -25,14 +25,19 @@ from datetime import datetime
 class ResultsTracker:
     """Tracks results from program synthesis pipeline."""
     
-    def __init__(self, experiment_dir: str):
+    def __init__(self, experiment_dir: str, *, results_dir: Optional[str] = None):
         """Initialize results tracker.
         
         Args:
-            experiment_dir: Path to experiment directory
+            experiment_dir: Logical experiment root (metadata / defaults).
+            results_dir: If set, read/write ``synthesis_results.json`` and related files here
+                instead of ``<experiment_dir>/results_tracking``.
         """
         self.experiment_dir = experiment_dir
-        self.results_dir = os.path.join(experiment_dir, "results_tracking")
+        if results_dir is not None:
+            self.results_dir = results_dir
+        else:
+            self.results_dir = os.path.join(experiment_dir, "results_tracking")
         os.makedirs(self.results_dir, exist_ok=True)
         
         self.results_file = os.path.join(self.results_dir, "synthesis_results.json")
@@ -206,7 +211,7 @@ class ResultsTracker:
         result = {
             "task": str(task),
             "cfg_version": int(cfg_version),
-            "func_evolution_round": func_evolution_round if func_evolution_round is not None else None,
+            "func_evolution_round": int(func_evolution_round) if func_evolution_round is not None else 0,
             "program": str(program),
             "reward": float(reward),
             "best_reward_so_far": float(best_reward),

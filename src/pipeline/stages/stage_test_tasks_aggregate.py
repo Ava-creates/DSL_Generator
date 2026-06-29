@@ -8,15 +8,26 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from typing import Dict, List, Tuple
 
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, _project_root)
 
-from src.utils.pipeline_state import read_state, update_state
+from src.utils.pipeline_state import (
+    mark_dsl_evolution_submitted,
+    read_state,
+    resolve_model_type_for_chained_jobs,
+    update_state,
+)
+from src.utils.per_task_test_paths import (
+    legacy_per_task_test_results_tracking_dir,
+    program_synthesis_task_shard_dir,
+    refactor_per_task_results_tracking_dir,
+)
 from src.utils.results_tracker import ResultsTracker
-from src.utils.status_manager import write_status
+from src.utils.status_manager import read_status, write_status
 
 
 def _safe_task_token(task: str) -> str:
@@ -97,6 +108,121 @@ def _read_json_if_exists(path: str, default):
         return default
 
 
+def _per_task_shard_results_dir(
+    experiment_dir: str,
+    dsl_round: int,
+    func_evolution_round: int,
+    task: str,
+) -> str:
+    """Resolve shard directory: new dsl/func/prog_synthoutput layout, then older paths."""
+    token = _safe_task_token(task)
+    candidates = [
+        program_synthesis_task_shard_dir(
+            experiment_dir,
+            dsl_round=dsl_round,
+            func_evolution_round=func_evolution_round,
+            task_token=token,
+        ),
+        refactor_per_task_results_tracking_dir(
+            experiment_dir,
+            dsl_round=dsl_round,
+            func_evolution_round=func_evolution_round,
+            task_token=token,
+        ),
+        legacy_per_task_test_results_tracking_dir(
+            experiment_dir,
+            dsl_round=dsl_round,
+            func_evolution_round=func_evolution_round,
+            task_token=token,
+        ),
+    ]
+    marker = "synthesis_results.json"
+    for d in candidates:
+        if os.path.isfile(os.path.join(d, marker)):
+            return d
+    return candidates[0]
+
+
+def _dsl_evolution_already_recorded_success(experiment_dir: str, dsl_round_from: int) -> bool:
+    st = read_status(experiment_dir, int(dsl_round_from), "evolve_dsl")
+    if not isinstance(st, dict):
+        return False
+    return st.get("status") == "completed" and st.get("evolved") is True
+
+
+def _submit_dsl_evolution_job(args, failing_tasks: List[str]) -> bool:
+    if not mark_dsl_evolution_submitted(args.experiment_dir):
+        print("[Chaining] DSL evolution already marked submitted; not submitting duplicate job.")
+        return True
+
+    resolved_model_type = resolve_model_type_for_chained_jobs(args.experiment_dir, args.model_type)
+    experiment_name = os.path.basename(os.path.normpath(args.experiment_dir))
+    log_dir = os.path.join(_project_root, "scripts", "log", experiment_name)
+    os.makedirs(log_dir, exist_ok=True)
+
+    using_api = resolved_model_type == "openai_compat"
+    cpus = os.environ.get("DSL_EVOLUTION_CPUS", "4" if using_api else "32")
+    mem = os.environ.get("DSL_EVOLUTION_MEM", "32G" if using_api else "256G")
+    walltime = os.environ.get("DSL_EVOLUTION_TIME", "10:00:00")
+    gres = os.environ.get("DSL_EVOLUTION_GRES", "" if using_api else "gpu:4").strip()
+    account = os.environ.get("SLURM_ACCOUNT", os.environ.get("SBATCH_ACCOUNT", "aip-lelis")).strip()
+
+    env_pairs = [
+        f"EXPERIMENT_DIR={args.experiment_dir}",
+        f"FAILING_TASKS={' '.join(failing_tasks)}",
+        f"RECIPES_PATH={args.recipes_path}",
+        f"MAX_RETRIES={int(args.dsl_max_retries)}",
+        f"DSL_VERSION={int(args.dsl_round)}",
+        f"MAX_FAILED_PROGRAMS={int(args.max_failed_programs)}",
+        f"MODEL_TYPE={resolved_model_type}",
+    ]
+    if args.openai_compat_key_file:
+        env_pairs.append(f"OPENAI_COMPAT_KEY_FILE={args.openai_compat_key_file}")
+    experiment_config = os.environ.get("EXPERIMENT_CONFIG", "").strip()
+    if experiment_config:
+        env_pairs.append(f"EXPERIMENT_CONFIG={experiment_config}")
+    export_str = ",".join(["ALL", *env_pairs])
+
+    slurm_script = os.path.join(_project_root, "scripts", "stages", "stage_evolve_dsl.slurm")
+    submit_cmd = [
+        "sbatch",
+        "--parsable",
+        "--job-name",
+        f"{experiment_name[:20]}_evolve_dsl",
+        "--output",
+        os.path.join(log_dir, "stage_evolve_dsl_%j.out"),
+        "--error",
+        os.path.join(log_dir, "stage_evolve_dsl_%j.err"),
+        "--time",
+        walltime,
+        "--cpus-per-task",
+        cpus,
+        "--mem",
+        mem,
+        "--export",
+        export_str,
+    ]
+    if gres:
+        submit_cmd.extend(["--gres", gres])
+    if account:
+        submit_cmd.extend(["--account", account])
+    submit_cmd.append(slurm_script)
+
+    result = subprocess.run(
+        submit_cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        print(f"[Chaining] Submitted DSL evolution job: {result.stdout.strip()}")
+        return True
+
+    update_state(args.experiment_dir, dsl_evolution_submitted=0)
+    print(f"[Chaining] Failed to submit DSL evolution job: {result.stderr.strip()}", file=sys.stderr)
+    return False
+
+
 def _merge_parallel_results(
     experiment_dir: str,
     dsl_round: int,
@@ -104,18 +230,13 @@ def _merge_parallel_results(
     tasks: List[str],
 ) -> None:
     func_round = int(func_evolution_round)
-    base = os.path.join(
-        experiment_dir,
-        'task_runs',
-        'test_tasks',
-        f'dsl{dsl_round}',
-        f'func{func_round}',
-    )
 
     incoming_results = []
     incoming_seed_outcomes = []
     for task in tasks:
-        task_dir = os.path.join(base, _safe_task_token(task), 'results_tracking')
+        task_dir = _per_task_shard_results_dir(
+            experiment_dir, dsl_round, func_round, task
+        )
         results_path = os.path.join(task_dir, 'synthesis_results.json')
         seed_outcomes_path = os.path.join(task_dir, 'program_synthesis_seed_outcomes.jsonl')
 
@@ -185,6 +306,11 @@ def main() -> int:
     parser.add_argument('--tasks', type=str, nargs='+', required=True, help='List of tasks to aggregate')
     parser.add_argument('--dsl_round', type=int, default=0, help='DSL round')
     parser.add_argument('--func_evolution_round', type=int, default=0, help='Function evolution round')
+    parser.add_argument('--recipes_path', type=str, default='craft/resources/recipes.yaml', help='Path to recipes YAML for chained DSL evolution')
+    parser.add_argument('--dsl_max_retries', type=int, default=int(os.environ.get('DSL_EVOLUTION_MAX_RETRIES', '10')), help='Maximum retries for chained DSL evolution')
+    parser.add_argument('--max_failed_programs', type=int, default=int(os.environ.get('MAX_FAILED_PROGRAMS_FOR_DSL', '30')), help='Maximum failed programs per task for DSL evolution context')
+    parser.add_argument('--model_type', type=str, default=os.environ.get('MODEL_TYPE', '').strip() or None, choices=['huggingface', 'ollama', 'gemini', 'openai_compat'], help='LLM backend for chained DSL evolution')
+    parser.add_argument('--openai_compat_key_file', type=str, default=os.environ.get('OPENAI_COMPAT_KEY_FILE', '').strip() or None, help='Key file for OpenAI-compatible API when chaining DSL evolution')
     args = parser.parse_args()
 
     tasks = _parse_tasks(args.tasks)
@@ -245,6 +371,8 @@ def main() -> int:
 
     state = read_state(args.experiment_dir)
     function_impl_total = state.get('function_implementation_total', 0)
+    max_function_evolutions = int(state.get('max_function_evolutions', 1) or 0)
+    dsl_evolutions_remaining = int(state.get('dsl_evolutions_remaining', 0) or 0)
 
     if all_solved:
         update_state(
@@ -256,14 +384,51 @@ def main() -> int:
         )
         print('ALL TASKS SOLVED! Pipeline complete.')
     else:
-        update_state(
-            args.experiment_dir,
-            test_tasks_submitted=1,
-            function_implementation_remaining=function_impl_total,
-            test_tasks_aggregate_submitted=0,
-        )
         print(f"{len(failing_tasks)}/{len(tasks)} tasks failed: {failing_tasks}")
-        print('Prepared state for function evolution chaining.')
+        # With unified_pipeline semantics, zero function-evolution rounds means: skip
+        # straight to DSL evolution on failure. Do not re-arm all per-function work.
+        if max_function_evolutions == 0 and dsl_evolutions_remaining > 0:
+            if _dsl_evolution_already_recorded_success(args.experiment_dir, int(args.dsl_round)):
+                print(
+                    '[Chaining] evolve_dsl status already completed for this dsl_round; '
+                    'not updating pipeline_state (idempotent re-aggregate).'
+                )
+                return 0
+            # test_tasks_submitted=0: aggregate finished this test wave; do not mimic the
+            # function-evolution branch (which uses test_tasks_submitted=1 to arm per-function work).
+            update_state(
+                args.experiment_dir,
+                test_tasks_submitted=0,
+                function_implementation_remaining=0,
+                phase='dsl_evolution',
+                test_tasks_aggregate_submitted=0,
+            )
+            print(
+                'max_function_evolutions=0: prepared state for DSL / CFG evolution '
+                f'(dsl_evolutions_remaining={dsl_evolutions_remaining}).'
+            )
+            if not _submit_dsl_evolution_job(args, failing_tasks):
+                return 1
+        elif max_function_evolutions == 0 and dsl_evolutions_remaining <= 0:
+            update_state(
+                args.experiment_dir,
+                test_tasks_submitted=0,
+                function_implementation_remaining=0,
+                phase='complete',
+                test_tasks_aggregate_submitted=0,
+            )
+            print(
+                'max_function_evolutions=0 and dsl_evolutions_remaining exhausted; '
+                'not scheduling further DSL evolution.'
+            )
+        else:
+            update_state(
+                args.experiment_dir,
+                test_tasks_submitted=1,
+                function_implementation_remaining=function_impl_total,
+                test_tasks_aggregate_submitted=0,
+            )
+            print('Prepared state for function evolution chaining.')
 
     return 0
 

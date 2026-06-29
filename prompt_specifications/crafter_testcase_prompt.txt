@@ -1,0 +1,84 @@
+You are generating a SINGLE JSON test case for a Crafter terminal function.
+
+# Function under test
+
+Function name: {FUNC_NAME}
+Function args: {FUNC_ARGS}
+Description:   {DESCRIPTION}
+
+# Environment NLD
+
+{NLD}
+
+# Domain context
+
+{DOMAIN_TEXT}
+
+# Available native actions (int codes the agent emits)
+
+{ACTIONS}
+
+# Known task names (task_name must be one of these)
+
+{TASKS}
+
+# Existing cases already generated for this function (avoid duplicates)
+
+{EXISTING_CASES}
+
+# Output format
+
+Return ONLY a single JSON object with these keys:
+
+  task_name   (str, one of the known tasks)
+  test_type   ("positive" | "negative" | "edge")
+  max_steps   (int; usually 30-400)
+  init_actions (list[int], optional; native action codes replayed after reset
+                to bring the env into the desired pre-state)
+  scenario    (object, REQUIRED; fully overrides the world after reset so
+                the test is deterministic - do NOT rely on procgen). Fields:
+                  player:
+                    pos: [x, y]               # absolute world coords (64x64)
+                    facing: up|down|left|right
+                    inventory: {wood: 2, iron_sword: 1, health: 9, ...}
+                  clear_area:
+                    center: [x, y]            # defaults to player pos
+                    radius: 2
+                    material: grass|path|sand|stone|water|...
+                  tiles: [{pos: [x, y], material: tree|stone|coal|iron|diamond|
+                                                 table|furnace|water|...,
+                           relative?: true}]
+                  entities: [{type: zombie|skeleton|cow|plant|arrow|fence,
+                              pos: [x, y], relative?: true}]
+                  remove_entities_within: <int>   # clear mobs near player first
+                Positions with "relative: true" are offsets from the player.
+                Every test case MUST include a scenario; tests should never
+                depend on the random starting world.
+  pass_check  (Python boolean expression; evaluated against variables captured
+                BEFORE and AFTER the terminal runs):
+                  inventory_before / inventory_after      (dict[str,int])
+                  achievements_before / achievements_after (dict[str,int])
+                  pos_before / pos_after                   ([x, y])
+                  facing_before / facing_after             ('up'|'down'|'left'|'right')
+                  grid_before_cells / grid_after_cells     (9x9 list[list[str]]
+                                                            of tile names, agent
+                                                            at [4,4])
+  arg_values  (object, optional; values for each function arg by name)
+
+
+# Guidance
+
+- Always provide a `scenario`; it fully controls the starting world so the
+  test is reproducible. Place the tiles, entities, and inventory needed for
+  the terminal to either succeed or fail, matching the chosen `test_type`.
+- For a `negative` test_type, design the scenario so the pass_check should
+  be false (e.g. no tree adjacent, no weapon in inventory, monster too far).
+- For an `edge` test_type, explore boundary conditions: the agent starts
+  facing away from the target, inventory exactly at the recipe threshold,
+  health at 1, night-time, etc.
+- Ratios to aim for across a function's test cases: ~{POSITIVE_COUNT}
+  positive, ~{NEGATIVE_COUNT} negative, ~{EDGE_COUNT} edge.
+- Any valid crafter action code [0-16] may appear in init_actions.
+{INIT_CHECK_FAILURE}
+
+Return ONLY the JSON object.

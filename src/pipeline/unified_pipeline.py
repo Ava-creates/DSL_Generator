@@ -482,6 +482,7 @@ def run_unified_pipeline(
                 terminals=terminals,
                 failed_programs_by_task=None,
                 shared_vllm=shared_vllm,
+                model_type=model_type,
             )
 
             for dsl_attempt in range(1, max_dsl_retries + 1):
@@ -499,6 +500,7 @@ def run_unified_pipeline(
                     terminals=terminals,
                     failure_analysis=failure_analysis_cached,
                     shared_vllm=shared_vllm,
+                    model_type=model_type,
                 )
                 
                 # Check if evolution was successful and CFG is different

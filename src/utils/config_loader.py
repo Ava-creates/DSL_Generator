@@ -98,6 +98,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "DOMAIN_CONTEXT_TEMPLATE_PATH": "domain_context_template_path",
         "CFG_TEXT": "cfg_text",
         "JOB_PREFIX": "job_prefix",
+        "IMPLEMENT_CFG_SINGLE_TIME": "implement_cfg_single_time",
     }
     
     for env_var, config_key in env_mappings.items():
@@ -168,6 +169,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "domain_context_template_path": None,
         "cfg_text": "",
         "job_prefix": None,
+        "implement_cfg_single_time": "12:00:00",
     }
     
     for key, default_value in defaults.items():
@@ -217,6 +219,7 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
         "domain_context_template_path": "DOMAIN_CONTEXT_TEMPLATE_PATH",
         "cfg_text": "CFG_TEXT",
         "job_prefix": "JOB_PREFIX",
+        "implement_cfg_single_time": "IMPLEMENT_CFG_SINGLE_TIME",
     }
     
     for config_key, env_var in env_mappings.items():

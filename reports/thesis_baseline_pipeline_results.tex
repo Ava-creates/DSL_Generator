@@ -1,0 +1,253 @@
+% Auto-generated thesis results tables for Craft baseline vs DSL pipeline experiments.
+% Generated: 2026-06-22
+% Layout: pipeline run numbers as columns, DSL round numbers as rows.
+
+% Required packages: booktabs, graphicx
+
+\section{Experimental Results}
+
+\subsection{Setup}
+We evaluate on \textbf{20 Craft tasks} with \textbf{10 test seeds} each (200 seed--task trials per run).
+A task counts as \emph{solved} if at least one seed succeeds.
+Baselines synthesize Python functions directly (no DSL); the pipeline synthesizes programs in an evolved DSL.
+Five independent pipeline runs and five independent baseline runs, HuggingFace LLM, June~11, 2026.
+We report \textbf{mean $\pm$ range} across completed runs (not best-of-$n$), because run-to-run variance is large.
+Single-run highs are noted separately as highlighted results.
+
+\subsection{Aggregate Comparison}
+
+\begin{table}[htbp]
+\centering
+\caption{Aggregate comparison across independent runs (mean $\pm$ range). Baseline: $n{=}4$ (Run~5 incomplete). Pipeline DSL~0: $n{=}5$. Pipeline DSL~1: $n{=}3$ (Runs~3--5 only; Runs~1--2 did not reach DSL~1 evaluation at report time).}
+\label{tab:aggregate-comparison}
+\begin{tabular}{lccc}
+\toprule
+Metric & Baseline & Pipeline DSL~0 & Pipeline DSL~1 \\
+\midrule
+Tasks solved  & $13.5$ {\small [13--15]}  & $7.8$ {\small [3--19]}   & $12.7$ {\small [2--18]} \\
+Seeds solved  & $129.8$ {\small [119--146]} & $51.2$ {\small [11--170]} & $101.7$ {\small [2--152]} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On \emph{typical} behavior, mean baseline performance exceeds mean pipeline DSL~0 on both tasks and seeds.
+Mean pipeline DSL~1 closes much of the task gap ($12.7$ vs.\ $13.5$) but remains below baseline on seeds ($101.7$ vs.\ $129.8$).
+\textbf{Highlighted best runs} (not used for the headline comparison): Baseline Run~1 ($15/20$, $146/200$); pipeline Run~2 DSL~0 ($19/20$, $170/200$), which exceeds the best baseline on both metrics; pipeline Runs~3--4 DSL~1 ($18/20$ tasks each).
+
+\subsection{Baseline Results}
+
+\begin{table}[htbp]
+\centering
+\caption{Baseline aggregate results (func0). Baseline~5 evaluation incomplete.}
+\label{tab:baseline-summary}
+\begin{tabular}{lccccc}
+\toprule
+& \multicolumn{5}{c}{Baseline Run} \\
+Metric & 1 & 2 & 3 & 4 & 5 \\
+\midrule
+Tasks Solved & 15/20 & 13/20 & 13/20 & 13/20 & --- \\
+Seeds Solved & 146/200 & 119/200 & 126/200 & 128/200 & --- \\
+\midrule
+Mean {\small ($n{=}4$)} & \multicolumn{4}{c}{$13.5$ tasks; $129.8$ seeds {\small [tasks 13--15; seeds 119--146]}} & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Pipeline Results}
+
+\begin{table}[htbp]
+\centering
+\caption{Pipeline tasks solved (rows: DSL round; columns: pipeline run). --- = not evaluated.}
+\label{tab:pipeline-tasks-matrix}
+\begin{tabular}{lccccc}
+\toprule
+& \multicolumn{5}{c}{Pipeline Run} \\
+DSL Round & 1 & 2 & 3 & 4 & 5 \\
+\midrule
+DSL~0 & 10/20 & 19/20$^\dagger$ & 4/19 & 3/20 & 3/20 \\
+DSL~1 & --- & --- & 18/20 & 18/20 & 2/20 \\
+\midrule
+Mean & \multicolumn{5}{c}{DSL~0: $7.8$ tasks {\small [3--19]} \quad|\quad DSL~1: $12.7$ tasks {\small [2--18]}, $n{=}3$} \\
+\multicolumn{6}{l}{\footnotesize $^\dagger$Highlighted best pipeline run (DSL~0): exceeds best baseline Run~1 ($15/20$, $146/200$).} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Pipeline seeds solved (rows: DSL round; columns: pipeline run). --- = not evaluated.}
+\label{tab:pipeline-seeds-matrix}
+\begin{tabular}{lccccc}
+\toprule
+& \multicolumn{5}{c}{Pipeline Run} \\
+DSL Round & 1 & 2 & 3 & 4 & 5 \\
+\midrule
+DSL~0 & 35/200 & 170/200$^\dagger$ & 10/190 & 30/200 & 11/200 \\
+DSL~1 & --- & --- & 151/200 & 152/199 & 2/200 \\
+\midrule
+Mean & \multicolumn{5}{c}{DSL~0: $51.2$ seeds {\small [11--170]} \quad|\quad DSL~1: $101.7$ seeds {\small [2--152]}, $n{=}3$} \\
+\multicolumn{6}{l}{\footnotesize $^\dagger$Highlighted best pipeline run (DSL~0).} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Per-run matrices above support Table~\ref{tab:aggregate-comparison}; the headline comparison uses means $\pm$ range, not run maxima.
+
+\subsection{DSL Evolution Gains (Runs with DSL~1)}
+
+Runs~1 and~2 did not reach DSL~1 evaluation; Runs~3, 4, and~5 did.
+Table~\ref{tab:dsl-evolution-gains} quantifies the DSL~0 $\rightarrow$ DSL~1 change for each.
+
+\begin{table}[htbp]
+\centering
+\caption{DSL~0 $\rightarrow$ DSL~1 change for all runs with DSL~1 data (Runs~3--5). $\Delta$ = DSL~1 $-$ DSL~0.}
+\label{tab:dsl-evolution-gains}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccccccc}
+\toprule
+& \multicolumn{3}{c}{Run~3} & \multicolumn{3}{c}{Run~4} & \multicolumn{3}{c}{Run~5} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+Metric & DSL~0 & DSL~1 & $\Delta$ & DSL~0 & DSL~1 & $\Delta$ & DSL~0 & DSL~1 & $\Delta$ \\
+\midrule
+Tasks solved & 4/19  & 18/20 & +14 & 3/20  & 18/20 & +15 & 3/20  & 2/20  & $-$1 \\
+Seeds solved & 10/190 & 151/200 & +141 & 30/200 & 152/199 & +122 & 11/200 & 2/200 & $-$9 \\
+Rel.\ tasks   & \multicolumn{3}{c}{$\approx$4.5$\times$} & \multicolumn{3}{c}{6$\times$} & \multicolumn{3}{c}{0.67$\times$} \\
+Rel.\ seeds   & \multicolumn{3}{c}{$\approx$15$\times$} & \multicolumn{3}{c}{$\approx$5$\times$} & \multicolumn{3}{c}{0.18$\times$} \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Side-by-side DSL~0 vs.\ DSL~1 summary for Runs~3--5 (rows: DSL round; columns: pipeline run).}
+\label{tab:dsl0-vs-dsl1-all}
+\begin{tabular}{lcccccc}
+\toprule
+& \multicolumn{2}{c}{Run~3} & \multicolumn{2}{c}{Run~4} & \multicolumn{2}{c}{Run~5} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}
+DSL Round & Tasks & Seeds & Tasks & Seeds & Tasks & Seeds \\
+\midrule
+DSL~0 & 4/19  & 10/190  & 3/20  & 30/200  & 3/20  & 11/200 \\
+DSL~1 & 18/20 & 151/200 & 18/20 & 152/199 & 2/20  & 2/200 \\
+\midrule
+$\Delta$ & +14 & +141 & +15 & +122 & $-$1 & $-$9 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Run~3} improves by +14 tasks and +141 seeds with no per-task regressions; most crafting tasks jump from 0/10 on DSL~0 to 10/10 on DSL~1.
+\textbf{Run~4} improves by +15 tasks and +122 seeds, reaching a similar DSL~1 level as Run~3; the only regression is \texttt{get\_iron} (10/10 $\rightarrow$ 8/10).
+\textbf{Run~5} regresses on DSL~1 ($-$1 task, $-$9 seeds): gathering tasks \texttt{get\_grass}, \texttt{get\_iron}, and \texttt{get\_wood} lose seeds, and DSL~1 never exceeds the weak DSL~0 baseline for this run.
+Overall, DSL evolution is highly beneficial when DSL~0 performs poorly (Runs~3--4), but not guaranteed to help when the run is already unstable (Run~5).
+
+\subsection{Per-Task Results (DSL~0)}
+
+\begin{table}[htbp]
+\centering
+\caption{Per-task seed solves on DSL~0 (out of 10). Rows: tasks; columns: pipeline runs. \textbf{Bold} = all seeds solved.}
+\label{tab:pipeline-per-task-dsl0}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+& \multicolumn{5}{c}{Pipeline Run} \\
+Task & 1 & 2 & 3 & 4 & 5 \\
+\midrule
+\texttt{get\_gem} & 0/10 & 5/10 & 0/10 & 0/10 & 0/10 \\
+\texttt{get\_gold} & 0/10 & 5/10 & 0/10 & 0/10 & 0/10 \\
+\texttt{get\_grass} & 8/10 & \textbf{10/10} & 1/10 & \textbf{10/10} & 2/10 \\
+\texttt{get\_iron} & 6/10 & \textbf{10/10} & 5/10 & \textbf{10/10} & 7/10 \\
+\texttt{get\_wood} & 6/10 & \textbf{10/10} & 3/10 & \textbf{10/10} & 2/10 \\
+\texttt{make\_plank} & 2/10 & \textbf{10/10} & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_stick} & 3/10 & \textbf{10/10} & 1/10 & 0/10 & 0/10 \\
+\texttt{make\_cloth} & 3/10 & \textbf{10/10} & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_rope} & 2/10 & \textbf{10/10} & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_bridge} & 3/10 & \textbf{10/10} & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_bundle} & 1/10 & \textbf{10/10} & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_flag} & 0/10 & \textbf{10/10} & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_bed} & 0/10 & \textbf{10/10} & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_axe} & 1/10 & \textbf{10/10} & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_shears} & 0/10 & \textbf{10/10} & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_ladder} & 0/10 & \textbf{10/10} & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_goldarrow} & 0/10 & 8/10 & --- & 0/10 & 0/10 \\
+\texttt{make\_goldhammer} & 0/10 & 3/10 & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_clothbundle} & 0/10 & 9/10 & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_clothbundleextra} & 0/10 & 0/10 & 0/10 & 0/10 & 0/10 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsection{Per-Task Results (DSL~1)}
+
+\begin{table}[htbp]
+\centering
+\caption{Per-task seed solves on DSL~1 (out of 10). Rows: tasks; columns: pipeline runs. \textbf{Bold} = all seeds solved.}
+\label{tab:pipeline-per-task-dsl1}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+& \multicolumn{5}{c}{Pipeline Run} \\
+Task & 1 & 2 & 3 & 4 & 5 \\
+\midrule
+\texttt{get\_gem} & --- & --- & 3/10 & 6/10 & 0/10 \\
+\texttt{get\_gold} & --- & --- & 3/10 & 5/10 & 0/10 \\
+\texttt{get\_grass} & --- & --- & \textbf{10/10} & \textbf{10/10} & 1/10 \\
+\texttt{get\_iron} & --- & --- & \textbf{10/10} & 8/10 & 0/10 \\
+\texttt{get\_wood} & --- & --- & \textbf{10/10} & \textbf{10/10} & 1/10 \\
+\texttt{make\_plank} & --- & --- & \textbf{10/10} & \textbf{10/10} & 0/10 \\
+\texttt{make\_stick} & --- & --- & \textbf{10/10} & 9/10 & 0/10 \\
+\texttt{make\_cloth} & --- & --- & \textbf{10/10} & \textbf{10/10} & 0/10 \\
+\texttt{make\_rope} & --- & --- & \textbf{10/10} & \textbf{10/10} & 0/10 \\
+\texttt{make\_bridge} & --- & --- & \textbf{10/10} & \textbf{10/10} & 0/10 \\
+\texttt{make\_bundle} & --- & --- & \textbf{10/10} & \textbf{10/10} & 0/10 \\
+\texttt{make\_flag} & --- & --- & \textbf{10/10} & \textbf{10/10} & 0/10 \\
+\texttt{make\_bed} & --- & --- & \textbf{10/10} & \textbf{10/10} & 0/10 \\
+\texttt{make\_axe} & --- & --- & \textbf{10/10} & 8/10 & 0/10 \\
+\texttt{make\_shears} & --- & --- & \textbf{10/10} & 9/10 & 0/10 \\
+\texttt{make\_ladder} & --- & --- & \textbf{10/10} & \textbf{10/10} & 0/10 \\
+\texttt{make\_goldarrow} & --- & --- & 1/10 & 4/10 & 0/10 \\
+\texttt{make\_goldhammer} & --- & --- & 0/10 & 3/9 & 0/10 \\
+\texttt{make\_clothbundle} & --- & --- & 4/10 & 0/10 & 0/10 \\
+\texttt{make\_clothbundleextra} & --- & --- & 0/10 & 0/10 & 0/10 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsection{Baseline Per-Task Results}
+
+\begin{table}[htbp]
+\centering
+\caption{Baseline per-task seed solves (out of 10). Rows: tasks; columns: baseline runs.}
+\label{tab:baseline-per-task}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+& \multicolumn{4}{c}{Baseline Run} \\
+Task & 1 & 2 & 3 & 4 \\
+\midrule
+\texttt{get\_gem} & \textbf{10/10} & 4/10 & 0/10 & 0/10 \\
+\texttt{get\_gold} & \textbf{10/10} & 0/10 & 0/10 & 9/10 \\
+\texttt{get\_grass} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} \\
+\texttt{get\_iron} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} \\
+\texttt{get\_wood} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} \\
+\texttt{make\_plank} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} \\
+\texttt{make\_stick} & 9/10 & 9/10 & 9/10 & 9/10 \\
+\texttt{make\_cloth} & 9/10 & \textbf{10/10} & 9/10 & \textbf{10/10} \\
+\texttt{make\_rope} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} \\
+\texttt{make\_bridge} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} \\
+\texttt{make\_bundle} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} & \textbf{10/10} \\
+\texttt{make\_flag} & 9/10 & 0/10 & 9/10 & \textbf{10/10} \\
+\texttt{make\_bed} & \textbf{10/10} & 0/10 & \textbf{10/10} & \textbf{10/10} \\
+\texttt{make\_axe} & \textbf{10/10} & 9/10 & \textbf{10/10} & \textbf{10/10} \\
+\texttt{make\_shears} & 9/10 & 0/10 & 9/10 & 0/10 \\
+\texttt{make\_ladder} & 0/10 & 9/10 & 0/10 & 0/10 \\
+\texttt{make\_goldarrow} & 0/10 & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_goldhammer} & 0/10 & 0/10 & 0/10 & 0/10 \\
+\texttt{make\_clothbundle} & 0/10 & 8/10 & 0/10 & 0/10 \\
+\texttt{make\_clothbundleextra} & 0/10 & 0/10 & 0/10 & 0/10 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsection{Hard Tasks}
+\texttt{make\_clothbundleextra} was never solved in any completed run.
+\texttt{make\_goldhammer} reached at most 3/10 seeds in the pipeline and 0/10 in all baselines.

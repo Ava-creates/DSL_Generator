@@ -1,0 +1,54 @@
+# Crafter + API-mode experiment config.
+# Run:
+#   export OPENAI_COMPAT_KEY_FILE=key.txt       # or set OPENAI_COMPAT_API_KEY
+#   python -m src_agnostic.pipeline.unified_pipeline \
+#       --domain crafter \
+#       --model_type openai_compat \
+#       --local \
+#       --experiment_dir experiments/crafter_api_$(date +%s) \
+#       --spec_file prompt_specifications/specification_with_updated_nld.txt \
+#       --tasks collect_wood place_table make_wood_pickaxe
+
+experiment_dir:
+spec_file: prompt_specifications/specification_with_updated_nld.txt
+nld_path: prompt_specifications/nld_crafter.txt
+codebase_path: prompt_specifications/codebase.txt
+
+failure_analysis_prompt: prompt_specifications/failure_analysis.txt
+cfg_evolution_prompt: prompt_specifications/cfg_evolution.txt
+synthesis_prompt: prompt_specifications/prompt_synth_with_grid_and_failures.txt
+cfg_generator_prompt_path: prompt_specifications/cfg_generator.txt
+domain_context_template_path: prompt_specifications/more_domain_context.txt
+grid_prompt_path: prompt_specifications/crafter_testcase_prompt.txt
+
+# Start small so API mode doesn't burn through the key on the first run.
+tasks:
+  - collect_wood
+  - place_table
+  - make_wood_pickaxe
+
+max_dsl_evolutions: 2
+max_function_evolutions: 1
+total_samples: 200
+num_explicit_feedback_iterations: 10
+max_attempts: 20
+
+model_type: openai_compat
+
+# Crafter has no recipes.yaml; the adapter loads these from domains/crafter/spec.yaml.
+recipes_path:
+hints_path:
+
+skip_cfg_generation: false
+cfg_output_file:
+max_cfg_retries: 5
+
+grid_regeneration_attempts: 5
+positive_girds: 3
+negative_grids: 1
+edge_grids: 1
+grid_spec_llm_attempts: 5
+use_existing_grid_specs: false
+grid_spec_dir: ""
+require_test_type: true
+skip_positive_grids: false

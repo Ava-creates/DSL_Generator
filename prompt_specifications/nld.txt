@@ -1,7 +1,7 @@
 ##Natural Language Description of Craft
 The environment is a grid world of size n*n .
 Each cell contains an inventory vector of length i, where each position corresponds to world objects named in that environment’s recipes file: everything listed under `environment` (e.g. boundary,  water, etc) and under `primitives`, as in `craft/resources/recipes.yaml`.
-If a cell contains an object, its corresponding entry is marked as 1; otherwise, it is 0. A cell is considered blocked if it contains any object. The agent can only move around freely through empty cells nor can it be in a blocked cell. Agent can pick up/grab 'primitives' from the cells it is directly facing but the other objects under 'environment' are permanent/non-grabbable and agent cannot go through or be in these cells ever.
+If a cell contains an object, its corresponding entry is marked as 1; otherwise, it is 0. A cell is considered blocked if it contains any object. The agent can only move around freely through empty cells nor can it be in a blocked cell. Agent can pick up/grab 'primitives' from the cells it is directly facing (here facing only works in 4 cardinal directions) but the other objects under 'environment' are permanent/non-grabbable and agent cannot go through or be in these cells ever.
 
 At the beginning of each episode, the agent is placed at a starting position and a distribution of items across the grid is initialized. The agent’s tasks involve either collecting primitives (raw resources) or crafting items.
 
@@ -26,38 +26,6 @@ Example of recipe in the actual file:
     grass: 1
     _at: workshop2
 
-In order to use the workshops or to collect stuff the must be facing the block and not just be adjacent to it.
-
-This is the schema of the yaml recipes file:
-# Root level structure
-type: object
-properties:
-  environment:
-    type: array
-    items:
-      type: string
-    description: "List of environment/location identifiers"
-
-  primitives:
-    type: array
-    items:
-      type: string
-    description: "List of base/primitive materials that can be used in crafting"
-
-  recipes:
-    type: object
-    description: "Dictionary of craftable items and their recipes"
-    patternProperties:
-      "^[a-zA-Z][a-zA-Z0-9]*$":  # Recipe name (alphanumeric, starts with letter)
-        type: object
-        properties:
-          _at:
-            type: string
-            description: "Required workshop/location where this item can be crafted"
-        additionalProperties:
-          type: integer
-          minimum: 1
-          description: "Quantity of material required (key is material name)"
-        required: ["_at"]
-
+To use workshops or collect items, the agent must be directly facing the target block, not just adjacent to it.
+Facing is restricted to the four cardinal directions. You cannot be diagonal to something to collect/ use it.
 

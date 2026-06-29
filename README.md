@@ -2,6 +2,59 @@
 
 In this project, we are working on general DSL generator pipeline that can be used for multiple domains with minimal information about the domain itself.
 
+## Domain-agnostic pipeline (`src_agnostic/`)
+
+The original pipeline under [`src/`](src/) is Craft-specific. A parallel
+domain-agnostic pipeline lives under [`src_agnostic/`](src_agnostic/) and
+drives its behavior through pluggable `DomainAdapter`s under
+[`domains/`](domains/). Two domains ship today:
+
+| Domain    | Env                           | Tasks                              |
+|-----------|-------------------------------|-----------------------------------|
+| `craft`   | Legacy symbolic Craft         | `get[...]`, `make[...]` (inventory) |
+| `crafter` | [danijar/crafter](https://github.com/danijar/crafter) survival env | 22 achievements (`collect_wood`, `make_iron_pickaxe`, ...) |
+
+### Run the unified pipeline
+
+```bash
+# Craft (parity with src/)
+python -m src_agnostic.pipeline.unified_pipeline \
+  --domain craft \
+  --experiment_dir experiments/craft_run_0 \
+  --spec_file prompt_specifications/specification_with_updated_nld.txt \
+  --tasks "get[wood]" "get[iron]"
+
+# Crafter (22 achievements)
+python -m src_agnostic.pipeline.unified_pipeline \
+  --domain crafter \
+  --experiment_dir experiments/crafter_run_0 \
+  --tasks collect_wood place_table make_wood_pickaxe
+```
+
+### Run individual stages
+
+Every stage under `src_agnostic/pipeline/stages/` accepts `--domain {craft|crafter}`:
+
+```bash
+python -m src_agnostic.pipeline.stages.stage_get_cfg \
+  --domain crafter \
+  --experiment_dir experiments/crafter_run_0
+```
+
+### Adding a new domain
+
+1. Create `domains/<name>/` with `adapter.py`, `templates.py`, `spec.yaml`.
+2. Subclass `DomainAdapter` and implement `build_env`, `task_succeeded`,
+   `snapshot_state`, `solve_template`, `evaluate_template`, `env_setup_code`,
+   and `generate_test_case`.
+3. Register a factory in [`domains/registry.py`](domains/registry.py).
+4. (Optional) Add a natural-language description at
+   `prompt_specifications/nld_<name>.txt`.
+
+The CFG generator reads `adapter.spec.nld` and `adapter.domain_text_for_prompt()`,
+so no other pipeline code needs to change to support new domains.
+
+
 ## Quick Start
 
 **Full Pipeline**: Use `bash scripts/submit_with_config.sh` to run the complete pipeline on vulcan.
@@ -35,7 +88,7 @@ Test specific tasks with a function version:
 ```bash
 python src/pipeline/stages/stage_test_tasks.py \
     --experiment_dir experiments/experiment_20260302_155324_4209548 \
-    --tasks get[gem] get[iron] get[wood] get[grass] get[gold] make[plank] make[stick] make[cloth] make[rope] make[bridge] make[bundle] make[flag] make[bed] make[axe] make[shears] make[ladder] make[goldarrow] \
+    --tasks get[gem] get[iron] get[wood] get[grass] get[gold] make[plank] make[stick] make[cloth] make[rope] make[bridge] make[bundle] make[flag] make[bed] make[axe] make[shears] make[ladder] make[goldarrow] make[goldhammer] make[clothbundle] make[clothbundleextra] \
     --dsl_round 2 \
     --func_evolution_round 0 \
     --max_attempts 50
@@ -54,7 +107,7 @@ Evolve the DSL based on failed programs from a specific DSL version:
 ```bash
 python src/pipeline/stages/stage_evolve_dsl.py \
     --experiment_dir experiments/experiment_20260302_155324_4209548 \
-    --failing_tasks get[gem] get[iron] get[wood] get[grass] get[gold] make[stick] make[cloth] make[rope] make[bridge] make[bundle] make[flag] make[bed] make[axe] make[shears] make[ladder] make[goldarrow] \
+    --failing_tasks get[gem] get[iron] get[wood] get[grass] get[gold] make[stick] make[cloth] make[rope] make[bridge] make[bundle] make[flag] make[bed] make[axe] make[shears] make[ladder] make[goldarrow] make[goldhammer] make[clothbundle] make[clothbundleextra] \
     --recipes_path craft/resources/recipes.yaml \
     --max_retries 10 \
     --dsl_version 0
@@ -175,4 +228,4 @@ python src/pipeline/unified_pipeline.py \
   --max_dsl_evolutions 2 \
   --max_function_evolutions 3 \
   --max_attempts 50 \
-  --tasks "get[gem]" "get[iron]" "get[wood]" "get[grass]" "get[gold]" "make[plank]" "make[stick]" "make[cloth]" "make[rope]" "make[bridge]" "make[bundle]" "make[flag]" "make[bed]" "make[axe]" "make[shears]" "make[ladder]" "make[goldarrow]"
+  --tasks "get[gem]" "get[iron]" "get[wood]" "get[grass]" "get[gold]" "make[plank]" "make[stick]" "make[cloth]" "make[rope]" "make[bridge]" "make[bundle]" "make[flag]" "make[bed]" "make[axe]" "make[shears]" "make[ladder]" "make[goldarrow]" "make[goldhammer]" "make[clothbundle]" "make[clothbundleextra]"

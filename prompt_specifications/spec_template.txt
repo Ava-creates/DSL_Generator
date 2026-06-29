@@ -1,0 +1,37 @@
+'''
+You are an expert in solving tasks some simulation environments using programmatic strategies. You will be given the details on the simulation environment (in the form of its code base), a domain-specific language (DSL) that is designed to solve the task in a compositional way, and you will be asked to come up with the implementation of specific functions in the DSL to using the provided code base. You are safe to assume that other than the function we ask you to implement, the rest of the constructs in the DSL are already implemented properly. 
+
+<<NLD>>
+
+<<CODEBASE>>
+
+## DSL
+The following language is the domain-specific language that we designed to solve **any** task in this game. 
+<<CFG>>
+
+When coming up with the code understand that processing of the action list returned by the function will be handeled on the DSL interpreter using something like below ->
+This is just an example, do not use the example function.
+  actions_to_take = example_function(env, primitive)
+  for t in range(len(actions_to_take)):
+    action = actions_to_take[t]
+    reward, done, observations = env.step(action)
+    total_reward += reward
+    if done:
+      break
+
+The individual functions cannot call other functions of the cfg. They are completely independent of each other.
+Avoid adding fallbacks assumed you get the a validated grid always so no fallbacks required.
+CRITICAL: The function generated MUST use the arguments passed to it.
+CRITICAL: Return ONLY a list of integer action codes. Do NOT return strings, DSL tokens, or calls to other DSL functions.
+Terminal functions are the leaves of the DSL; they interact with env.step() directly.
+Returning DSL strings will cause a hard runtime error.
+## Return only the python code
+'''
+
+import numpy as np
+import time
+import collections
+from craft import craft, env, env_factory
+import pandas as pd
+import os
+import json

@@ -7,12 +7,66 @@ Manages pipeline state using a simple text file to track terminal function count
 import os
 import json
 import subprocess
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 def get_state_file_path(experiment_dir: str) -> str:
     """Get the path to the pipeline state file."""
     return os.path.join(experiment_dir, "pipeline_state.txt")
+
+
+def resolve_model_type_for_chained_jobs(
+    experiment_dir: str,
+    cli_or_env_model_type: Optional[str] = None,
+) -> str:
+    """Resolve LLM backend for chained Slurm stages (test_tasks, implement, etc.).
+
+    Implement / FunSearch often run with ``--model_type openai_compat`` while ``MODEL_TYPE`` is
+    unset in the batch environment (only the Python CLI received it). Chain scripts then
+    defaulted to ``huggingface``, spawned vLLM on API/light nodes, and failed (e.g. empty device).
+
+    Resolution order:
+    1. Non-empty *cli_or_env_model_type* or ``MODEL_TYPE`` env, except when that value is
+       the default *huggingface* but *pipeline_model_type* in state is *openai_compat* (repair).
+    2. ``pipeline_model_type`` persisted by ``stage_implement_cfg_single``.
+    3. ``model_type`` from experiment YAML via ``load_config``.
+    4. *huggingface*
+    """
+    state = read_state(experiment_dir)
+    persisted = str(state.get("pipeline_model_type", "") or "").strip()
+    env_val = (
+        (cli_or_env_model_type if cli_or_env_model_type is not None else os.environ.get("MODEL_TYPE", ""))
+        .strip()
+    )
+
+    inferred_openai = False
+    fun_dir = os.path.join(experiment_dir, "results", "funsearch")
+    if os.path.isdir(fun_dir):
+        try:
+            inferred_openai = any("openai_compat" in fn for fn in os.listdir(fun_dir))
+        except OSError:
+            inferred_openai = False
+
+    # Slurm often passes MODEL_TYPE=huggingface by default while implement used the API; repair before trusting env.
+    weak_env = env_val in ("", "huggingface")
+    if persisted == "openai_compat" and weak_env:
+        return "openai_compat"
+    if inferred_openai and weak_env:
+        return "openai_compat"
+
+    if env_val:
+        return env_val
+    if persisted:
+        return persisted
+    try:
+        from src.utils.config_loader import load_config
+
+        cfg_mt = str(load_config().get("model_type") or "").strip()
+        if cfg_mt:
+            return cfg_mt
+    except Exception:
+        pass
+    return "huggingface"
 
 
 def read_state(experiment_dir: str) -> Dict:

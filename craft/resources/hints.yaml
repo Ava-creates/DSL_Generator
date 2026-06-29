@@ -69,3 +69,12 @@
 
 "make[goldarrow]":
   ["get_iron", "get_wood", "make2", "get_gold", "get_wood", "make0"]
+
+"make[goldhammer]":
+  ["get_iron", "get_wood", "make2", "get_gold", "get_wood", "get_rock", "make0", "make0"]
+
+"make[clothbundle]":
+  ["get_grass", "make2", "get_wood", "get_grass", "make1"]
+
+"make[clothbundleextra]":
+  ["get_grass", "make2", "get_wood", "get_grass", "make1", "get_rock", "get_iron", "make1"]

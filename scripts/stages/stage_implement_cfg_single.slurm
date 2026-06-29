@@ -4,10 +4,9 @@
 #SBATCH --mail-user=avani4@ualberta.ca
 #SBATCH --output=scripts/log/stage_implement_cfg_%x_%j.out
 #SBATCH --error=scripts/log/stage_implement_cfg_%x_%j.err
-#SBATCH --time=10:00:00
+#SBATCH --time=12:00:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
-#SBATCH --gres=gpu:4
 #SBATCH --account=aip-lelis
 
 # Activate virtual environment
@@ -45,6 +44,12 @@ else
     OPENAI_KEY_FILE_ARG=""
 fi
 
+if [ "${SKIP_FUNSEARCH:-0}" = "1" ] || [ "${SKIP_FUNSEARCH:-false}" = "true" ]; then
+    SKIP_FUNSEARCH_ARG="--skip_funsearch"
+else
+    SKIP_FUNSEARCH_ARG=""
+fi
+
 python src/pipeline/stages/stage_implement_cfg_single.py \
     --experiment_dir "$EXPERIMENT_DIR" \
     --spec_file "${SPEC_FILE:-prompt_specifications/specification_with_updated_nld.txt}" \
@@ -55,7 +60,8 @@ python src/pipeline/stages/stage_implement_cfg_single.py \
     --num_iterations "${NUM_EXPLICIT_FEEDBACK_ITERATIONS:-30}" \
     $FUNC_ROUND_ARG \
     $BASELINE_MODE_ARG \
-    $OPENAI_KEY_FILE_ARG
+    $OPENAI_KEY_FILE_ARG \
+    $SKIP_FUNSEARCH_ARG
 
 stage_rc=$?
 

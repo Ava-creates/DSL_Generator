@@ -1,0 +1,1 @@
+"""Domain-aware CLI entrypoints."""

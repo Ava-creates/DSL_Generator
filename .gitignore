@@ -24,11 +24,15 @@ new_dsl_env/
 # Experiment outputs (large, machine-generated)
 experiments/
 experiments_archive/
+experiments_ughh/
+generated_code_*.py
 
 # Log directories
 scripts/log/
 scripts/log_archive/
 scripts/log_old/
+scripts/log_old2/
+scripts/stages/_write_test
 
 # Agent / tool caches
 .claude/

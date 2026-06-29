@@ -18,8 +18,9 @@ sys.path.insert(0, _project_root)
 from src.pipeline.integrated_pipeline import test_cfg_on_tasks, ensure_terminals_match_cfg
 from src.pipeline.cfg_to_funsearch_pipeline import sanitize_function_name
 from src.utils.results_tracker import ResultsTracker
-from src.utils.pipeline_state import update_state, read_state
+from src.utils.pipeline_state import update_state, read_state, resolve_model_type_for_chained_jobs
 from src.utils.status_manager import write_status
+from src.utils.per_task_test_paths import program_synthesis_task_shard_dir
 
 # Import vLLM for shared instance
 try:
@@ -66,16 +67,40 @@ def main():
         default=None,
         help='File with OpenAI-compatible API key (first non-empty line). Default: <repo>/key.txt if OPENAI_COMPAT_API_KEY unset.',
     )
-    parser.add_argument('--model_type', type=str, default='huggingface', choices=['huggingface', 'ollama', 'gemini', 'openai_compat'], help='Model type for program synthesis')
+    parser.add_argument(
+        '--model_type',
+        type=str,
+        default=os.environ.get("MODEL_TYPE", "huggingface"),
+        choices=['huggingface', 'ollama', 'gemini', 'openai_compat'],
+        help='Model type for program synthesis (default: MODEL_TYPE env or huggingface)',
+    )
     parser.add_argument('--dsl_round', type=int, default=int(os.environ.get("DSL_ROUND", "0")), help='DSL evolution round number')
-    parser.add_argument('--func_evolution_round', type=int, default=None, help='Function evolution round number')
+    parser.add_argument(
+        '--func_evolution_round',
+        type=int,
+        default=int(os.environ.get("FUNC_EVOLUTION_ROUND", "0")),
+        help='Function evolution round number (0 = initial terminal functions)',
+    )
     parser.add_argument(
         '--single_task_job',
         action='store_true',
         help='Run in single-task job mode and write per-task status/results for later aggregation',
     )
-    
+    parser.add_argument(
+        '--tasks_subdir',
+        type=str,
+        default=os.environ.get("PROG_SYNTH_TASKS_SUBDIR", "tasks"),
+        help='Subdir under results_tracking/dsl{n}/func{m}/ for shard output (e.g. tasks_api)',
+    )
+
     args = parser.parse_args()
+
+    args.model_type = resolve_model_type_for_chained_jobs(args.experiment_dir, args.model_type)
+    print(f"[Config] Resolved model_type={args.model_type} for program synthesis")
+
+    if args.openai_compat_key_file and not os.environ.get("OPENAI_COMPAT_API_KEY", "").strip():
+        from src.utils.openai_compat_key import resolve_openai_compat_api_key
+        os.environ["OPENAI_COMPAT_API_KEY"] = resolve_openai_compat_api_key(args.openai_compat_key_file)
     
     # Handle tasks - can be passed as space-separated string or JSON file
     tasks = args.tasks
@@ -110,10 +135,11 @@ def main():
 
     test_seeds = list(dict.fromkeys(int(s) for s in args.test_seeds))
     print(f"[Config] Test seeds: {test_seeds}")
+    print(f"[Config] model_type={args.model_type} (synthesis: {'OpenAI-compatible API' if args.model_type == 'openai_compat' else 'local vLLM'})")
     
     # Load CFG - use dsl_round to select which cfg version
-    cfg_filename = f"cfg_output_{args.dsl_round}.json" if args.dsl_round > 0 else "cfg_output.json"
-    cfg_path = os.path.join(args.experiment_dir, "cfg", cfg_filename)
+    from src.utils.file_utils import resolve_cfg_path
+    cfg_path = resolve_cfg_path(args.experiment_dir, args.dsl_round)
     if not os.path.exists(cfg_path):
         print(f" CFG file not found: {cfg_path}", file=sys.stderr)
         return 1
@@ -210,26 +236,27 @@ def main():
             shared_vllm = None
     
     # Create ResultsTracker. In parallel single-task mode we isolate writes per task
-    # to avoid cross-process write races, then aggregate later.
+    # under results_tracking/dsl{n}/func{m}/prog_synthoutput/<task>/ (no nested results_tracking).
+    single_task_shard_dir = None
     if args.single_task_job and tasks:
         func_round = args.func_evolution_round if args.func_evolution_round is not None else 0
-        task_root = os.path.join(
+        single_task_shard_dir = program_synthesis_task_shard_dir(
             args.experiment_dir,
-            "task_runs",
-            "test_tasks",
-            f"dsl{args.dsl_round}",
-            f"func{func_round}",
-            _safe_task_token(tasks[0]),
+            dsl_round=args.dsl_round,
+            func_evolution_round=func_round,
+            task_token=_safe_task_token(tasks[0]),
+            tasks_subdir=args.tasks_subdir,
         )
-        os.makedirs(task_root, exist_ok=True)
-        task_results_dir = os.path.join(task_root, "results_tracking")
-        if os.path.isdir(task_results_dir):
-            shutil.rmtree(task_results_dir)
-        results_tracker = ResultsTracker(task_root)
-        print(f"[Config] Single-task results root: {task_root}")
+        if os.path.isdir(single_task_shard_dir):
+            shutil.rmtree(single_task_shard_dir)
+        os.makedirs(single_task_shard_dir, exist_ok=True)
+        results_tracker = ResultsTracker(
+            args.experiment_dir,
+            results_dir=single_task_shard_dir,
+        )
+        print(f"[Config] Single-task program synthesis shard: {single_task_shard_dir}")
     else:
         results_tracker = ResultsTracker(args.experiment_dir)
-        task_root = None
     
     # Test CFG on tasks
     print(f"\n[Step 5] Testing CFG on {len(tasks)} tasks...")
@@ -251,8 +278,8 @@ def main():
         include_final_functions_in_prompt=args.with_final_functions_in_prompt,
         openai_compat_key_file=args.openai_compat_key_file,
         seed_outcome_log_path=(
-            os.path.join(task_root, "results_tracking", "program_synthesis_seed_outcomes.jsonl")
-            if task_root
+            os.path.join(single_task_shard_dir, "program_synthesis_seed_outcomes.jsonl")
+            if single_task_shard_dir
             else None
         ),
     )

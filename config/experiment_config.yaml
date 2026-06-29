@@ -1,5 +1,5 @@
 experiment_dir:
-spec_file: prompt_specifications/specification_with_updated_nld.txt
+spec_file: prompt_specifications/spec_template.txt
 nld_path: prompt_specifications/nld.txt
 codebase_path: prompt_specifications/codebase.txt
 failure_analysis_prompt: prompt_specifications/failure_analysis.txt
@@ -25,12 +25,15 @@ tasks:
   - make[shears]
   - make[ladder]
   - make[goldarrow]
+  - make[goldhammer]
+  - make[clothbundle]
+  - make[clothbundleextra]
 max_dsl_evolutions: 2
 max_function_evolutions: 0
 total_samples: 1000
 num_explicit_feedback_iterations: 30
-max_attempts: 50 #program synthesis X tries per task
-model_type: huggingface
+max_attempts: 30 #program synthesis X tries per task
+model_type: openai_compat
 recipes_path: craft/resources/recipes.yaml
 hints_path: craft/resources/hints.yaml
 skip_cfg_generation: false

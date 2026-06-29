@@ -158,7 +158,7 @@ Class: CraftScenario
 Represents a single episode setup for CraftWorld.
 Constructor init(grid, init_pos, world)
 Inputs
-- grid: numpy.ndarray of shape (WIDTH, HEIGHT, n_kinds)
+- grid: numpy.ndarray of shape (WIDTH/x, HEIGHT/y, n_kinds)
 - init_pos: tuple(int, int)
 - world: CraftWorld instance
 Outputs

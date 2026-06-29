@@ -1,0 +1,68 @@
+Crafter is a procedurally generated, open-ended 2D survival game
+(https://github.com/danijar/crafter). The agent is embedded in a top-down
+grid world populated with biomes (grass, sand, path, stone, water, lava) and
+resources (trees, stones, coal, iron, diamond, cows, plants, saplings,
+zombies, skeletons). Every episode is a fresh random world; day/night
+cycles govern enemy spawns and sleep mechanics.
+
+The observation at every time step is a 64x64x3 RGB image centered on the
+agent. The action space is 17 discrete actions:
+
+  0 NOOP                 do nothing this step
+  1 MOVE_LEFT            face west and step one tile (if walkable)
+  2 MOVE_RIGHT           face east and step one tile
+  3 MOVE_UP              face north and step one tile
+  4 MOVE_DOWN            face south and step one tile
+  5 DO                   interact with the tile the agent is facing:
+                           chop tree for wood, mine stone/coal/iron/diamond,
+                           drink from water, attack cow/zombie/skeleton,
+                           eat ripe plant, collect sapling
+  6 SLEEP                sleep until rested (needs safe nearby tiles)
+  7 PLACE_STONE          place a stone block in front (uses 1 stone)
+  8 PLACE_TABLE          place a crafting table in front (uses 1 wood)
+  9 PLACE_FURNACE        place a furnace in front (uses 1 stone)
+ 10 PLACE_PLANT          plant a sapling on grass (uses 1 sapling)
+ 11 MAKE_WOOD_PICKAXE    requires adjacent table + 1 wood
+ 12 MAKE_STONE_PICKAXE   requires adjacent table + 1 wood + 1 stone
+ 13 MAKE_IRON_PICKAXE    requires adjacent table + adjacent furnace +
+                           1 wood + 1 coal + 1 iron
+ 14 MAKE_WOOD_SWORD      requires adjacent table + 1 wood
+ 15 MAKE_STONE_SWORD     requires adjacent table + 1 wood + 1 stone
+ 16 MAKE_IRON_SWORD      requires adjacent table + adjacent furnace +
+                           1 wood + 1 coal + 1 iron
+
+The agent has three homeostatic stats (health, food, drink, energy) that
+decay over time. Eating cow or plant restores food; drinking water restores
+drink; sleeping restores energy. Taking damage from zombies, skeletons, or
+starvation reduces health. Hitting 0 health ends the episode.
+
+Progression follows a materials tech tree:
+  wood (from trees)  -> table            -> wood pickaxe / wood sword
+  stone (wood pickaxe) -> furnace         -> stone pickaxe / stone sword
+  coal (wood pickaxe)
+  iron (stone pickaxe) + coal + furnace  -> iron pickaxe / iron sword
+  diamond (iron pickaxe)
+
+Reward signal: the environment grants +1 the first time each of the 22
+achievements is unlocked in an episode. The achievements are:
+
+  collect_wood, place_table, eat_cow, collect_sapling, collect_drink,
+  make_wood_pickaxe, make_wood_sword, place_plant, defeat_zombie,
+  collect_stone, place_stone, eat_plant, defeat_skeleton,
+  make_stone_pickaxe, make_stone_sword, wake_up, place_furnace,
+  collect_coal, collect_iron, collect_diamond, make_iron_pickaxe,
+  make_iron_sword.
+
+The environment exposes this state through ``env.info``:
+
+  env.step(action)    -> (reward, done, obs)
+  env.info            -> the latest info dict, including 'inventory',
+                         'achievements', 'player_pos', and 'semantic'
+  env.reset()         -> reset world, info is cleared
+
+Besides the raw RGB observation, a symbolic local grid view is available
+through ``env.info['semantic']``: a 9x9 window around the agent (radius 4).
+Each cell is a tile name drawn from: empty, grass, path, sand, stone, water,
+lava, tree, coal, iron, diamond, table, furnace, cow, zombie, skeleton,
+arrow, plant, player. The agent always sits at the center of this grid.
+The agent's facing direction is one of {up, down, left, right}.

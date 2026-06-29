@@ -1,0 +1,104 @@
+name: crafter
+description: >
+  Crafter is a 2D top-down survival sandbox (https://github.com/danijar/crafter).
+  The agent lives on a procedurally generated grid world populated with trees,
+  stone, coal, iron, diamond, cows, zombies, skeletons, water, and plants.
+  Observations are 64x64x3 RGB images. Reward is +1 for the first time each
+  achievement is unlocked in an episode (22 achievements total).
+
+# The 17 discrete actions exposed by the env.step(action) integer contract.
+native_actions:
+  - {name: NOOP,              code: 0,  description: "Do nothing for one step."}
+  - {name: MOVE_LEFT,         code: 1,  description: "Face left and move one tile to the west (if the tile is walkable)."}
+  - {name: MOVE_RIGHT,        code: 2,  description: "Face right and move one tile to the east."}
+  - {name: MOVE_UP,           code: 3,  description: "Face up and move one tile to the north."}
+  - {name: MOVE_DOWN,         code: 4,  description: "Face down and move one tile to the south."}
+  - {name: DO,                code: 5,  description: "Use the tile in front of the agent: chop tree, mine stone/coal/iron/diamond, drink water, attack creatures, eat plants, collect sapling."}
+  - {name: SLEEP,             code: 6,  description: "Sleep until energy is restored; only safe at night with no nearby enemies."}
+  - {name: PLACE_STONE,       code: 7,  description: "Place a stone block on the tile in front of the agent (requires 1 stone in inventory)."}
+  - {name: PLACE_TABLE,       code: 8,  description: "Place a crafting table (requires 1 wood)."}
+  - {name: PLACE_FURNACE,     code: 9,  description: "Place a furnace (requires 1 stone)."}
+  - {name: PLACE_PLANT,       code: 10, description: "Plant a sapling on grass (requires 1 sapling)."}
+  - {name: MAKE_WOOD_PICKAXE, code: 11, description: "Craft a wood pickaxe (nearby table, 1 wood)."}
+  - {name: MAKE_STONE_PICKAXE,code: 12, description: "Craft a stone pickaxe (nearby table, 1 wood, 1 stone)."}
+  - {name: MAKE_IRON_PICKAXE, code: 13, description: "Craft an iron pickaxe (nearby table + furnace, 1 wood, 1 coal, 1 iron)."}
+  - {name: MAKE_WOOD_SWORD,   code: 14, description: "Craft a wood sword (nearby table, 1 wood)."}
+  - {name: MAKE_STONE_SWORD,  code: 15, description: "Craft a stone sword (nearby table, 1 wood, 1 stone)."}
+  - {name: MAKE_IRON_SWORD,   code: 16, description: "Craft an iron sword (nearby table + furnace, 1 wood, 1 coal, 1 iron)."}
+
+entities:
+  - tree
+  - stone
+  - coal
+  - iron
+  - diamond
+  - cow
+  - zombie
+  - skeleton
+  - water
+  - lava
+  - sapling
+  - plant
+  - grass
+  - sand
+  - path
+  - table
+  - furnace
+  - wood_pickaxe
+  - stone_pickaxe
+  - iron_pickaxe
+  - wood_sword
+  - stone_sword
+  - iron_sword
+
+tasks:
+  - collect_wood
+  - place_table
+  - eat_cow
+  - collect_sapling
+  - collect_drink
+  - make_wood_pickaxe
+  - make_wood_sword
+  - place_plant
+  - defeat_zombie
+  - collect_stone
+  - place_stone
+  - eat_plant
+  - defeat_skeleton
+  - make_stone_pickaxe
+  - make_stone_sword
+  - wake_up
+  - place_furnace
+  - collect_coal
+  - collect_iron
+  - collect_diamond
+  - make_iron_pickaxe
+  - make_iron_sword
+
+# Crafter has no YAML recipe file; these are transcribed from crafter/engine.py
+# so prompts still receive a structured recipe block.
+recipes:
+  wood_pickaxe:   {requires: {wood: 1}, at: table, yields: wood_pickaxe}
+  stone_pickaxe:  {requires: {wood: 1, stone: 1}, at: table, yields: stone_pickaxe}
+  iron_pickaxe:   {requires: {wood: 1, coal: 1, iron: 1}, at: [table, furnace], yields: iron_pickaxe}
+  wood_sword:     {requires: {wood: 1}, at: table, yields: wood_sword}
+  stone_sword:    {requires: {wood: 1, stone: 1}, at: table, yields: stone_sword}
+  iron_sword:     {requires: {wood: 1, coal: 1, iron: 1}, at: [table, furnace], yields: iron_sword}
+  place_table:    {requires: {wood: 1},     action: PLACE_TABLE}
+  place_furnace:  {requires: {stone: 1},    action: PLACE_FURNACE}
+  place_stone:    {requires: {stone: 1},    action: PLACE_STONE}
+  place_plant:    {requires: {sapling: 1},  action: PLACE_PLANT, on: grass}
+
+extra_context:
+  observation: |
+    env.step(action) returns (reward, done, obs). The obs is a 64x64x3 RGB
+    image; env.info exposes the symbolic state used by terminal pass-checks:
+      - info['inventory']    : dict[str,int] of wood, stone, coal, iron,
+                               diamond, sapling, wood_pickaxe, stone_pickaxe,
+                               iron_pickaxe, wood_sword, stone_sword,
+                               iron_sword, health, food, drink, energy.
+      - info['achievements'] : dict[str,int] of 22 achievement counters
+                               (1 if ever unlocked in the episode).
+      - info['player_pos']   : [x, y] world position of the agent.
+      - info['semantic']     : 64x64 uint8 tile-id grid of the whole world.
+    An episode ends when the agent dies or the step budget is exhausted.

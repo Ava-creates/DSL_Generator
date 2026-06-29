@@ -13,13 +13,10 @@ import re
 import json
 import argparse
 import glob
-import signal
-import threading
 import time
 import requests
 from typing import Dict, List, Tuple, Optional, Any
 import textwrap
-from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add project root to path (go up to project root)
@@ -27,12 +24,19 @@ _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 sys.path.insert(0, _project_root)
 
 from src.pipeline.cfg_to_funsearch_pipeline import (
-    sanitize_function_name, parse_function_name_and_args, implement_cfg,
-    extract_function_args
+    sanitize_function_name,
+    parse_function_name_and_args,
+    implement_cfg,
+    extract_function_args,
+    _normalize_statement_seq_example,
 )
-from src.utils.file_utils import version_file
+from src.utils.file_utils import resolve_cfg_path, version_file
+from src.utils.wall_clock_timeout import wall_clock_timeout
 from src.utils.config_loader import load_config, funsearch_grid_regen_kwargs_from_config
 from src.utils.openai_compat_key import resolve_openai_compat_api_key
+from src.utils.api_openai_compat_walltimes import env_float_openai_compat_scaled
+from src.utils.pipeline_state import read_state
+from src.utils.synthesis_failed_programs import extract_failed_programs_from_synthesis_results
 # Removed dependency on got120dsl_program_synthesis.py
 # Import grid_to_markdown from test.py instead
 from src.utils.test import grid_to_markdown
@@ -54,9 +58,9 @@ except ImportError as e:
     CFG_EVALUATOR_AVAILABLE = False
 
 
-LLM_RESPONSE_TIMEOUT_SECONDS = float(os.environ.get("LLM_RESPONSE_TIMEOUT_SECONDS", "300"))
-PROGRAM_EVAL_TIMEOUT_SECONDS = float(os.environ.get("PROGRAM_EVAL_TIMEOUT_SECONDS", "180"))
-OPENAI_COMPAT_HTTP_TIMEOUT_SECONDS = float(os.environ.get("OPENAI_COMPAT_HTTP_TIMEOUT", "180"))
+LLM_RESPONSE_TIMEOUT_SECONDS = env_float_openai_compat_scaled("LLM_RESPONSE_TIMEOUT_SECONDS", 300.0)
+PROGRAM_EVAL_TIMEOUT_SECONDS = env_float_openai_compat_scaled("PROGRAM_EVAL_TIMEOUT_SECONDS", 180.0)
+OPENAI_COMPAT_HTTP_TIMEOUT_SECONDS = env_float_openai_compat_scaled("OPENAI_COMPAT_HTTP_TIMEOUT", 180.0)
 TEST_TASKS_LLM_DEBUG = str(os.environ.get("TEST_TASKS_LLM_DEBUG", "0")).lower() in {"1", "true", "yes"}
 DEFAULT_TEST_SEEDS = list(range(0, 50, 5))
 
@@ -64,31 +68,6 @@ DEFAULT_TEST_SEEDS = list(range(0, 50, 5))
 def _safe_task_token(task: str) -> str:
     token = re.sub(r"[^A-Za-z0-9._-]+", "_", str(task)).strip("_")
     return token or "task"
-
-
-@contextmanager
-def _wall_clock_timeout(timeout_seconds: Optional[float]):
-    """Best-effort wall-clock timeout guard (main thread on Unix)."""
-    if timeout_seconds is None or timeout_seconds <= 0:
-        yield
-        return
-
-    if not hasattr(signal, "setitimer") or threading.current_thread() is not threading.main_thread():
-        # Fallback: no hard timeout support in this execution context.
-        yield
-        return
-
-    def _handle_timeout(signum, frame):
-        raise TimeoutError(f"LLM response timed out after {timeout_seconds} seconds")
-
-    previous_handler = signal.getsignal(signal.SIGALRM)
-    signal.signal(signal.SIGALRM, _handle_timeout)
-    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
-    try:
-        yield
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def _chat_with_timeout(
@@ -102,7 +81,10 @@ def _chat_with_timeout(
     started = time.monotonic()
     if TEST_TASKS_LLM_DEBUG:
         print(f"[LLM][START] {request_label} timeout={timeout_val}s", flush=True)
-    with _wall_clock_timeout(timeout_val):
+    with wall_clock_timeout(
+        timeout_val,
+        timeout_message=f"LLM response timed out after {timeout_val} seconds",
+    ):
         output = llm.chat(conversation, params)
     if TEST_TASKS_LLM_DEBUG:
         elapsed = time.monotonic() - started
@@ -128,6 +110,8 @@ class _OpenAICompatLLM:
         self.chat_path = chat_path
 
     def chat(self, conversation, params=None):
+        from src.utils.openai_compat_http import extract_chat_content, post_chat_completion
+
         prompt_parts = []
         for msg in conversation:
             role = str(msg.get("role", "user"))
@@ -135,29 +119,19 @@ class _OpenAICompatLLM:
             prompt_parts.append(f"{role}: {content}")
         prompt = "\n\n".join(prompt_parts)
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7,
-            "max_tokens": 10000,
-            "stream": False,
-        }
-        endpoint = self.chat_path
-        if not endpoint.startswith("http://") and not endpoint.startswith("https://"):
-            endpoint = f"{self.base_url}/{endpoint.lstrip('/')}"
-        response = requests.post(
-            endpoint,
-            headers=headers,
-            json=payload,
-            timeout=OPENAI_COMPAT_HTTP_TIMEOUT_SECONDS,
+        status, raw_text, body = post_chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=10000,
+            api_key=self.api_key,
+            timeout_seconds=OPENAI_COMPAT_HTTP_TIMEOUT_SECONDS,
+            label="OpenAICompatLLM",
         )
-        response.raise_for_status()
-        body = response.json()
-        content = body["choices"][0]["message"]["content"]
+        if status >= 400 or body is None:
+            raise RuntimeError(
+                f"OpenAI-compatible API error {status}: {raw_text[:500]}"
+            )
+        content = extract_chat_content(body)
         return [self._Response(content)]
 
 
@@ -165,11 +139,11 @@ def _filter_example_program(example_program: str, terminals: Dict[str, str]) -> 
     """Filter example program to only include functions that exist in terminals dictionary.
     
     Args:
-        example_program: Example program string like "MOVE(UP); COLLECT(WOOD); CRAFT(STICK);"
+        example_program: Example program string like ``MOVE(UP); COLLECT(WOOD);`` (statements separated by ``;``).
         terminals: Dictionary of terminal function names to descriptions
         
     Returns:
-        Filtered example program with only functions that exist in terminals
+        Filtered example program with only functions that exist in terminals, ending with a single ``;``.
     """
     if not example_program or not terminals:
         return example_program
@@ -195,9 +169,8 @@ def _filter_example_program(example_program: str, terminals: Dict[str, str]) -> 
             if func_name in available_funcs:
                 filtered_statements.append(statement)
     
-    # Join filtered statements back with semicolons
     if filtered_statements:
-        return '; '.join(filtered_statements) + (';' if example_program.rstrip().endswith(';') else '')
+        return _normalize_statement_seq_example("; ".join(filtered_statements))
     else:
         # If no statements remain, return empty string (will trigger fallback generation)
         return ""
@@ -434,7 +407,7 @@ def ensure_terminals_match_cfg(cfg: str, terminals: Dict[str, str], shared_vllm=
         return terminals
 
 
-def extract_and_save_cfg(output_text, cfg_dir="cfg"):
+def extract_and_save_cfg(output_text, _cfg_dir="cfg"):
     """
     Extracts three sections from a model output:
       1. Failure Analysis
@@ -685,6 +658,7 @@ def synthesize_and_test_programs(
     experiment_dir: str,
     tasks: List[str],
     cfg_path: str = None,
+    cfg_text: Optional[str] = None,
     terminals: Optional[Dict[str, str]] = None,
     max_attempts: int = 1,
     recipes_path: str = "craft/resources/recipes.yaml",
@@ -710,49 +684,47 @@ def synthesize_and_test_programs(
     print(f"\n{'='*80}")
     print("Synthesizing and Testing Programs")
     print(f"{'='*80}")
-    
-    if cfg_path is None:
-        if cfg_version != -1:
-            cfg_path = os.path.join(experiment_dir, "cfg", f"cfg_output_{cfg_version}.json")
-        else:
-            cfg_path = os.path.join(experiment_dir, "cfg", "cfg_output.json")
 
-    # Load CFG
+    if cfg_version != -1:
+        cfg_path = resolve_cfg_path(experiment_dir, cfg_version)
+    elif cfg_path is None:
+        cfg_path = resolve_cfg_path(experiment_dir, 0)
+
+    print(f"Using CFG for synthesis evaluation: {cfg_path}")
+
+    # Load CFG (prefer caller-supplied cfg_text so prompt and evaluator share one grammar)
     cfg_example = None
-    if cfg_path is None:
-        cfg_path = os.path.join(experiment_dir, "cfg", "cfg_output.json")
-        if os.path.exists(cfg_path):
-            with open(cfg_path, 'r') as f:
+    if cfg_text is not None:
+        cfg = cfg_text
+        if os.path.exists(cfg_path) and cfg_path.endswith(".json"):
+            with open(cfg_path, "r", encoding="utf-8") as f:
                 cfg_data = json.load(f)
-                cfg = cfg_data.get("cfg", "")
-                cfg_example = cfg_data.get("example", None)
-                # Ensure terminals match CFG (add missing functions from CFG)
+                cfg_example = cfg_data.get("example")
                 if terminals is None:
                     terminals = cfg_data.get("terminals", {})
-                terminals = ensure_terminals_match_cfg(cfg, terminals, shared_vllm=shared_vllm)
-        else:
-            # Try to find cfg.txt
-            cfg_txt_path = os.path.join(experiment_dir, "cfg", "cfg.txt")
-            if os.path.exists(cfg_txt_path):
-                with open(cfg_txt_path, 'r') as f:
-                    cfg = f.read()
-            else:
-                print(" Warning: Could not find CFG file, using default")
-                cfg = ""
+        terminals = ensure_terminals_match_cfg(cfg, terminals or {}, shared_vllm=shared_vllm)
+    elif os.path.exists(cfg_path) and cfg_path.endswith(".json"):
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg_data = json.load(f)
+            cfg = cfg_data.get("cfg", "")
+            cfg_example = cfg_data.get("example", None)
+            if terminals is None:
+                terminals = cfg_data.get("terminals", {})
+            terminals = ensure_terminals_match_cfg(cfg, terminals, shared_vllm=shared_vllm)
+    elif cfg_path and os.path.exists(cfg_path):
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = f.read()
+        terminals = ensure_terminals_match_cfg(cfg, terminals or {}, shared_vllm=shared_vllm)
     else:
-        # Check if it's a JSON file
-        if cfg_path.endswith('.json'):
-            with open(cfg_path, 'r') as f:
-                cfg_data = json.load(f)
-                cfg = cfg_data.get("cfg", "")
-                cfg_example = cfg_data.get("example", None)
-                # Ensure terminals match CFG (add missing functions from CFG)
-                if terminals is None:
-                    terminals = cfg_data.get("terminals", {})
-                terminals = ensure_terminals_match_cfg(cfg, terminals, shared_vllm=shared_vllm)
-        else:
-            with open(cfg_path, 'r') as f:
+        cfg_txt_path = os.path.join(experiment_dir, "cfg", "cfg.txt")
+        if os.path.exists(cfg_txt_path):
+            with open(cfg_txt_path, "r", encoding="utf-8") as f:
                 cfg = f.read()
+            terminals = ensure_terminals_match_cfg(cfg, terminals or {}, shared_vllm=shared_vllm)
+        else:
+            print(" Warning: Could not find CFG file, using default")
+            cfg = ""
+            terminals = terminals or {}
     
     # Load final functions (validate against terminals if provided)
     # Pass dsl_round (cfg_version) and func_evolution_round to load correct version
@@ -806,7 +778,7 @@ def synthesize_and_test_programs(
     if model_type == "openai_compat":
         base_url = os.environ.get("OPENAI_COMPAT_BASE_URL", "https://llm.vulcan.alliancecan.ca").strip()
         api_key = resolve_openai_compat_api_key(openai_compat_key_file)
-        model_name = os.environ.get("OPENAI_COMPAT_MODEL", "qwen3-235b").strip()
+        model_name = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-oss-120b").strip()
         chat_path = os.environ.get("OPENAI_COMPAT_CHAT_PATH", "/api/chat/completions").strip()
         llm = _OpenAICompatLLM(
             base_url=base_url,
@@ -1617,7 +1589,7 @@ def evolve_functions_with_failing_tasks(
                         print(f"     Created func_init for {func_name} with current implementation (from previous round)")
                     else:
                         # Version the file before updating
-                        version_file(func_init_file, keep_original=False)
+                        version_file(func_init_file)
                         
                         # Write updated function to func_init file
                         with open(func_init_file, 'w', encoding='utf-8') as f:
@@ -1875,7 +1847,7 @@ def evolve_functions_with_failing_tasks(
             
             # Version existing file if it exists (only if using old naming)
             if dsl_round is None and os.path.exists(func_file):
-                version_file(func_file, keep_original=False)
+                version_file(func_file)
             
             with open(func_file, 'w', encoding='utf-8') as f:
                 f.write(func_code)
@@ -1924,15 +1896,26 @@ def test_cfg_on_tasks(
     print(f"\n{'='*80}")
     print("Testing CFG on Tasks")
     print(f"{'='*80}")
-    
-    cfg_path = os.path.join(experiment_dir, "cfg", "cfg_output.json")
-    
+
+    resolved_cfg_version = cfg_version if cfg_version is not None else 0
+    cfg_path = resolve_cfg_path(experiment_dir, resolved_cfg_version)
+    print(f"Using CFG for task testing: {cfg_path}")
+
     # Test programs using synthesize_and_test_programs
     task_results, _ = synthesize_and_test_programs(
-        experiment_dir, tasks, cfg_path=cfg_path, terminals=terminals,
-        recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
-        shared_vllm=shared_vllm, results_tracker=results_tracker, cfg_version=cfg_version,
-        func_evolution_round=func_evolution_round, synthesis_prompt_path=synthesis_prompt_path,
+        experiment_dir,
+        tasks,
+        cfg_path=cfg_path,
+        cfg_text=cfg,
+        terminals=terminals,
+        recipes_path=recipes_path,
+        hints_path=hints_path,
+        max_attempts=max_attempts,
+        shared_vllm=shared_vllm,
+        results_tracker=results_tracker,
+        cfg_version=resolved_cfg_version,
+        func_evolution_round=func_evolution_round,
+        synthesis_prompt_path=synthesis_prompt_path,
         test_seeds=test_seeds,
         seed_outcome_log_path=seed_outcome_log_path,
         model_type=model_type,
@@ -1948,15 +1931,44 @@ def test_cfg_on_tasks(
     return task_results
 
 
-def _get_dsl_evolution_llm(shared_vllm=None):
-    """Return (llm, params) for DSL evolution (failure analysis + CFG evolution)."""
+def _get_dsl_evolution_llm(
+    shared_vllm=None,
+    *,
+    model_type: str = "huggingface",
+    openai_compat_key_file: Optional[str] = None,
+):
+    """Return (llm, params) for DSL evolution (failure analysis + CFG evolution).
+
+    Uses OpenAI-compatible HTTP API when ``model_type`` is ``openai_compat`` (no local GPU).
+    """
     if shared_vllm is not None:
         llm = shared_vllm
-    else:
-        try:
-            llm = LLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
-        except Exception as e:
-            raise RuntimeError(f" Error initializing LLM: {e}") from e
+        params = SamplingParams(temperature=0.7, max_tokens=25000)
+        return llm, params
+
+    mt = (model_type or "huggingface").strip().lower()
+    if mt == "openai_compat":
+        base_url = os.environ.get("OPENAI_COMPAT_BASE_URL", "https://llm.vulcan.alliancecan.ca").strip()
+        api_key = resolve_openai_compat_api_key(openai_compat_key_file)
+        model_name = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-oss-120b").strip()
+        chat_path = os.environ.get("OPENAI_COMPAT_CHAT_PATH", "/api/chat/completions").strip()
+        llm = _OpenAICompatLLM(
+            base_url=base_url,
+            api_key=api_key,
+            model=model_name,
+            chat_path=chat_path,
+        )
+        return llm, None
+
+    try:
+        llm = LLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
+    except Exception as e:
+        raise RuntimeError(
+            "DSL evolution could not start vLLM (huggingface mode). "
+            "Run on a GPU node with CUDA, or set MODEL_TYPE=openai_compat "
+            "with OPENAI_COMPAT_API_KEY / openai_compat_key_file. "
+            f"Underlying error: {e}"
+        ) from e
     params = SamplingParams(temperature=0.7, max_tokens=25000)
     return llm, params
 
@@ -1968,13 +1980,19 @@ def run_failure_analysis_for_dsl_evolution(
     terminals: Dict[str, str],
     failed_programs_by_task: Optional[Dict[str, List[str]]],
     shared_vllm=None,
+    model_type: str = "huggingface",
+    openai_compat_key_file: Optional[str] = None,
 ) -> str:
     """Run the failure-analysis LLM once. Call before retry loops that only re-run CFG evolution.
 
     Returns:
         Cleaned failure analysis text (after assistantfinal marker strip) for use in cfg_evolution prompt.
     """
-    llm, params = _get_dsl_evolution_llm(shared_vllm)
+    llm, params = _get_dsl_evolution_llm(
+        shared_vllm,
+        model_type=model_type,
+        openai_compat_key_file=openai_compat_key_file,
+    )
 
     config = load_config()
     prompt_rel = config.get("failure_analysis_prompt", "prompt_specifications/failure_analysis.txt")
@@ -2045,6 +2063,8 @@ def evolve_dsl(
     failure_analysis: str,
     shared_vllm=None,
     new_dsl_round: Optional[int] = None,
+    model_type: str = "huggingface",
+    openai_compat_key_file: Optional[str] = None,
 ) -> Tuple[str, Dict[str, str], bool]:
     """Evolve the DSL from a precomputed failure analysis (CFG evolution LLM only).
 
@@ -2060,7 +2080,11 @@ def evolve_dsl(
     print(f"Failing tasks: {failing_tasks}")
 
     try:
-        llm, params = _get_dsl_evolution_llm(shared_vllm)
+        llm, params = _get_dsl_evolution_llm(
+            shared_vllm,
+            model_type=model_type,
+            openai_compat_key_file=openai_compat_key_file,
+        )
     except RuntimeError as e:
         print(str(e))
         return cfg, terminals, False
@@ -2183,6 +2207,10 @@ def evolve_dsl(
             with open(cfg_path, 'r') as f:
                 cfg_data = json.load(f)
                 example = cfg_data.get("example", None)
+        if example and new_terminals:
+            filtered_example = _filter_example_program(example, new_terminals)
+            if filtered_example and filtered_example.strip():
+                example = filtered_example
         
         is_valid, validation_msg = validate_cfg(cfg_text, example=example)
         
@@ -2221,7 +2249,7 @@ def evolve_dsl(
         # Version file before writing new CFG data
         if os.path.exists(cfg_path):
             try:
-                version_file(cfg_path, keep_original=False)
+                version_file(cfg_path)
                 print("   Versioned previous CFG file")
             except Exception as e:
                 print(f"   Warning: Failed to version CFG file: {e}")
@@ -2297,6 +2325,7 @@ def evolve_dsl_and_restart(
         terminals=terminals,
         failed_programs_by_task=failed_programs_by_task,
         shared_vllm=shared_vllm,
+        model_type=model_type,
     )
 
     for dsl_attempt in range(1, max_retries + 1):
@@ -2311,6 +2340,7 @@ def evolve_dsl_and_restart(
             terminals=terminals,
             failure_analysis=failure_analysis_cached,
             shared_vllm=shared_vllm,
+            model_type=model_type,
         )
         
         # Check if evolution was successful and CFG is different
@@ -2372,6 +2402,33 @@ def evolve_dsl_and_restart(
         return new_cfg, new_terminals, False
 
 
+def _failed_programs_for_dsl_from_synthesis_log(
+    experiment_dir: str,
+    failing_tasks: List[str],
+    max_failed_programs: int,
+    fallback: Optional[Dict[str, List[str]]],
+) -> Dict[str, List[str]]:
+    """Prefer persisted ``synthesis_results.json`` (from Stage 5 / aggregate); else in-memory fallback."""
+    dsl_round = int(read_state(experiment_dir).get("dsl_round", 0))
+    from_log = extract_failed_programs_from_synthesis_results(
+        experiment_dir,
+        failing_tasks,
+        dsl_version=dsl_round,
+        max_programs_per_task=max_failed_programs,
+    )
+    if from_log:
+        print(
+            "[DSL Evolution] Failure context from results_tracking/synthesis_results.json "
+            f"(pipeline dsl_round={dsl_round}, up to {max_failed_programs} failures/task)."
+        )
+        return from_log
+    print(
+        "[DSL Evolution] No matching rows in synthesis_results.json for this dsl_round and tasks; "
+        "using failures from the last in-process synthesize_and_test_programs run (if any)."
+    )
+    return dict(fallback or {})
+
+
 def run_integrated_pipeline(
     experiment_dir: str,
     spec_file: str,
@@ -2386,6 +2443,7 @@ def run_integrated_pipeline(
     synthesis_prompt_path: str = None,
     include_final_functions_in_prompt: bool = False,
     openai_compat_key_file: Optional[str] = None,
+    max_failed_programs_for_dsl: int = 30,
 ) -> int:
     """Run the complete integrated pipeline.
     
@@ -2493,9 +2551,16 @@ def run_integrated_pipeline(
     # Step 2: Synthesize and test programs
     print("\n[Step 2] Synthesizing and testing programs...")
     task_results, failed_programs_by_task = synthesize_and_test_programs(
-        experiment_dir, tasks, cfg_path=cfg_path, terminals=terminals,
-        recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
-        shared_vllm=shared_vllm, synthesis_prompt_path=synthesis_prompt_path,
+        experiment_dir,
+        tasks,
+        cfg_path=cfg_path,
+        cfg_text=cfg,
+        terminals=terminals,
+        recipes_path=recipes_path,
+        hints_path=hints_path,
+        max_attempts=max_attempts,
+        shared_vllm=shared_vllm,
+        synthesis_prompt_path=synthesis_prompt_path,
         test_seeds=test_seeds,
         include_final_functions_in_prompt=include_final_functions_in_prompt,
         openai_compat_key_file=openai_compat_key_file,
@@ -2543,9 +2608,16 @@ def run_integrated_pipeline(
         if evolved:
             # Re-test tasks
             task_results, failed_programs_by_task = synthesize_and_test_programs(
-                experiment_dir, failing_tasks, cfg_path=cfg_path, terminals=terminals,
-                recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
-                shared_vllm=shared_vllm, synthesis_prompt_path=synthesis_prompt_path,
+                experiment_dir,
+                failing_tasks,
+                cfg_path=cfg_path,
+                cfg_text=cfg,
+                terminals=terminals,
+                recipes_path=recipes_path,
+                hints_path=hints_path,
+                max_attempts=max_attempts,
+                shared_vllm=shared_vllm,
+                synthesis_prompt_path=synthesis_prompt_path,
                 test_seeds=test_seeds,
                 include_final_functions_in_prompt=include_final_functions_in_prompt,
                 openai_compat_key_file=openai_compat_key_file,
@@ -2569,13 +2641,20 @@ def run_integrated_pipeline(
     
     for dsl_evolution_round in range(max_dsl_evolutions):
         print(f"\n  DSL Evolution round {dsl_evolution_round + 1}/{max_dsl_evolutions}")
-        
+
+        evolve_failed_programs = _failed_programs_for_dsl_from_synthesis_log(
+            experiment_dir,
+            failing_tasks,
+            max_failed_programs_for_dsl,
+            failed_programs_by_task,
+        )
+
         # Evolve DSL and implement
         new_cfg, new_terminals, implementation_success = evolve_dsl_and_restart(
             experiment_dir, failing_tasks, current_cfg, recipes, 
             spec_file=spec_file, terminals=current_terminals,
             shared_vllm=shared_vllm, model_type="huggingface",
-            failed_programs_by_task=failed_programs_by_task,
+            failed_programs_by_task=evolve_failed_programs,
         )
         
         if new_cfg == current_cfg:
@@ -2610,9 +2689,16 @@ def run_integrated_pipeline(
         # Re-test tasks with new CFG and functions
         print("\n  Re-testing tasks with evolved DSL...")
         task_results, failed_programs_by_task = synthesize_and_test_programs(
-            experiment_dir, failing_tasks, cfg_path=cfg_path, terminals=current_terminals,
-            recipes_path=recipes_path, hints_path=hints_path, max_attempts=max_attempts,
-            shared_vllm=shared_vllm, synthesis_prompt_path=synthesis_prompt_path,
+            experiment_dir,
+            failing_tasks,
+            cfg_path=cfg_path,
+            cfg_text=current_cfg,
+            terminals=current_terminals,
+            recipes_path=recipes_path,
+            hints_path=hints_path,
+            max_attempts=max_attempts,
+            shared_vllm=shared_vllm,
+            synthesis_prompt_path=synthesis_prompt_path,
             test_seeds=test_seeds,
             include_final_functions_in_prompt=include_final_functions_in_prompt,
             openai_compat_key_file=openai_compat_key_file,
@@ -2720,7 +2806,14 @@ def main():
         default=None,
         help='File with OpenAI-compatible API key (first non-empty line). Default: <repo>/key.txt if OPENAI_COMPAT_API_KEY unset.',
     )
-    
+    parser.add_argument(
+        '--max_failed_programs_for_dsl',
+        type=int,
+        default=30,
+        help='Max failed synthesis attempts per task to include in DSL failure-analysis prompt '
+        '(from results_tracking/synthesis_results.json when present; default: 30)',
+    )
+
     args = parser.parse_args()
     
     # Handle case where tasks argument is a JSON file path
@@ -2750,6 +2843,7 @@ def main():
         synthesis_prompt_path=args.synthesis_prompt,
         include_final_functions_in_prompt=args.with_final_functions_in_prompt,
         openai_compat_key_file=args.openai_compat_key_file,
+        max_failed_programs_for_dsl=args.max_failed_programs_for_dsl,
     )
 
 

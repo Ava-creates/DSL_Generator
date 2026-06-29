@@ -10,6 +10,7 @@ blake3==1.0.7
 cachetools==6.2.0+computecanada
 cbor2==5.7.0
 certifi==2025.10.5+computecanada
+crafter==1.8.3+computecanada
 cffi==2.0.0
 charset_normalizer==3.4.3+computecanada
 click==8.2.1
@@ -85,6 +86,7 @@ nvidia-nvjitlink-cu12==12.8.93
 nvidia-nvtx-cu12==12.8.90
 openai==2.3.0
 openai-harmony==0.0.4
+opensimplex==0.4.5.1
 opencv-python==4.12.0.88
 opencv-python-headless==4.12.0.88
 outlines_core==0.2.11
@@ -124,6 +126,7 @@ rich-toolkit==0.15.1
 rignore==0.7.0
 rpds-py==0.27.1
 rsa==4.9.1+computecanada
+ruamel.yaml==0.19.1+computecanada
 safetensors==0.5.3+computecanada
 scikit_image==0.25.2+computecanada
 scipy==1.15.2+computecanada

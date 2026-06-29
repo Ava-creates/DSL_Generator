@@ -61,8 +61,25 @@ recipes:
     plank: 1
     grass: 1
     _at: workshop1
+## extar tasks
+  goldhammer:
+    gold: 1
+    hammer: 1
+    _at: workshop0
 
+  clothbundle:
+    cloth: 1
+    grass: 1
+    wood: 1
+    _at: workshop1
 
+  clothbundleextra:
+    clothbundle: 1
+    rock: 1
+    iron: 1
+    wood: 1
+    _at: workshop1
+##
   shears:
     stick: 1
     iron: 1

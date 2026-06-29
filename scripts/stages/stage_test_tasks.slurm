@@ -7,7 +7,6 @@
 #SBATCH --time=15:00:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
-#SBATCH --gres=gpu:4
 #SBATCH --account=aip-lelis
 
 # Activate virtual environment
@@ -48,6 +47,12 @@ else
     SINGLE_TASK_ARG=""
 fi
 
+if [ -n "${OPENAI_COMPAT_KEY_FILE:-}" ]; then
+    OPENAI_KEY_FILE_ARG="--openai_compat_key_file $OPENAI_COMPAT_KEY_FILE"
+else
+    OPENAI_KEY_FILE_ARG=""
+fi
+
 # Must match DEFAULT_TEST_SEEDS in src/pipeline/stages/stage_test_tasks.py (0,5,...,45).
 export TEST_SEEDS="0 5 10 15 20 25 30 35 40 45"
 TEST_SEEDS_ARG="--test_seeds ${TEST_SEEDS}"
@@ -60,9 +65,11 @@ python src/pipeline/stages/stage_test_tasks.py \
     --max_attempts "${MAX_ATTEMPTS:-30}" \
     $TEST_SEEDS_ARG \
     --dsl_round "${DSL_ROUND:-0}" \
+    --model_type "${MODEL_TYPE:-huggingface}" \
     $FUNC_ROUND_ARG \
     $SINGLE_TASK_ARG \
-    $SYNTH_PROMPT_ARG
+    $SYNTH_PROMPT_ARG \
+    $OPENAI_KEY_FILE_ARG
 
 # Chain to next stage based on state (run in background so job exits immediately)
 # sbatch commands are non-blocking and submit jobs immediately, so chaining should be fast

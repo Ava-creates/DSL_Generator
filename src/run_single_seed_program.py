@@ -5,7 +5,6 @@ Run one DSL program on one task + seed using an experiment's CFG/functions.
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 

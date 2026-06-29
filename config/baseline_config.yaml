@@ -3,16 +3,17 @@ spec_file: prompt_specifications/specification_with_updated_nld_baseline.txt
 nld_path: prompt_specifications/nld.txt
 codebase_path: prompt_specifications/codebase.txt
 
-model_type: huggingface
+# Use openai_compat for HTTP API; override with --model_type huggingface for local vLLM.
+model_type: openai_compat
 dsl_round: 0
 func_evolution_round: 0
 total_samples: 1000
-num_explicit_feedback_iterations: 50
+num_explicit_feedback_iterations: 30
 
 recipes_path: craft/resources/recipes.yaml
 hints_path: craft/resources/hints.yaml
 
-grid_prompt_path: prompt_specifications/prompt_specifications/grid_prompt_withcoordinateinfo.txt
+grid_prompt_path: prompt_specifications/grid_prompt_withcoordinateinfo.txt
 require_test_type: true
 skip_positive_grids: false
 positive_grids: 10
@@ -24,7 +25,7 @@ use_existing_grid_specs: false
 # Baseline-only knobs consumed by src/baseline.py and stage_baseline.slurm
 cfg_text: ""
 job_prefix: baseline
-baseline_variant: testcase #can be testcase, task_env
+baseline_variant: task_env #can be testcase, task_env
 phase2_only: false
 phase2_seed_round:
 task_env_rounds: 1

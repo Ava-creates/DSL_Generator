@@ -1,0 +1,52 @@
+experiment_dir:
+spec_file: prompt_specifications/specification_with_updated_nld_withcardianlthign.txt
+nld_path: prompt_specifications/nld.txt
+codebase_path: prompt_specifications/codebase.txt
+failure_analysis_prompt: prompt_specifications/failure_analysis.txt
+cfg_evolution_prompt: prompt_specifications/cfg_evolution.txt
+synthesis_prompt: prompt_specifications/prompt_synth_with_grid_and_failures.txt
+cfg_generator_prompt_path: prompt_specifications/cfg_generator.txt
+domain_context_template_path: prompt_specifications/more_domain_context.txt
+job_prefix: cardinal_hf
+tasks:
+  - get[gem]
+  - get[iron]
+  - get[wood]
+  - get[grass]
+  - get[gold]
+  - make[plank]
+  - make[stick]
+  - make[cloth]
+  - make[rope]
+  - make[bridge]
+  - make[bundle]
+  - make[flag]
+  - make[bed]
+  - make[axe]
+  - make[shears]
+  - make[ladder]
+  - make[goldarrow]
+  - make[goldhammer]
+  - make[clothbundle]
+  - make[clothbundleextra]
+max_dsl_evolutions: 2
+max_function_evolutions: 0
+total_samples: 1000
+num_explicit_feedback_iterations: 30
+max_attempts: 50
+model_type: huggingface
+recipes_path: craft/resources/recipes.yaml
+hints_path: craft/resources/hints.yaml
+skip_cfg_generation: false
+cfg_output_file:
+max_cfg_retries: 10
+grid_regeneration_attempts: 15
+positive_girds: 10
+negative_grids: 4
+edge_grids: 1
+grid_spec_llm_attempts: 5
+use_existing_grid_specs: false
+grid_spec_dir: ""
+grid_prompt_path: prompt_specifications/grid_prompt_withcoordinateinfo.txt
+require_test_type: true
+skip_positive_grids: false

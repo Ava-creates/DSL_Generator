@@ -4,17 +4,21 @@
 #SBATCH --mail-user=avani4@ualberta.ca
 #SBATCH --output=scripts/log/stage_file_generation_%j.out
 #SBATCH --error=scripts/log/stage_file_generation_%j.err
-#SBATCH --time=2:00:00
+#SBATCH --time=10:00:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
-#SBATCH --gres=gpu:4
 #SBATCH --account=aip-lelis
 
 # Activate virtual environment
 source new_dsl_env/bin/activate
 
 # Set working directory to project root
-cd /home/avani/projects/aip-lelis/avani/DSL_Generator
+ROOT="/home/avani/projects/aip-lelis/avani/DSL_Generator"
+cd ""
+
+if [ "openai_compat" = "openai_compat" ]; then
+  echo "[stage_file_generation] API mode (CPU-only, no local vLLM)"
+fi
 
 source scripts/stages/log_chain_context.sh
 

@@ -7,7 +7,6 @@
 #SBATCH --time=6:00:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
-#SBATCH --gres=gpu:4
 #SBATCH --account=aip-lelis
 
 # Activate virtual environment

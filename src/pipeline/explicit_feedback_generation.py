@@ -8,6 +8,8 @@ from urllib3.util.retry import Retry
 from typing import List, Tuple, Dict, Any, Optional
 import time
 
+from src.utils.api_openai_compat_walltimes import env_float_openai_compat_scaled
+
 try:
     from vllm import SamplingParams
     from vllm import LLM as vLLM
@@ -37,12 +39,13 @@ class OpenAICompatLLMWrapper:
 
     def __init__(self, key_file: Optional[str] = None) -> None:
         from src.utils.openai_compat_key import resolve_openai_compat_api_key
+
         self._api_key = resolve_openai_compat_api_key(key_file)
         self._base_url = os.environ.get(
             "OPENAI_COMPAT_BASE_URL", "https://llm.vulcan.alliancecan.ca"
         ).rstrip("/")
-        self._model = os.environ.get("OPENAI_COMPAT_MODEL", "qwen3-235b").strip()
-        self._timeout_seconds = float(os.environ.get("OPENAI_COMPAT_HTTP_TIMEOUT", "500"))
+        self._model = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-oss-120b").strip()
+        self._timeout_seconds = env_float_openai_compat_scaled("OPENAI_COMPAT_HTTP_TIMEOUT", 500.0)
         self._retry_total = int(os.environ.get("OPENAI_COMPAT_MAX_RETRIES", "4"))
         self._backoff_factor = float(os.environ.get("OPENAI_COMPAT_BACKOFF_FACTOR", "1.0"))
         chat_path = os.environ.get(
@@ -67,54 +70,24 @@ class OpenAICompatLLMWrapper:
         return results
 
     def _call(self, prompt: str, temperature: float, max_tokens: int) -> str:
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": self._model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            "stream": False,
-        }
-        retry = Retry(
-            total=self._retry_total,
-            connect=self._retry_total,
-            read=self._retry_total,
-            status=self._retry_total,
-            backoff_factor=self._backoff_factor,
-            status_forcelist=(408, 429, 500, 502, 503, 504),
-            allowed_methods=frozenset(["POST"]),
-            raise_on_status=False,
+        from src.utils.openai_compat_http import extract_chat_content, post_chat_completion
+
+        status, body_text, parsed = post_chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            api_key=self._api_key,
+            timeout_seconds=self._timeout_seconds,
+            label="OpenAICompatLLMWrapper",
         )
-        session = _requests.Session()
-        adapter = HTTPAdapter(max_retries=retry)
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
-        response = session.post(
-            self._endpoint, headers=headers, json=payload, timeout=self._timeout_seconds
-        )
-        if response.status_code >= 400:
+        if status >= 400 or parsed is None:
             print(
-                f"[OpenAICompatLLMWrapper] API error {response.status_code}: {response.text}"
+                f"[OpenAICompatLLMWrapper] API error {status}: {body_text[:500]}"
             )
             return ""
-        body = response.json()
-        choices = body.get("choices", [])
-        if not choices:
+        content = extract_chat_content(parsed)
+        if not content:
             print("[OpenAICompatLLMWrapper] API returned no choices")
-            return ""
-        first_choice = choices[0]
-        message = first_choice.get("message")
-        if isinstance(message, dict):
-            content = message.get("content", "")
-        elif isinstance(first_choice.get("text"), str):
-            content = first_choice.get("text", "")
-        else:
-            content = ""
-        if not isinstance(content, str):
-            content = str(content)
         return content
 
 def get_end_score(scores: Dict[str, Any]) -> Optional[float]:
@@ -618,20 +591,9 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
 
     def _ensure_signature(code: str, signature: str) -> str:
         """Ensure returned function code includes the expected def signature."""
-        if not code:
-            return code
-        if re.search(r'^\s*def\s+\w+\s*\(', code, re.MULTILINE):
-            return code
+        from src.utils.saved_function import ensure_function_def
 
-        sig_clean = re.sub(r'\s*->\s*[^:]+', '', (signature or '').strip())
-        if not sig_clean:
-            return code
-        if not sig_clean.endswith(':'):
-            sig_clean += ':'
-
-        body = code.strip('\n')
-        indented = "\n".join((f"    {ln}" if ln.strip() else "") for ln in body.splitlines())
-        return f"{sig_clean}\n{indented}\n"
+        return ensure_function_def(code, signature)
     
     best_func = pool[0][1] if pool else None
     best_score = pool[0][0] if pool else float('-inf')

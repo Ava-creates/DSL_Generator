@@ -19,7 +19,7 @@ import glob
 from funsearch.implementation.funsearch import FunSearch
 from funsearch.implementation import config as config_lib
 from src.utils.file_utils import version_file
-from src.utils.results_tracker import plot_funsearch_reward_vs_interactions
+from src.utils.results_tracker import ResultsTracker, plot_funsearch_reward_vs_interactions
 from src.utils.config_loader import funsearch_grid_regen_kwargs_from_config, load_config
 from src.pipeline.grid_generation import ensure_function_grid_spec
 from src.pipeline.domain_templates import (
@@ -127,119 +127,99 @@ def _load_seed_body(
     return ""
 
 
-def extract_function_args(func_name: str, cfg: str) -> str:
-    """Extract function arguments from function name or CFG dynamically.
-    
-    Returns a comma-separated string of all arguments (e.g., "tool, item").
-    """
-    # First, try to parse arguments directly from the function name
-    # (e.g., "TURN(DIR)" or "USE(TOOL, OBSTACLE)")
-    
+def extract_raw_cfg_arg_symbols(func_name: str, cfg: str) -> list[str]:
+    """Extract raw CFG argument symbols in order (e.g. ['INTEGER'] or ['ITEM', 'OBSTACLE'])."""
     base_name, args_from_name = parse_function_name_and_args(func_name)
-    
+
     if args_from_name:
-        # Return all arguments as comma-separated string
-        return ", ".join([arg.lower() for arg in args_from_name])
-    
-    # If no args in function name, try to extract from CFG
+        return [a.strip().upper() for a in args_from_name if a.strip()]
+
     if not cfg:
         print(f"No CFG found for {func_name}")
         sys.exit(1)
-        return "arg"
-    
-    # Use base_name for CFG search (without parentheses)
+
     func_name_for_search = base_name
-    
-    # Try patterns to extract ALL arguments from CFG
-    # Pattern 1: FUNC_NAME LPAR ARG1 COMMA ARG2 COMMA ... RPAR (handles any number of args)
-    # Match: FUNC_NAME LPAR ... RPAR and extract everything between LPAR and RPAR
+
     pattern_with_lpar = rf"{re.escape(func_name_for_search)}\s+LPAR\s+(.*?)\s+RPAR"
     match = re.search(pattern_with_lpar, cfg, re.IGNORECASE | re.MULTILINE | re.DOTALL)
     if match:
         args_content = match.group(1).strip()
-        # Split by COMMA to get individual arguments
-        # Filter out COMMA tokens and extract actual argument names
-        args_list = []
-        # Split by COMMA (as a token, not literal comma)
+        args_list: list[str] = []
         parts = re.split(r'\s+COMMA\s+', args_content, flags=re.IGNORECASE)
         for part in parts:
             part = part.strip()
-            # Extract the argument name (should be a single word/non-terminal)
-            # Filter out LPAR, RPAR, COMMA tokens
             if part and part.upper() not in ['LPAR', 'RPAR', 'COMMA', 'SEMI', 'SEMICOLON']:
-                # Take the first word as the argument name
                 arg_match = re.match(r'^(\w+)', part)
                 if arg_match:
-                    arg = arg_match.group(1).strip().lower()
-                    if arg and arg not in ['lpar', 'rpar', 'comma', 'semi', 'lparen', 'rparen']:
+                    arg = arg_match.group(1).strip().upper()
+                    if arg and arg not in ['LPAR', 'RPAR', 'COMMA', 'SEMI', 'LPAREN', 'RPAREN']:
                         args_list.append(arg)
-        
         if args_list:
-            return ", ".join(args_list)
-    
-    # Pattern 2: FUNC_NAME LPAR ARG RPAR (single argument)
+            return args_list
+
     single_arg_pattern = rf"{re.escape(func_name_for_search)}\s+LPAR\s+(\w+)\s+RPAR"
     match = re.search(single_arg_pattern, cfg, re.IGNORECASE | re.MULTILINE)
     if match:
-        arg = match.group(1).strip().lower()
-        if arg and arg not in ['lpar', 'rpar', 'comma', 'semi', 'lparen', 'rparen', '(', ')']:
-            return arg
-    
-    # Pattern 3: FUNC_NAME(ARG1, ARG2, ...) with literal parentheses (handles any number)
+        arg = match.group(1).strip().upper()
+        if arg and arg not in ['LPAR', 'RPAR', 'COMMA', 'SEMI', 'LPAREN', 'RPAREN', '(', ')']:
+            return [arg]
+
     pattern_literal = rf"{re.escape(func_name_for_search)}\s*\(\s*([^)]+)\s*\)"
     match = re.search(pattern_literal, cfg, re.IGNORECASE | re.MULTILINE)
     if match:
         args_content = match.group(1).strip()
-        # Split by comma
         args_list = []
         for arg in args_content.split(','):
-            arg = arg.strip()
-            if arg and arg.upper() not in ['LPAR', 'RPAR', 'COMMA', 'SEMI']:
-                args_list.append(arg.lower())
+            arg = arg.strip().upper()
+            if arg and arg not in ['LPAR', 'RPAR', 'COMMA', 'SEMI']:
+                args_list.append(arg)
         if args_list:
-            return ", ".join(args_list)
-    
-    # Pattern 4: FUNC_NAME(ARG) single arg with literal parentheses
+            return args_list
+
     single_arg_pattern2 = rf"{re.escape(func_name_for_search)}\s*\(\s*(\w+)\s*\)"
     match = re.search(single_arg_pattern2, cfg, re.IGNORECASE | re.MULTILINE)
     if match:
-        arg = match.group(1).strip().lower()
-        if arg and arg not in ['lpar', 'rpar', 'comma', 'semi']:
-            return arg
-    
-    # Last resort: return generic default
-    return "arg"
+        arg = match.group(1).strip().upper()
+        if arg and arg not in ['LPAR', 'RPAR', 'COMMA', 'SEMI']:
+            return [arg]
+
+    from src.pipeline.cfg_parser import CFGParser
+    parser = CFGParser(cfg)
+    for fname, fargs in parser.get_terminal_functions():
+        if fname.strip().upper() == func_name_for_search.strip().upper():
+            if fargs:
+                return [a.strip().upper() for a in fargs if a.strip()]
+            break
+
+    return []
+
+
+def extract_function_args(func_name: str, cfg: str) -> str:
+    """Python parameter names derived from CFG argument symbols (lowercased as-is)."""
+    symbols = extract_raw_cfg_arg_symbols(func_name, cfg)
+    if not symbols:
+        return "arg"
+    return ", ".join(s.lower() for s in symbols)
 
 
 def infer_return_type(description: str) -> tuple[str, str]:
     """Infer return type and default return value from function description."""
-    desc_lower = description.lower()
-    
-    # Check for boolean return indicators
-    if any(phrase in desc_lower for phrase in ["returns true", "returns false", "returns bool", "boolean"]):
-        return "bool", "False"
-    
-    # Check for integer return indicators
-    if any(phrase in desc_lower for phrase in ["returns int", "returns number", "action number", "returns -1", "returns 0"]):
-        return "int", "-1"
-    
+
     # Default to list of actions
     return "list[int]", "[]"
 
 
 def infer_argument_type(arg_name: str, cfg: str, description: str = "") -> str:
-    """Infer the type of a function argument from CFG or description.
-    
-    Args:
-        arg_name: Name of the argument (e.g., "dir", "item")
-        cfg: The CFG string
-        description: Optional function description for additional hints
-        
-    Returns:
-        Type string: "str", "int", or "float"
-    """
-    # Parse CFG rule first; this is the most reliable source of argument type.
-    # We only collect the target rule's RHS and its direct continuation lines.
+    """Infer argument type from the CFG rule for this symbol (domain-agnostic)."""
+    for lookup_name in (arg_name, arg_name.upper()):
+        inferred = _infer_argument_type_from_cfg_rule(lookup_name, cfg)
+        if inferred is not None:
+            return inferred
+    return "str"
+
+
+def _infer_argument_type_from_cfg_rule(arg_name: str, cfg: str) -> str | None:
+    """Return int/float/str from a CFG ::= rule, or None if rule not found."""
     if cfg:
         rule_head_pattern = rf"^\s*{re.escape(arg_name)}\s*::=\s*(.*)$"
         head_match = re.search(rule_head_pattern, cfg, re.IGNORECASE | re.MULTILINE)
@@ -273,13 +253,10 @@ def infer_argument_type(arg_name: str, cfg: str, description: str = "") -> str:
                 if value_types == {"float"}:
                     return "float"
                 if value_types <= {"int", "float"}:
-                    # Mixed numeric domains default to float.
                     return "float"
                 return "str"
-    
-    
-    # Default to string (most common for DSL arguments)
-    return "str"
+
+    return None
 
 
 def create_experiment_directory(base_name: str = "experiment") -> str:
@@ -943,6 +920,22 @@ def generate_func_init(func_name: str, description: str, cfg: str = "",
     return func_init_file
 
 
+def _normalize_statement_seq_example(text: str) -> str:
+    """Prepare example text for CFG example programs.
+
+    - Collapse duplicate separators (``;;``, ``; ;``, …) to a single ``;`` between statements.
+    - Remove dangling leading/trailing separators to avoid parse failures at ``$END``.
+    """
+    s = text.strip()
+    if not s:
+        return s
+    s = re.sub(r"(?:;\s*){2,}", "; ", s)
+    s = re.sub(r"^\s*;\s*", "", s)
+    s = re.sub(r"\s*;\s*$", "", s)
+    s = s.strip()
+    return s
+
+
 def convert_tokenized_to_program_format(tokenized_example: str) -> str:
     """Convert tokenized example format to program format.
     
@@ -976,15 +969,12 @@ def convert_tokenized_to_program_format(tokenized_example: str) -> str:
     result = re.sub(r'\s*\)\s*', ')', result)  # Remove spaces around )
     result = re.sub(r'\s*,\s*', ',', result)   # Remove spaces around ,
     result = re.sub(r'\s*;\s*', '; ', result)  # Normalize semicolons
-    
+
     # Clean up multiple spaces
     result = re.sub(r'\s+', ' ', result)
-    
-    # Ensure it ends with semicolon
+
     result = result.strip()
-    if result and not result.endswith(';'):
-        result += ';'
-    
+    result = _normalize_statement_seq_example(result)
     return result
 
 
@@ -1047,6 +1037,9 @@ def validate_cfg(cfg: str, example: Optional[str] = None) -> Tuple[bool, str]:
             # Check for LPAR or RPAR as separate tokens (not part of other words)
             if re.search(r'\bLPAR\b', example_clean) or re.search(r'\bRPAR\b', example_clean):
                 example_clean = convert_tokenized_to_program_format(example_clean)
+
+            # LLMs / tokenized output may produce ``;;``; collapse to single ``;`` and ensure one trailing ``;``.
+            example_clean = _normalize_statement_seq_example(example_clean)
             
             try:
                 # Attempt to parse the example program
@@ -1166,6 +1159,12 @@ def run_explicit_feedback_generation(func_name: str, results_dir: str, func_file
     Returns:
         Final function code as string, or None if extraction failed
     """
+    if results_tracker is None:
+        results_tracker = ResultsTracker(experiment_dir)
+        print(
+            "[run_explicit_feedback_generation] ResultsTracker attached "
+            "(experiment_dir → results_tracking/): explicit-feedback interaction counts persist."
+        )
     # Import using package path so it works when project root is on sys.path
     from src.pipeline.explicit_feedback_generation import parse_log_file, response_gen
     
@@ -1398,7 +1397,7 @@ def get_cfg(
                     
                     # Version existing file before writing new one
                     if os.path.exists(cfg_path):
-                        version_file(cfg_path, keep_original=False)
+                        version_file(cfg_path)
                     
                     with open(cfg_path, 'w', encoding='utf-8') as f:
                         json.dump(cfg_data, f, indent=2, ensure_ascii=False)
@@ -1560,6 +1559,13 @@ def implement_cfg(
     print(f"\n{'='*80}")
     print("Implementing CFG (Steps 2-7)")
     print(f"{'='*80}")
+
+    if results_tracker is None:
+        results_tracker = ResultsTracker(experiment_dir)
+        print(
+            "[implement_cfg] ResultsTracker attached "
+            "(experiment_dir → results_tracking/): FunSearch + explicit-feedback interactions persist."
+        )
     
     # Step 2: Generate function-specific prompts
     print("\n[Step 2] Generating function-specific prompts...")
@@ -1666,9 +1672,7 @@ def implement_cfg(
             print(f"[{func_name}] Starting FunSearch...")
             # Create a new FunSearch instance for this function (shares vLLM)
             funsearch = FunSearch(model_type=model_type, shared_vllm=shared_vllm)
-            # Pass results_tracker to funsearch so it can pass it to evaluators
-            if results_tracker is not None:
-                funsearch.results_tracker = results_tracker
+            funsearch.results_tracker = results_tracker
             inputs = determine_inputs(func_name, description, cfg)
             
             funsearch.run(

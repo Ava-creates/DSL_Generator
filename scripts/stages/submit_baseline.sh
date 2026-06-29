@@ -48,25 +48,43 @@ if [ -z "${EXPERIMENT_DIR:-}" ]; then
   export EXPERIMENT_DIR
 fi
 
-BASELINE_LOG_DIR="${BASELINE_LOG_DIR:-scripts/log/${EXPERIMENT_DIR}}"
+REPO_ROOT="$(pwd)"
+BASELINE_LOG_DIR="${BASELINE_LOG_DIR:-scripts/log/$(basename "$EXPERIMENT_DIR")}"
+ABS_BASELINE_LOG_DIR="${REPO_ROOT}/${BASELINE_LOG_DIR#./}"
 export BASELINE_LOG_DIR
-mkdir -p "$BASELINE_LOG_DIR"
+mkdir -p "$ABS_BASELINE_LOG_DIR"
 
-echo "[submit_baseline] BASELINE_LOG_DIR=$BASELINE_LOG_DIR"
+echo "[submit_baseline] BASELINE_LOG_DIR=$ABS_BASELINE_LOG_DIR"
 
 # When using the OpenAI-compatible API the orchestrator job itself doesn't need
 # GPUs (model inference happens remotely).  Override the script's #SBATCH
 # defaults so the job lands on a CPU-only partition faster.
 SBATCH_GPU_ARGS=""
 if [ "${MODEL_TYPE:-huggingface}" = "openai_compat" ]; then
-  SBATCH_GPU_ARGS="--gres=gpu:0 --mem=32G --cpus-per-task=4"
+  SBATCH_GPU_ARGS="--mem=16G --cpus-per-task=2"
   echo "[submit_baseline] API mode detected: submitting orchestrator without GPUs"
+fi
+
+EXPORT_VARS="ALL,DSL_GENERATOR_ROOT=${REPO_ROOT},EXPERIMENT_DIR=${EXPERIMENT_DIR},MODEL_TYPE=${MODEL_TYPE:-huggingface},EXPERIMENT_CONFIG=${EXPERIMENT_CONFIG:-config/baseline_config.yaml},BASELINE_VARIANT=${BASELINE_VARIANT},OPENAI_COMPAT_KEY_FILE=${OPENAI_COMPAT_KEY_FILE:-${REPO_ROOT}/key.txt}"
+if [ -n "${JOB_PREFIX:-}" ]; then
+  EXPORT_VARS="${EXPORT_VARS},JOB_PREFIX=${JOB_PREFIX}"
+fi
+if [ -n "${SPEC_FILE:-}" ]; then
+  EXPORT_VARS="${EXPORT_VARS},SPEC_FILE=${SPEC_FILE}"
+fi
+if [ -n "${TOTAL_SAMPLES:-}" ]; then
+  EXPORT_VARS="${EXPORT_VARS},TOTAL_SAMPLES=${TOTAL_SAMPLES}"
+fi
+if [ -n "${NUM_EXPLICIT_FEEDBACK_ITERATIONS:-}" ]; then
+  EXPORT_VARS="${EXPORT_VARS},NUM_EXPLICIT_FEEDBACK_ITERATIONS=${NUM_EXPLICIT_FEEDBACK_ITERATIONS}"
 fi
 
 # shellcheck disable=SC2086
 sbatch \
+  --chdir="$REPO_ROOT" \
+  --export="$EXPORT_VARS" \
   --time "$WALLTIME" \
-  --output "$BASELINE_LOG_DIR/stage_baseline_%j.out" \
-  --error "$BASELINE_LOG_DIR/stage_baseline_%j.err" \
+  --output "${ABS_BASELINE_LOG_DIR}/stage_baseline_%j.out" \
+  --error "${ABS_BASELINE_LOG_DIR}/stage_baseline_%j.err" \
   $SBATCH_GPU_ARGS \
   scripts/stages/stage_baseline.slurm

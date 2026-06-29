@@ -5,9 +5,23 @@ File utility functions for versioning and file operations.
 
 import os
 import re
+from typing import Optional
 
 
-def version_file(file_path: str, keep_original: bool = False) -> None:
+def resolve_cfg_path(experiment_dir: str, dsl_round: Optional[int] = None) -> str:
+    """Return the CFG JSON path for a DSL evolution round.
+
+    Convention (matches stage_test_tasks):
+    - dsl_round > 0  -> cfg/cfg_output_{dsl_round}.json
+    - dsl_round 0 / None -> cfg/cfg_output.json
+    """
+    cfg_dir = os.path.join(experiment_dir, "cfg")
+    if dsl_round is not None and dsl_round > 0:
+        return os.path.join(cfg_dir, f"cfg_output_{dsl_round}.json")
+    return os.path.join(cfg_dir, "cfg_output.json")
+
+
+def version_file(file_path: str) -> None:
     """Version a file by renaming existing versions and creating a new numbered version.
     
     The current file is always the original name (e.g., cfg_output.json).
@@ -20,7 +34,6 @@ def version_file(file_path: str, keep_original: bool = False) -> None:
     
     Args:
         file_path: Path to the file to version
-        # keep_original: (unused)
     """
     if not os.path.exists(file_path):
         return

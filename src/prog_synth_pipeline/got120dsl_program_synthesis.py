@@ -27,6 +27,13 @@ import subprocess
 from vllm import LLM, SamplingParams
 import glob
 
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+from src.utils.api_openai_compat_walltimes import env_float_openai_compat_scaled
+
+PROGRAM_EVAL_TIMEOUT_SECONDS = env_float_openai_compat_scaled("PROGRAM_EVAL_TIMEOUT_SECONDS", 180.0)
+
 
 def eval(res):
     # with tempfile.TemporaryDirectory() as temp_dir:
@@ -485,9 +492,7 @@ hints_path = "craft/resources/hints.yaml"
 evaluator = None
 env_sampler = env_factory.EnvironmentFactory(
             recipes_path, hints_path, 7, max_steps=400, 
-            reuse_environments=False, visualise=False)
-
-PROGRAM_EVAL_TIMEOUT_SECONDS = 180
+            reuse_environments=False,             visualise=False)
 
 
 with open("src/prog_synth_pipeline/task_config.json", "r") as f:
@@ -906,96 +911,6 @@ def synthesis_llm(experiment_dir: str = None, dsl_round: int = None, func_evolut
                 # find_bad_func(funcs, task)
         # # plot_interactions_rewards(interactions, rewards, task)
         # plot_watermark(plot, task)
-            # programs = programs_str
-        # Removed dead code: redundant if True block
-                "role": "user",
-                "content": f"""
-            The following is the failure analysis for the unsuccessful DSL programs:
-
-            {failure_analysis}
-            
-            Previusly failed programs:
-            {programs_str}
-            Use this failure analysis along with the previous failed programs to improve the current CFG for the DSL in order to synthesise better programs that can solve the task: {task}.
-            ---
-
-            ### Current CFG (Context-Free Grammar) for the current DSL:
-            {cfg}
-            ### Current CFG explanation:
-            {cfg_explanation}
-            ### Here are the recipes for the domain, only these items can be used in the programs. You cannot propose any new items that are not in the recipes:
-            {recipes}
-
-            ---
-
-            ### Context
-
-            You are an expert in **DSL and program synthesis** for the **Craft** environment.
-
-            Each program above was generated using the current CFG but failed to complete the task.  
-            Your task is to analyze these failures and propose **targeted improvements**.
-
-            You need to:
-            1. Identify **gaps or weaknesses** in the current CFG.  
-            2. Suggest **specific additions or removal of terminal functions** to the CFG that would enable better synthesis results.  
-            3. Provide **solution explpanation** where the proposed changes are justified based on the failure analysis.
-            ---
-
-            ### Output Format
-
-            Your response must strictly follow this structure:
-
-            Updated CFG(BNF)
-            <return the full updated CFG in BNF format here>
-
-            Updated CFG Explanation
-            <Write a comprehensive, standalone explanation of the entire CFG shown above. 
-            Do NOT list changes, revisions, differences, deltas, or what was “added” or “modified” 
-            compared to previous grammars. Instead, explain the grammar from scratch as if the 
-            reader has never seen any earlier version.
-
-            Your explanation should:
-
-            - Describe the full DSL defined by the CFG at a high level.
-            - Walk through each major nonterminal (e.g., program structure, tasks, movement, 
-            crafting, collecting, breaking, turning, conditionals, items, primitives).
-            - Explain the semantics of each task (e.g., what MOVE_FUNC does, what BREAK_FUNC 
-            does, how direction arguments work, what crafting items represent, etc.).
-            - Describe how programs are structured and executed in this DSL.
-            - Provide a coherent domain-level overview, similar in style to:
-
-            “The CFG defines the DSL for the Craft domain with primitives such as MOVE_FUNC(direction), 
-            COLLECT_FUNC(item), and CRAFT_FUNC(item). MOVE_FUNC moves the agent one cell in the given direction… 
-            [etc.]”
-
-            - Be detailed, cohesive, and descriptive—NOT a change log.
-
-            The explanation should read like documentation for the DSL, not a summary of modifications.>
-
-            Changes in CFG
-            (bullet point list of specific changes made to the CFG)
-
-            Terminal Functions
-            FUNCTION_NAME(args): description of purpose and usage
-
-            If the current CFG is already sufficient, restate it under “CFG Changes (BNF)” and note that no changes are required.
-
-            ---
-            """
-            }]
-            output = llm.chat(conversation, params)
-            output = output[0].outputs[0].text
-            print(output)
-            filepath, cfg_text, term_text, failure_text, cfg_explanation = extract_and_save_cfg(output)
-            # print(cfg_text)
-            cfg = cfg_text
-            print("Updated CFG:\n", cfg)
-            # print(cfg_explanation)
-            # if term_text:
-            #     # Extract terminal functions and ask the LLM to produce a detailed spec + a concrete Python function
-            #     funcs = generate_funsearch_function_using_another_prompt(term_text)
-
-
 
     return programs
 

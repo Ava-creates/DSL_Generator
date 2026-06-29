@@ -8,14 +8,15 @@ import os
 import sys
 import json
 import argparse
-from typing import Dict, List
+import subprocess
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, _project_root)
 
 from src.pipeline.integrated_pipeline import evolve_dsl, run_failure_analysis_for_dsl_evolution
-from src.utils.pipeline_state import read_state, update_state
+from src.utils.pipeline_state import read_state, resolve_model_type_for_chained_jobs, update_state
+from src.utils.synthesis_failed_programs import extract_failed_programs_from_synthesis_results
 from src.utils.file_utils import version_file
 from src.utils.status_manager import write_status
 
@@ -26,120 +27,17 @@ except ImportError:
     vLLM = None
 
 
-def extract_failed_programs_from_synthesis_results(
-    experiment_dir: str,
-    failing_tasks: List[str],
-    dsl_version: int = 0,
-    max_programs_per_task: int = 30,
-) -> Dict[str, List[str]]:
-    """Extract failed programs for failing tasks from synthesis_results.json.
-
-    Uses only results from:
-    - the current DSL version being evolved (cfg_version == dsl_version)
-    - the latest function evolution round observed for that DSL version
-    Then caps programs per task to max_programs_per_task (most recent entries).
-    """
-    synthesis_results_path = os.path.join(experiment_dir, "results_tracking", "synthesis_results.json")
-    
-    if not os.path.exists(synthesis_results_path):
-        print(f"Warning: synthesis_results.json not found at {synthesis_results_path}")
-        return {}
-    
-    failed_programs_by_task = {}
-    
-    try:
-        with open(synthesis_results_path, 'r') as f:
-            synthesis_results = json.load(f)
-    except Exception as e:
-        print(f"Warning: Could not read synthesis_results.json: {e}")
-        return {}
-    
-    source_cfg_version = dsl_version
-
-    relevant_results = [
-        r for r in synthesis_results
-        if r.get("cfg_version", 0) == source_cfg_version and r.get("task") in failing_tasks
-    ]
-
-    if not relevant_results:
-        print(
-            "Warning: No synthesis results found for "
-            f"source cfg_version={source_cfg_version} (requested dsl_version={dsl_version}) "
-            "and requested failing tasks"
-        )
-        return {}
-
-    latest_func_round = max(r.get("func_evolution_round", 0) for r in relevant_results)
-    print(
-        f"Using source cfg_version={source_cfg_version} "
-        f"(requested dsl_version={dsl_version}), "
-        f"latest func_evolution_round={latest_func_round}"
+def _chain_next_stage(experiment_dir: str) -> None:
+    """Submit the next pipeline stage (e.g. file_generation after DSL evolution)."""
+    env = os.environ.copy()
+    env["EXPERIMENT_DIR"] = experiment_dir
+    print("\n[Chaining] Invoking chain_next_stage...")
+    subprocess.run(
+        ["bash", "-c", "source scripts/stages/chain_next_stage.sh && chain_based_on_state"],
+        cwd=_project_root,
+        env=env,
+        check=False,
     )
-
-    latest_round_results = [
-        r for r in relevant_results
-        if r.get("func_evolution_round", 0) == latest_func_round
-    ]
-
-    for task in failing_tasks:
-        failed_programs = []
-        seen_program_keys = set()
-        duplicate_skips = 0
-
-        task_failed_results = [
-            r for r in latest_round_results
-            if r.get("task") == task and not r.get("success", False)
-        ]
-
-        # Keep most recent unique programs first (reverse assumes synthesis_results append order)
-        for result in reversed(task_failed_results):
-            program = result.get("program", "")
-            program_key = " ".join(str(program).split()).strip().lower()
-            if program_key in seen_program_keys:
-                duplicate_skips += 1
-                continue
-            seen_program_keys.add(program_key)
-
-            failure_reason = result.get("failure_reason", "Unknown")
-
-            # Try to extract inventory information from different possible fields
-            inventory_before = result.get("inventory_before", {})
-            inventory_after = result.get("inventory_after", {})
-            inventory_trace = result.get("inventory_trace", [])
-
-            # Format program information with available inventory data
-            lines = [f"Program:\n{program}"]
-
-            # Add inventory information if available
-            if inventory_trace:
-                lines.append("Inventory changes during the program (whole inventory after the function where the change happened):")
-                for entry in inventory_trace:
-                    token = entry.get("token", "?")
-                    inv = entry.get("inventory", [])
-                    inv_str = ", ".join(inv) if inv else "<empty>"
-                    lines.append(f"  {token} -> {inv_str}")
-            elif inventory_before or inventory_after:
-                lines.append(f"Inventory before: {inventory_before}")
-                lines.append(f"Inventory after: {inventory_after}")
-
-            if failure_reason and str(failure_reason).strip().lower() != "unknown":
-                lines.append(f"Failure: {failure_reason}")
-            failed_programs.append("\n".join(lines))
-
-            if max_programs_per_task > 0 and len(failed_programs) >= max_programs_per_task:
-                break
-
-        # restore chronological order in prompt context
-        failed_programs.reverse()
-
-        if failed_programs:
-            failed_programs_by_task[task] = failed_programs
-            print(
-                f"Found {len(failed_programs)} failed programs for task: {task} "
-                f"(capped at {max_programs_per_task}, latest func round only, duplicates skipped={duplicate_skips})"
-            )
-    
-    return failed_programs_by_task
 
 
 def main():
@@ -150,8 +48,31 @@ def main():
     parser.add_argument('--max_retries', type=int, default=10, help='Maximum retries for DSL evolution')
     parser.add_argument('--dsl_version', type=int, default=0, help='DSL version to load (e.g., 0 for cfg_output_0.json)')
     parser.add_argument('--max_failed_programs', type=int, default=30, help='Maximum failed programs per task for failure-analysis context')
-    
+    parser.add_argument(
+        '--model_type',
+        type=str,
+        default=None,
+        choices=['huggingface', 'ollama', 'gemini', 'openai_compat'],
+        help='LLM backend (default: resolve from pipeline_state / MODEL_TYPE; huggingface uses local vLLM)',
+    )
+    parser.add_argument(
+        '--openai_compat_key_file',
+        type=str,
+        default=None,
+        help='Key file for OpenAI-compatible API when model_type is openai_compat',
+    )
+
     args = parser.parse_args()
+
+    cli_model_type = args.model_type
+    if cli_model_type is None:
+        cli_model_type = os.environ.get("MODEL_TYPE", "").strip() or None
+
+    resolved_model_type = resolve_model_type_for_chained_jobs(args.experiment_dir, cli_model_type)
+
+    if args.openai_compat_key_file and not os.environ.get("OPENAI_COMPAT_API_KEY", "").strip():
+        from src.utils.openai_compat_key import resolve_openai_compat_api_key
+        os.environ["OPENAI_COMPAT_API_KEY"] = resolve_openai_compat_api_key(args.openai_compat_key_file)
     
     # Load CFG — convention: cfg_output_N.json = round N, cfg_output.json = fallback for round 0
     cfg_path = os.path.join(args.experiment_dir, "cfg", f"cfg_output_{args.dsl_version}.json")
@@ -186,10 +107,14 @@ def main():
     
     with open(args.recipes_path, 'r') as f:
         recipes = f.read()
-    
-    # Create shared vLLM instance
+
+    print(f"\n[Setup] DSL evolution LLM backend: {resolved_model_type}")
+
+    # Shared vLLM only when not using HTTP API (matches stage_get_cfg / stage_evolve_functions pattern).
     shared_vllm = None
-    if vLLM is not None:
+    if resolved_model_type == "openai_compat":
+        print("[Setup] Using OpenAI-compatible API for failure analysis + CFG evolution (no local vLLM)")
+    elif vLLM is not None:
         try:
             print("\n[Setup] Initializing shared vLLM instance...")
             shared_vllm = vLLM(model="/scratch/avani/gpt", tensor_parallel_size=4)
@@ -197,7 +122,19 @@ def main():
         except Exception as e:
             print(f" Warning: Could not create shared vLLM instance: {e}")
             shared_vllm = None
-    
+
+    if resolved_model_type != "openai_compat" and shared_vllm is None:
+        print(
+            "\nERROR: DSL evolution needs local vLLM for model_type=huggingface, "
+            "but vLLM did not start (no GPU / CUDA, wrong node, or bad model path).\n"
+            "Fix one of:\n"
+            "  • Submit this stage on a GPU partition with CUDA visible.\n"
+            "  • Or use the HTTP API: export MODEL_TYPE=openai_compat and set "
+            "OPENAI_COMPAT_API_KEY or pass --openai_compat_key_file.",
+            file=sys.stderr,
+        )
+        return 1
+
     # Evolve DSL with retries
     print(f"\n[Step 7] Evolving DSL with {len(args.failing_tasks)} failing tasks...")
     dsl_success = False
@@ -206,7 +143,12 @@ def main():
     
     # Extract failed programs from synthesis results for context
     print("\n[Step 1] Extracting failed programs from synthesis results...")
-    failed_programs_by_task = extract_failed_programs_from_synthesis_results(args.experiment_dir, args.failing_tasks, args.dsl_version)
+    failed_programs_by_task = extract_failed_programs_from_synthesis_results(
+        args.experiment_dir,
+        args.failing_tasks,
+        args.dsl_version,
+        max_programs_per_task=int(args.max_failed_programs),
+    )
 
     # Failure analysis LLM runs once; retries only re-run CFG evolution with the same analysis.
     print("\n[Step 2] Running failure analysis (once per session)...")
@@ -217,6 +159,8 @@ def main():
         terminals=terminals,
         failed_programs_by_task=failed_programs_by_task,
         shared_vllm=shared_vllm,
+        model_type=resolved_model_type,
+        openai_compat_key_file=args.openai_compat_key_file,
     )
 
     for dsl_attempt in range(1, args.max_retries + 1):
@@ -232,6 +176,8 @@ def main():
             failure_analysis=failure_analysis_cached,
             shared_vllm=shared_vllm,
             new_dsl_round=args.dsl_version + 1,
+            model_type=resolved_model_type,
+            openai_compat_key_file=args.openai_compat_key_file,
         )
         
         # Check if evolution was successful and CFG is different
@@ -255,7 +201,7 @@ def main():
             # Version existing file before saving new one (if it exists)
             if os.path.exists(cfg_path):
                 try:
-                    version_file(cfg_path, keep_original=False)
+                    version_file(cfg_path)
                     print("   Versioned previous CFG file")
                 except Exception as e:
                     print(f"   Warning: Failed to version CFG file: {e}")
@@ -282,17 +228,17 @@ def main():
             "attempt": dsl_attempt,
             "dsl_round": args.dsl_version + 1
         }
-        # Write to versioned location: status/evolve_dsl/dsl{N}/status.json
+        new_dsl_round = args.dsl_version + 1
+        # Status lives under the *new* DSL round (evolve on dsl0 produces dsl1).
         write_status(
-            args.experiment_dir, 
-            args.dsl_version,  # Save status for the current DSL round being evolved
-            "evolve_dsl", 
-            stage_status
+            args.experiment_dir,
+            new_dsl_round,
+            "evolve_dsl",
+            stage_status,
         )
-        
+
         # Update state and chain back to file generation
         state = read_state(args.experiment_dir)
-        new_dsl_round = state.get("dsl_round", 0) + 1
         dsl_evolutions_remaining = state.get("dsl_evolutions_remaining", 3) - 1
         
         # Update state for new DSL round with new terminal function counts
@@ -325,21 +271,8 @@ def main():
         print(f"  Updated state: {num_new_terminals} terminal functions in new DSL (was {len(terminals)})")
         print(f"  Preserved: {test_tasks_total} test tasks, max_function_evolutions={max_function_evolutions} (unchanged)")
         
-        print(f"\n[Chaining] DSL evolved to round {new_dsl_round}. Submitting file generation job...")
-        
-        # Submit file generation job
-        scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "scripts", "stages")
-        
-        try:
-            file_gen_script = os.path.join(scripts_dir, "stage_file_generation.slurm")
-            if os.path.exists(file_gen_script):
-                # Chaining will be handled by the SLURM script
-                print("   Will submit file generation job")
-            else:
-                print(f"   Warning: File generation script not found: {file_gen_script}")
-        except Exception as e:
-            print(f"   Warning: Failed to submit file generation job: {e}")
-        
+        print(f"\n[Chaining] DSL evolved to round {new_dsl_round}.")
+        _chain_next_stage(args.experiment_dir)
         return 0
     else:
         print(f"\n DSL evolution failed after {args.max_retries} attempts")

@@ -20,9 +20,14 @@ get_log_dir() {
     fi
 }
 
+# Repo root (chain_next_stage.sh lives at scripts/stages/). Used so mkdir/sbatch paths work when cwd is not the repo.
+_chain_repo_root() {
+    echo "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+}
+
 # Ensure log directory exists (call before sbatch)
 ensure_log_dir() {
-    mkdir -p "$(get_log_dir)"
+    mkdir -p "$(_chain_repo_root)/$(get_log_dir)"
 }
 
 # Function to read state value
@@ -262,9 +267,12 @@ if mark_test_tasks_submitted("$EXPERIMENT_DIR"):
             "HINTS_PATH": os.environ.get("HINTS_PATH", "craft/resources/hints.yaml"),
             "MAX_ATTEMPTS": os.environ.get("MAX_ATTEMPTS", "30"),
             "DSL_ROUND": dsl_round,
+            "MODEL_TYPE": os.environ.get("MODEL_TYPE", "huggingface"),
         }
-        if func_evolution_round and func_evolution_round != "0":
-            env_vars["FUNC_EVOLUTION_ROUND"] = func_evolution_round
+        env_vars["FUNC_EVOLUTION_ROUND"] = str(func_evolution_round if func_evolution_round not in (None, "") else "0")
+        key_file = os.environ.get("OPENAI_COMPAT_KEY_FILE", "").strip()
+        if key_file:
+            env_vars["OPENAI_COMPAT_KEY_FILE"] = key_file
 
         env_str = ",".join([f"{k}={v}" for k, v in env_vars.items()])
         if experiment_config:
@@ -272,7 +280,7 @@ if mark_test_tasks_submitted("$EXPERIMENT_DIR"):
 
         job_name = f"{job_prefix}_tt_{idx}"
         result = subprocess.run([
-            "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", f"ALL,{env_str}",
+            "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") == "openai_compat" else ["--gres", "gpu:4"]) + ([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "64G")]), "--export", f"ALL,{env_str}",
             "--time", timeout,
             "--job-name", job_name,
             "--output", f"{log_dir}/stage_test_tasks_{safe}_%j.out",
@@ -463,7 +471,7 @@ job_prefix = os.environ.get("JOB_PREFIX", "exp")
 log_dir = os.environ.get("LOG_DIR", "scripts/log")
 
 result = subprocess.run([
-    "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", f"ALL,{env_str}",
+    "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "1"), "--mem", os.environ.get("API_CHAIN_MEM", "64G")]), "--export", f"ALL,{env_str}",
     "--job-name", f"{job_prefix}_tt_agg",
     "--output", f"{log_dir}/stage_test_tasks_aggregate_%j.out",
     "--error", f"{log_dir}/stage_test_tasks_aggregate_%j.err",
@@ -481,6 +489,7 @@ EOF
 # Function to submit next stage based on state
 chain_based_on_state() {
     local scripts_dir="scripts/stages"
+    export DSL_GENERATOR_ROOT="${DSL_GENERATOR_ROOT:-$(_chain_repo_root)}"
     
     if [ -z "${EXPERIMENT_DIR:-}" ]; then
         echo "ERROR: EXPERIMENT_DIR not set; cannot chain stages safely"
@@ -492,6 +501,16 @@ chain_based_on_state() {
         echo "No state file found, skipping chaining"
         return
     fi
+
+    # Implement may run with --model_type openai_compat while MODEL_TYPE is unset in the batch env.
+    # Embedded chain Python uses os.environ["MODEL_TYPE"]; export the resolved value for all submits.
+    export MODEL_TYPE="$(EXPERIMENT_DIR="$EXPERIMENT_DIR" python3 -c "
+import os, sys
+sys.path.insert(0, '/home/avani/projects/aip-lelis/avani/DSL_Generator')
+from src.utils.pipeline_state import resolve_model_type_for_chained_jobs
+print(resolve_model_type_for_chained_jobs(os.environ['EXPERIMENT_DIR']))
+")"
+    echo "[CHAIN] MODEL_TYPE=${MODEL_TYPE} (resolved for chained submissions)"
     
     # Read all state values
     local phase=$(get_state_value "phase")
@@ -506,6 +525,20 @@ chain_based_on_state() {
     local func_evolution_round=$(get_state_value "func_evolution_round")
     local max_function_evolutions=$(get_state_value "max_function_evolutions")
     local max_dsl_evolutions=$(get_state_value "max_dsl_evolutions")
+
+    # Missing keys in pipeline_state.txt yield empty strings; bash [[: : integer expression expected]] otherwise.
+    function_impl_remaining="${function_impl_remaining:-0}"
+    function_impl_total="${function_impl_total:-0}"
+    func_evolution_remaining="${func_evolution_remaining:-0}"
+    test_tasks_submitted="${test_tasks_submitted:-0}"
+    func_evolution_submitted="${func_evolution_submitted:-0}"
+    file_generation_submitted="${file_generation_submitted:-0}"
+    dsl_evolutions_remaining="${dsl_evolutions_remaining:-0}"
+    dsl_round="${dsl_round:-0}"
+    func_evolution_round="${func_evolution_round:-0}"
+    max_function_evolutions="${max_function_evolutions:-0}"
+    max_dsl_evolutions="${max_dsl_evolutions:-2}"
+
     local phase_print="Phase: $phase"
     local function_impl_remaining_print="function_implementation_remaining: $function_impl_remaining"
     local function_impl_total_print="function_implementation_total: $function_impl_total"
@@ -538,6 +571,80 @@ chain_based_on_state() {
     echo "  Phase: $phase, DSL round: $dsl_round, Func evolution round: $func_evolution_round"
     echo "  Function implementation remaining: $function_impl_remaining"
     echo "  Test tasks submitted: $test_tasks_submitted"
+
+    # ========================================================================
+    # STAGE 0: phase=dsl_evolution (after test aggregate with max_function_evolutions=0)
+    # ========================================================================
+    # Aggregate sets test_tasks_submitted=0 so STAGE 4 does not run; evolve_dsl is scheduled here.
+    if [ "$phase" = "dsl_evolution" ] && [ "$dsl_evolutions_remaining" -gt 0 ]; then
+        local dsl_evo_submitted_phase0=$(get_state_value "dsl_evolution_submitted")
+        dsl_evo_submitted_phase0="${dsl_evo_submitted_phase0:-0}"
+        if [ "$dsl_evo_submitted_phase0" -eq 0 ]; then
+            local tasks_str_dsl=$(get_state_value "tasks")
+            echo "phase=dsl_evolution: submitting DSL / CFG evolution (Slurm)..."
+            ensure_log_dir
+            LOG_DIR="$(get_log_dir)"
+            TASKS_STR="$tasks_str_dsl" JOB_PREFIX=$job_prefix LOG_DIR="$LOG_DIR" python3 << EOF
+import sys
+import os
+import json
+sys.path.insert(0, '/home/avani/projects/aip-lelis/avani/DSL_Generator')
+from src.utils.pipeline_state import mark_dsl_evolution_submitted
+import subprocess
+
+if mark_dsl_evolution_submitted("$EXPERIMENT_DIR"):
+    tasks_str = os.environ.get("TASKS_STR", "[]")
+    try:
+        tasks = json.loads(tasks_str)
+    except Exception:
+        tasks = []
+
+    status_candidates = [
+        f"$EXPERIMENT_DIR/status/dsl${dsl_round:-0}/test_tasks/status",
+    ]
+    status_file = next((p for p in status_candidates if os.path.exists(p)), status_candidates[0])
+    failing_tasks = []
+    if os.path.exists(status_file):
+        try:
+            with open(status_file, 'r') as f:
+                status = json.load(f)
+            failing_tasks = status.get("failing_tasks", [])
+        except Exception:
+            failing_tasks = tasks
+    else:
+        failing_tasks = tasks
+
+    failing_tasks_str = " ".join(failing_tasks)
+    env_vars = {
+        "EXPERIMENT_DIR": "$EXPERIMENT_DIR",
+        "FAILING_TASKS": failing_tasks_str,
+        "RECIPES_PATH": "${RECIPES_PATH:-craft/resources/recipes.yaml}",
+        "MAX_DSL_RETRIES": "10",
+        "DSL_VERSION": "$dsl_round"
+    }
+    env_str = ",".join([f"{k}={v}" for k, v in env_vars.items()])
+    experiment_config = os.environ.get("EXPERIMENT_CONFIG", "")
+    if experiment_config:
+        env_str = f"{env_str},EXPERIMENT_CONFIG={experiment_config}"
+
+    job_prefix = os.environ.get("JOB_PREFIX", "exp")
+    job_name = f"{job_prefix}_evdsl"
+    log_dir = os.environ.get("LOG_DIR", "scripts/log")
+    scripts_dir = "$scripts_dir"
+    subprocess.run([
+        "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") == "openai_compat" else ["--gres", "gpu:4"]) + ([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "64G")]), "--export", f"ALL,{env_str}",
+        "--job-name", job_name,
+        "--output", f"{log_dir}/stage_evolve_dsl_%j.out",
+        "--error", f"{log_dir}/stage_evolve_dsl_%j.err",
+        f"{scripts_dir}/stage_evolve_dsl.slurm",
+    ], check=False, cwd=os.environ.get("DSL_GENERATOR_ROOT"))
+    print("Submitted DSL evolution job (STAGE 0: phase=dsl_evolution)")
+else:
+    print("DSL evolution job already submitted by another process (STAGE 0)")
+EOF
+            return
+        fi
+    fi
     
     # ========================================================================
     # STAGE 1: After Get CFG -> Submit File Generation
@@ -556,24 +663,30 @@ from src.utils.pipeline_state import mark_file_generation_submitted
 import subprocess
 
 if mark_file_generation_submitted("$EXPERIMENT_DIR"):
+    from src.utils.pipeline_state import read_state
+    state = read_state("$EXPERIMENT_DIR")
+    dsl_round = state.get("dsl_round", 0)
+    func_evolution_round = state.get("func_evolution_round", 0)
     spec_file = "${SPEC_FILE:-prompt_specifications/specification_with_updated_nld.txt}"
     job_prefix = os.environ.get("JOB_PREFIX", "exp")
     job_name = f"{job_prefix}_file_gen"
-    # Include EXPERIMENT_CONFIG if set
     experiment_config = os.environ.get("EXPERIMENT_CONFIG", "")
-    export_str = f"ALL,SPEC_FILE={spec_file}"
+    export_str = f"ALL,SPEC_FILE={spec_file},DSL_ROUND={dsl_round},FUNC_EVOLUTION_ROUND={func_evolution_round}"
     if experiment_config:
         export_str = f"{export_str},EXPERIMENT_CONFIG={experiment_config}"
-    
+
     log_dir = os.environ.get("LOG_DIR", "scripts/log")
+    using_api = os.environ.get("MODEL_TYPE", "huggingface") == "openai_compat"
+    file_gen_time = os.environ.get("API_CHAIN_SBATCH_TIME_FILE_GEN", "10:00:00" if using_api else "02:00:00")
+    api_resources = ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "16G"), "--time", file_gen_time] if using_api else ["--gres", "gpu:4", "--time", file_gen_time]
     subprocess.run([
-        "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", export_str,
+        "sbatch", "--parsable", *api_resources, "--export", export_str,
         "--job-name", job_name,
         "--output", f"{log_dir}/stage_file_generation_%j.out",
         "--error", f"{log_dir}/stage_file_generation_%j.err",
         "$scripts_dir/stage_file_generation.slurm"
     ], check=False)
-    print("Submitted file generation job")
+    print(f"Submitted file generation job (dsl_round={dsl_round}, func_evolution_round={func_evolution_round})")
 else:
     print("File generation already submitted by another process")
 EOF
@@ -681,8 +794,11 @@ for func_name in terminals.keys():
     
     job_name = f"{job_prefix}_impl_{func_name}"
     log_dir = os.environ.get("LOG_DIR", "scripts/log")
+    using_api = os.environ.get("MODEL_TYPE", "huggingface") == "openai_compat"
+    impl_time = os.environ.get("API_CHAIN_SBATCH_TIME_IMPLEMENT_SINGLE", "40:00:00" if using_api else "12:00:00")
+    api_resources = ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "64G"), "--time", impl_time] if using_api else ["--gres", "gpu:4", "--time", impl_time]
     result = subprocess.run([
-        "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", f"ALL,{env_str}",
+        "sbatch", "--parsable", *api_resources, "--export", f"ALL,{env_str}",
         "--job-name", job_name,
         "--output", f"{log_dir}/stage_implement_cfg_%x_%j.out",
         "--error", f"{log_dir}/stage_implement_cfg_%x_%j.err",
@@ -766,7 +882,8 @@ EOF
     # - function_implementation_remaining == max number of terminal functions (all functions need to be evolved)
     # Note: function_impl_total already read earlier in the function
     
-    if [ "$test_tasks_submitted" -eq 1 ] && [ "$function_impl_remaining" -eq "$function_impl_total" ] && [ "$function_impl_total" -gt 0 ]; then
+    # Enter when (legacy) all terminal slots still "pending" same count as total, OR aggregate left max_function_evolutions=0 with impl work finished (0 remaining).
+    if [ "$test_tasks_submitted" -eq 1 ] && [ "$function_impl_total" -gt 0 ] && { [ "$function_impl_remaining" -eq "$function_impl_total" ] || { [ "$function_impl_remaining" -eq 0 ] && [ "$max_function_evolutions" -eq 0 ]; }; }; then
         echo "Test tasks completed. Checking if function evolution should be triggered..."
         
         # Verify test_tasks actually completed (this is the source of truth)
@@ -854,6 +971,7 @@ EOF
         # Note: function_evolution_remaining will be initialized when jobs are submitted
         if [ "$func_evolution_round" -lt "$max_func_evolutions" ]; then
             local func_evolution_submitted=$(get_state_value "function_evolution_submitted")
+            func_evolution_submitted="${func_evolution_submitted:-0}"
             if [ "$func_evolution_submitted" -eq 0 ]; then
                 echo "Submitting function evolution jobs..."
                 local cfg_file="$EXPERIMENT_DIR/cfg/cfg_output.json"
@@ -931,7 +1049,7 @@ if mark_function_evolution_submitted("$EXPERIMENT_DIR"):
         job_name = f"{job_prefix}_evf_{func_name}"
         log_dir = os.environ.get("LOG_DIR", "scripts/log")
         subprocess.run([
-            "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", f"ALL,{env_str}",
+            "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") == "openai_compat" else ["--gres", "gpu:4"]) + ([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "64G")]), "--export", f"ALL,{env_str}",
             "--job-name", job_name,
             "--output", f"{log_dir}/stage_evolve_function_%x_%j.out",
             "--error", f"{log_dir}/stage_evolve_function_%x_%j.err",
@@ -960,6 +1078,7 @@ EOF
             
             echo "Function evolution exhausted. Checking DSL evolution..."
             local dsl_evolution_submitted=$(get_state_value "dsl_evolution_submitted")
+            dsl_evolution_submitted="${dsl_evolution_submitted:-0}"
             if [ "$dsl_evolution_submitted" -eq 0 ]; then
                 echo "Submitting DSL evolution job..."
                 ensure_log_dir
@@ -1012,12 +1131,12 @@ if mark_dsl_evolution_submitted("$EXPERIMENT_DIR"):
     job_name = f"{job_prefix}_evdsl"
     log_dir = os.environ.get("LOG_DIR", "scripts/log")
     subprocess.run([
-        "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", f"ALL,{env_str}",
+        "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") == "openai_compat" else ["--gres", "gpu:4"]) + ([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "64G")]), "--export", f"ALL,{env_str}",
         "--job-name", job_name,
         "--output", f"{log_dir}/stage_evolve_dsl_%j.out",
         "--error", f"{log_dir}/stage_evolve_dsl_%j.err",
-        "$scripts_dir/stage_evolve_dsl.slurm"
-    ], check=False)
+        "$scripts_dir/stage_evolve_dsl.slurm",
+    ], check=False, cwd=os.environ.get("DSL_GENERATOR_ROOT"))
     print("Submitted DSL evolution job")
 else:
     print("DSL evolution job already submitted by another process")
@@ -1091,11 +1210,19 @@ print('false')
     # ========================================================================
     # STAGE 6: After DSL Evolution -> Submit file generation
     # ========================================================================
+    local dsl_status="False"
     local dsl_status_file_to_check="$EXPERIMENT_DIR/status/dsl${dsl_round:-0}/evolve_dsl/status"
-    
-    if [ -n "$dsl_status_file_to_check" ]; then
-        local dsl_status=$(python3 -c "import json; f=open('$dsl_status_file_to_check'); d=json.load(f); print(d.get('evolved', False))" 2>/dev/null || echo "False")
-        if [ "$dsl_status" = "True" ] && [ "$file_generation_submitted" -eq 0 ]; then
+    if [ -f "$dsl_status_file_to_check" ]; then
+        dsl_status=$(python3 -c "import json; f=open('$dsl_status_file_to_check'); d=json.load(f); print(d.get('evolved', False))" 2>/dev/null || echo "False")
+    elif [ "${dsl_round:-0}" -gt 0 ]; then
+        # Legacy: evolve_dsl wrote status under the source round (dsl{N-1}).
+        local legacy_dsl_status_file="$EXPERIMENT_DIR/status/dsl$((dsl_round - 1))/evolve_dsl/status"
+        if [ -f "$legacy_dsl_status_file" ]; then
+            dsl_status=$(python3 -c "import json; f=open('$legacy_dsl_status_file'); d=json.load(f); print(d.get('evolved', False))" 2>/dev/null || echo "False")
+        fi
+    fi
+
+    if [ "$dsl_status" = "True" ] && [ "$file_generation_submitted" -eq 0 ]; then
             echo "DSL evolution complete. Submitting file generation job..."
             ensure_log_dir
             LOG_DIR="$(get_log_dir)"
@@ -1120,8 +1247,11 @@ if mark_file_generation_submitted("$EXPERIMENT_DIR"):
     
     job_name = f"{job_prefix}_file_gen"
     log_dir = os.environ.get("LOG_DIR", "scripts/log")
+    using_api = os.environ.get("MODEL_TYPE", "huggingface") == "openai_compat"
+    file_gen_time = os.environ.get("API_CHAIN_SBATCH_TIME_FILE_GEN", "10:00:00" if using_api else "02:00:00")
+    api_resources = ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "16G"), "--time", file_gen_time] if using_api else ["--gres", "gpu:4", "--time", file_gen_time]
     subprocess.run([
-        "sbatch", "--parsable", *([] if os.environ.get("MODEL_TYPE", "huggingface") != "openai_compat" else ["--cpus-per-task", os.environ.get("API_CHAIN_CPUS", "4"), "--mem", os.environ.get("API_CHAIN_MEM", "8G"), "--gres", "gpu:0"]), "--export", export_str,
+        "sbatch", "--parsable", *api_resources, "--export", export_str,
         "--job-name", job_name,
         "--output", f"{log_dir}/stage_file_generation_%j.out",
         "--error", f"{log_dir}/stage_file_generation_%j.err",
@@ -1131,8 +1261,7 @@ if mark_file_generation_submitted("$EXPERIMENT_DIR"):
 else:
     print("File generation already submitted by another process")
 EOF
-            return
-        fi
+        return
     fi
     
     echo "No chaining conditions met."

@@ -43,6 +43,8 @@ program        ::= statement_seq
 statement_seq  ::= statement
                 |  statement SEMICOLON statement_seq
 
+Because of this shape, a valid **surface program** has a semicolon **only between** statements, never after the **last** statement. A trailing `;` is a syntax error (the parser expects another `statement` and hits end-of-input).
+
 statement      ::= ACTION1 LPAR PARAM RPAR
                 |  ACTION2 LPAR PARAM RPAR
                 |  ACTION3
@@ -72,8 +74,6 @@ COMMA          ::= ','
    - The overlap MUST be ZERO.
    - If any `statement` terminal is a primitive action name, rewrite it into a higher-level intent/composite DSL function and regenerate the grammar.
    - Prefer capability-level names (goal-oriented), not executor-level names (single primitive operations).
-   - Reject terminal sets like: `GO_TO`, `PICK_UP`, `PLACE_ON`, `OPEN_DOOR`, `CLOSE_DOOR`, `TURN_ON`, `TURN_OFF`.
-   - Prefer terminal sets like: `PREPARE_DRINK`, `SET_TABLE`, `STORE_GROCERIES`, `DO_LAUNDRY_LOAD`, `CLEAN_SURFACE_AREA`, `SERVE_MEAL`.
    - Before finalizing, ask: "Does each terminal describe *what is achieved* rather than *which primitive is called*?" If not, rewrite.
 
 ## Output Format:
@@ -101,6 +101,11 @@ Each description should state the function's PURPOSE and INTENT only:
 ACTION1(VALUE1); ACTION2(VALUE2); ACTION3
 ```
 Use actual terminal function names and values from your CFG.
+
+**Mandatory — example must parse:** The `dsl` / `example` string must be a **complete** `program` under your BNF. In particular:
+- **Do not** end the example with a trailing semicolon (wrong: `ACTION1(X); ACTION2(Y);` — invalid; right: `ACTION1(X); ACTION2(Y)` or a single call `ACTION1(X)`).
+- Semicolons separate **middle** statements only, matching `statement SEMICOLON statement_seq`.
+- If you use a different `statement_seq` shape, the example must still match it exactly (no extra punctuation at the end).
 
 ##NLD:
 {nld}

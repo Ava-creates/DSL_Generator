@@ -11,7 +11,12 @@ import os
 import re
 from typing import Dict, Optional, Tuple
 
-from src.pipeline.cfg_symbol_utils import build_cfg_rule_map, expand_symbol_to_terminals
+from src.pipeline.cfg_symbol_utils import (
+    DEFAULT_EXCLUDED_SYMBOLS,
+    build_cfg_rule_map,
+    expand_symbol_to_terminals,
+    _clean_token,
+)
 
 try:
     from vllm import SamplingParams
@@ -28,6 +33,13 @@ except Exception:
 
 def _get_grid_size() -> Tuple[int, int]:
     return int(WIDTH), int(HEIGHT)
+
+
+def _json_for_log(obj) -> str:
+    """Serialize a grid spec for failure logs; never raises on Ellipsis etc."""
+    if isinstance(obj, str):
+        return obj.strip()
+    return json.dumps(obj, ensure_ascii=True, default=repr)
 
 
 def _extract_json_object(text: str) -> str:
@@ -67,6 +79,88 @@ def _load_prompt_template(prompt_path: str) -> str:
         ) from e
 
 
+def _parse_func_arg_names(func_args: str) -> list[str]:
+    """Parse 'integer:int, item:str' -> ['integer', 'item']."""
+    names: list[str] = []
+    for raw in (func_args or "").split(","):
+        token = raw.strip()
+        if not token or token.lower() == "none":
+            continue
+        name = token.split(":", 1)[0].strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def _referenced_cfg_symbols(rule_map: dict[str, list[str]]) -> set[str]:
+    """Symbols that appear on the RHS of any rule."""
+    referenced: set[str] = set()
+    token_re = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+    for rhs_list in rule_map.values():
+        for part in rhs_list:
+            for raw in re.split(r"\s*\|\s*|\s+", part.strip()):
+                tok = _clean_token(raw).upper()
+                if tok and token_re.match(tok) and tok not in DEFAULT_EXCLUDED_SYMBOLS:
+                    referenced.add(tok)
+    return referenced
+
+
+def _unbound_cfg_symbols(rule_map: dict[str, list[str]]) -> set[str]:
+    """RHS symbols with no defining ::= rule (e.g. INTEGER referenced by STEPS ::= INTEGER)."""
+    return _referenced_cfg_symbols(rule_map) - set(rule_map.keys())
+
+
+def _symbol_has_cfg_enumeration(symbol: str, rule_map: dict[str, list[str]]) -> bool:
+    """True when the CFG defines concrete terminal values for this symbol."""
+    clean = _clean_token(symbol).upper()
+    if clean not in rule_map:
+        return False
+
+    alts: list[str] = []
+    for part in rule_map[clean]:
+        for alt in part.split("|"):
+            tok = _clean_token(alt).upper()
+            if tok and tok not in DEFAULT_EXCLUDED_SYMBOLS:
+                alts.append(tok)
+    if not alts:
+        return False
+
+    unbound = _unbound_cfg_symbols(rule_map)
+    # Alias to an undefined non-terminal (e.g. STEPS ::= INTEGER) is not an enumeration.
+    if len(alts) == 1 and alts[0] in unbound:
+        return False
+
+    if all(tok not in rule_map for tok in alts):
+        return True
+
+    expanded = expand_symbol_to_terminals(clean, rule_map)
+    concrete = {t.upper() for t in expanded if t.upper() not in rule_map}
+    return len(concrete) > 0
+
+
+def _build_arg_schema(func_args: str, cfg_text: str) -> str:
+    """Human-readable schema for the grid LLM (keys + allowed values from CFG)."""
+    arg_names = _parse_func_arg_names(func_args)
+    if not arg_names:
+        return "This function has no arguments besides env."
+
+    rule_map = build_cfg_rule_map(cfg_text or "")
+    lines = [
+        "Required arg_values keys — use EXACTLY these names (from the CFG), no synonyms:",
+    ]
+    for name in arg_names:
+        symbol = name.upper()
+        if _symbol_has_cfg_enumeration(symbol, rule_map):
+            allowed = sorted(expand_symbol_to_terminals(symbol, rule_map))
+            lines.append(f'  - "{name}": one of {", ".join(allowed)}')
+        else:
+            lines.append(
+                f'  - "{name}": no terminal enumeration in CFG for {symbol}; '
+                "use a plain integer when the argument is numeric, otherwise a string token"
+            )
+    return "\n".join(lines)
+
+
 def _extract_allowed_arg_values_from_cfg(func_args: str, cfg_text: str) -> dict[str, set[str]]:
     """Build allowed terminal values per argument symbol from CFG text.
 
@@ -81,15 +175,7 @@ def _extract_allowed_arg_values_from_cfg(func_args: str, cfg_text: str) -> dict[
     if not func_args or not cfg_text:
         return {}
 
-    arg_names = []
-    for raw in func_args.split(","):
-        token = raw.strip()
-        if not token:
-            continue
-        name = token.split(":", 1)[0].strip()
-        if name:
-            arg_names.append(name)
-
+    arg_names = _parse_func_arg_names(func_args)
     if not arg_names:
         return {}
 
@@ -98,31 +184,70 @@ def _extract_allowed_arg_values_from_cfg(func_args: str, cfg_text: str) -> dict[
     allowed: dict[str, set[str]] = {}
     for arg in arg_names:
         symbol = arg.upper()
-        if symbol in rule_map:
-            expanded = expand_symbol_to_terminals(symbol, rule_map)
-            if expanded:
-                allowed[arg] = expanded
+        if _symbol_has_cfg_enumeration(symbol, rule_map):
+            allowed[arg] = expand_symbol_to_terminals(symbol, rule_map)
     return allowed
 
 
-def _validate_arg_values_against_cfg(arg_values: dict, allowed_map: dict[str, set[str]]) -> tuple[bool, str]:
-    """Validate arg_values are in per-arg allowed terminal set from CFG."""
-    if not allowed_map:
+def _validate_arg_values_keys(arg_values: dict, expected_names: list[str]) -> tuple[bool, str]:
+    """Require arg_values keys to match CFG-derived parameter names exactly."""
+    if not expected_names:
+        return True, ""
+    if not isinstance(arg_values, dict):
+        return False, "arg_values must be a JSON object"
+    expected = set(expected_names)
+    actual = set(arg_values.keys())
+    missing = sorted(expected - actual)
+    extra = sorted(actual - expected)
+    if missing:
+        return False, f"arg_values missing required keys {missing} (expected {sorted(expected)})"
+    if extra:
+        return False, f"arg_values has unexpected keys {extra} (expected only {sorted(expected)})"
+    return True, ""
+
+
+def _validate_unenumerated_arg_value(raw) -> tuple[bool, str]:
+    """Accept plain integers for CFG symbols without a terminal enumeration."""
+    if isinstance(raw, bool):
+        return False, "boolean is not a valid argument value"
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        return True, ""
+    if isinstance(raw, float) and raw.is_integer():
+        return True, ""
+    if isinstance(raw, str) and raw.strip().lstrip("-").isdigit():
+        return True, ""
+    return False, f"expected integer value, got {raw!r}"
+
+
+def _validate_arg_values_against_cfg(
+    arg_values: dict,
+    allowed_map: dict[str, set[str]],
+    expected_names: list[str],
+) -> tuple[bool, str]:
+    """Validate arg_values keys and values against CFG-derived constraints."""
+    keys_ok, keys_error = _validate_arg_values_keys(arg_values, expected_names)
+    if not keys_ok:
+        return False, keys_error
+    if not expected_names:
         return True, ""
     if not isinstance(arg_values, dict):
         return False, "arg_values must be a JSON object"
 
-    for arg_name, allowed in allowed_map.items():
-        if arg_name not in arg_values:
-            return False, f"arg_values missing required key '{arg_name}'"
+    for arg_name in expected_names:
         raw = arg_values[arg_name]
-        candidate = str(raw).strip().upper()
-        if candidate not in allowed:
-            allowed_sorted = ", ".join(sorted(allowed))
-            return (
-                False,
-                f"arg_values.{arg_name}='{raw}' is invalid; allowed values from CFG are: {allowed_sorted}",
-            )
+        allowed = allowed_map.get(arg_name)
+        if allowed:
+            candidate = str(raw).strip().upper()
+            if candidate not in allowed:
+                allowed_sorted = ", ".join(sorted(allowed))
+                return (
+                    False,
+                    f"arg_values.{arg_name}='{raw}' is invalid; allowed values from CFG are: {allowed_sorted}",
+                )
+            continue
+        ok, err = _validate_unenumerated_arg_value(raw)
+        if not ok:
+            return False, f"arg_values.{arg_name}: {err}"
     return True, ""
 
 
@@ -143,6 +268,7 @@ def _render_prompt(
     negative_grids: int = 4,
     edge_grids: int = 1,
     init_check_failure: str = "",
+    cfg_text: str = "",
 ) -> str:
     if existing_cases:
         summaries = []
@@ -174,6 +300,7 @@ def _render_prompt(
         "<<FUNCTION_NAME>>": func_name,
         "<<DESCRIPTION>>": description,
         "<<ARGUMENTS>>": func_args,
+        "<<ARG_SCHEMA>>": _build_arg_schema(func_args, cfg_text),
         "<<ENV_DESCRIPTION>>": env_description,
         "<<CODEBASE>>": codebase_text,
         "<<RECIPES>>": recipes_text,
@@ -369,6 +496,7 @@ def ensure_function_grid_spec(
     width, height = _get_grid_size()
 
     allowed_arg_values = _extract_allowed_arg_values_from_cfg(func_args or "", cfg_text or "")
+    expected_arg_names = _parse_func_arg_names(func_args or "")
 
     if shared_vllm is not None and SamplingParams is not None:
         template = _load_prompt_template(prompt_path)
@@ -389,6 +517,7 @@ def ensure_function_grid_spec(
             negative_grids=negative_grids,
             edge_grids=edge_grids,
             init_check_failure=init_check_failure or "",
+            cfg_text=cfg_text or "",
         )
         # print(f"[grid_generation] Prompt for {func_name}:\n{base_prompt}\n")
         # print(f"[grid_generation] Args for {func_name}: {func_args or 'None'}")
@@ -397,10 +526,10 @@ def ensure_function_grid_spec(
         last_error = ""
         failed_attempts: list[dict] = []
         
-        def _record_failed_attempt(reason: str, candidate: str) -> None:
+        def _record_failed_attempt(reason: str, candidate: str | dict) -> None:
             failed_attempts.append({
                 "reason": reason,
-                "candidate": (candidate or "").strip(),
+                "candidate": _json_for_log(candidate),
             })
 
         def _format_failed_attempts() -> str:
@@ -460,7 +589,7 @@ def ensure_function_grid_spec(
                 required_keys.add("test_type")
             if not required_keys.issubset(spec.keys()):
                 last_error = f"missing required keys: {sorted(required_keys - set(spec.keys()))}"
-                _record_failed_attempt(last_error, json.dumps(spec, ensure_ascii=True))
+                _record_failed_attempt(last_error, spec)
                 print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
                 continue
             try:
@@ -475,16 +604,17 @@ def ensure_function_grid_spec(
                 )
             except ValueError as e:
                 last_error = f"invalid test case: {e}"
-                _record_failed_attempt(last_error, json.dumps(spec, ensure_ascii=True))
+                _record_failed_attempt(last_error, spec)
                 print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
                 continue
             args_ok, args_error = _validate_arg_values_against_cfg(
                 normalized.get("arg_values", {}),
                 allowed_arg_values,
+                expected_arg_names,
             )
             if not args_ok:
                 last_error = args_error
-                _record_failed_attempt(last_error, json.dumps(normalized, ensure_ascii=True))
+                _record_failed_attempt(last_error, normalized)
                 print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed: {last_error}")
                 continue
             print(normalized)
@@ -492,7 +622,7 @@ def ensure_function_grid_spec(
             if 'validate_grid_spec' in globals():
                 is_valid, last_error = validate_grid_spec(normalized, cookbook)
             if not is_valid:
-                _record_failed_attempt(last_error, json.dumps(normalized, ensure_ascii=True))
+                _record_failed_attempt(last_error, normalized)
                 print(f"[grid_generation] {func_name} attempt {attempt + 1}/{attempts} failed (validate_grid_spec): {last_error}")
             if is_valid:
                 if skip_positive_grids and normalized.get('test_type') == 'positive':

@@ -15,6 +15,7 @@ import re
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, _project_root)
 
+from src.utils.saved_function import normalize_saved_function, resolve_func_signature
 from src.pipeline.cfg_to_funsearch_pipeline import (
     determine_inputs,
     run_explicit_feedback_generation,
@@ -32,7 +33,9 @@ from src.utils.results_tracker import (
     plot_baseline_reward_vs_interactions,
 )
 from src.utils.pipeline_state import (
-    decrement_function_implementation
+    decrement_function_implementation,
+    read_state,
+    update_state,
 )
 from src.utils.status_manager import read_status, write_function_status
 from src.utils.config_loader import funsearch_grid_regen_kwargs_from_config, load_config
@@ -66,8 +69,16 @@ def main():
     parser.add_argument('--codebase_path', type=str, default=None, help='Codebase file for <<CODEBASE>> (default: experiment config / CODEBASE_PATH)')
     parser.add_argument('--baseline_mode', action='store_true', help='Allow baseline runs with empty cfg text')
     parser.add_argument('--openai_compat_key_file', type=str, default=None, help='File with OpenAI-compatible API key (first non-empty line). Default: <repo>/key.txt if OPENAI_COMPAT_API_KEY unset.')
+    parser.add_argument(
+        '--skip_funsearch',
+        action='store_true',
+        help='Skip FunSearch and run explicit feedback only, using the existing function artifact (func_file from file generation status).',
+    )
 
     args = parser.parse_args()
+
+    if os.environ.get("SKIP_FUNSEARCH", "").strip().lower() in {"1", "true", "yes"}:
+        args.skip_funsearch = True
 
     # If a key file is given, resolve and export it so deep callers (sampler, evaluator) pick it up.
     if args.openai_compat_key_file and not os.environ.get("OPENAI_COMPAT_API_KEY", "").strip():
@@ -76,7 +87,6 @@ def main():
     
     # Read state file to get current DSL and function evolution rounds
     # This ensures consistency after DSL evolution (which resets func_evolution_round to 0)
-    from src.utils.pipeline_state import read_state
     state = read_state(args.experiment_dir)
     state_dsl_round = state.get("dsl_round", 0)
     state_func_round = state.get("func_evolution_round", 0)
@@ -100,6 +110,9 @@ def main():
         args.func_evolution_round = state_func_round
     
     print(f"[Implement CFG] Using dsl_round={args.dsl_round}, func_evolution_round={args.func_evolution_round}")
+
+    # Persist so chained jobs (test_tasks) pick the same backend when MODEL_TYPE is missing from env.
+    update_state(args.experiment_dir, pipeline_model_type=args.model_type)
     
     # Load CFG
     cfg_path = os.path.join(args.experiment_dir, "cfg", "cfg_output.json")
@@ -247,6 +260,13 @@ def main():
     os.makedirs(explicit_feedback_dir, exist_ok=True)
     
     func_evolution_round = args.func_evolution_round if args.func_evolution_round is not None else 0
+    func_signature = resolve_func_signature(
+        args.function_name,
+        func_signatures,
+    )
+
+    def _prepare_final_function(code: str) -> str:
+        return normalize_saved_function(code, func_signature)
     
     print(f"\n{'='*80}")
     print(f"Implementing CFG for function: {args.function_name}")
@@ -254,94 +274,115 @@ def main():
     print(f"  Function Evolution Round: {func_evolution_round}")
     print(f"{'='*80}")
     
-    # Step 1: Run FunSearch
-    print(f"\n[Step 1] Running FunSearch for {args.function_name}...")
-    
-    config = config_lib.Config(
-        **funsearch_grid_regen_kwargs_from_config(),
-        num_samplers=1,
-        num_evaluators=2,
-        samples_per_prompt=2,
-        total_samples=args.total_samples,
-        programs_database=config_lib.ProgramsDatabaseConfig(),
-        grid_regeneration_attempts=args.grid_regeneration_attempts,
-    )
-    
-    initial_funsearch_steps = results_tracker.interactions.get("funsearch", 0)
-    
-    try:
-        funsearch = FunSearch(model_type=args.model_type, shared_vllm=shared_vllm)
-        funsearch.results_tracker = results_tracker
-        
-        inputs = determine_inputs(args.function_name, description, cfg)
-        
-        funsearch.run(
-            specification=specification,
-            inputs=inputs,
-            config=config,
-            function_to_implement=func_file,
-            function_init=func_init_file,
-            spec_file=args.spec_file,
-            experiment_dir=results_dir,
-            grid_lookup_experiment_dir=args.experiment_dir,
-        )
-        
-        final_funsearch_steps = results_tracker.interactions.get("funsearch", 0)
-        steps_taken = final_funsearch_steps - initial_funsearch_steps
-        
-        print(f"[{args.function_name}]  Completed FunSearch (env steps: {steps_taken})")
-        
-        # Save FunSearch status
+    # Step 1: Run FunSearch (optional resume: skip if artifacts already exist)
+    if args.skip_funsearch:
+        print(f"\n[Step 1] Skipping FunSearch; using existing artifact: {func_file}")
+        if not os.path.isfile(func_file):
+            print(f" Missing FunSearch artifact: {func_file}", file=sys.stderr)
+            return 1
+        with open(func_file, "r", encoding="utf-8") as _sf:
+            _body = _sf.read()
+        if not _body.strip():
+            print(f" FunSearch artifact is empty: {func_file}", file=sys.stderr)
+            return 1
         funsearch_status = {
             "stage": "funsearch",
             "function_name": args.function_name,
             "status": "completed",
             "dsl_round": args.dsl_round,
             "func_evolution_round": func_evolution_round,
-            "env_steps": steps_taken
+            "env_steps": 0,
+            "skipped_funsearch": True,
         }
         write_function_status(args.experiment_dir, args.dsl_round, "funsearch", args.function_name, funsearch_status)
-
-        # Plot FunSearch reward vs interactions for this function
+    else:
+        print(f"\n[Step 1] Running FunSearch for {args.function_name}...")
+        
+        config = config_lib.Config(
+            **funsearch_grid_regen_kwargs_from_config(),
+            num_samplers=1,
+            num_evaluators=1 if args.model_type == "openai_compat" else 2,
+            samples_per_prompt=2,
+            total_samples=args.total_samples,
+            programs_database=config_lib.ProgramsDatabaseConfig(),
+            grid_regeneration_attempts=args.grid_regeneration_attempts,
+        )
+        
+        initial_funsearch_steps = results_tracker.interactions.get("funsearch", 0)
+        
         try:
-            log_file = find_funsearch_log_file(
-                args.function_name,
-                results_dir,
-                dsl_round=args.dsl_round,
-                func_evolution_round=func_evolution_round,
+            funsearch = FunSearch(model_type=args.model_type, shared_vllm=shared_vllm)
+            funsearch.results_tracker = results_tracker
+            
+            inputs = determine_inputs(args.function_name, description, cfg)
+            
+            funsearch.run(
+                specification=specification,
+                inputs=inputs,
+                config=config,
+                function_to_implement=func_file,
+                function_init=func_init_file,
+                spec_file=args.spec_file,
+                experiment_dir=results_dir,
+                grid_lookup_experiment_dir=args.experiment_dir,
             )
-            if log_file:
-                funsearch_plot_dir = os.path.join(
-                    args.experiment_dir, "results_tracking", "funsearch", f"dsl{args.dsl_round}"
+            
+            final_funsearch_steps = results_tracker.interactions.get("funsearch", 0)
+            steps_taken = final_funsearch_steps - initial_funsearch_steps
+            
+            print(f"[{args.function_name}]  Completed FunSearch (env steps: {steps_taken})")
+            
+            # Save FunSearch status
+            funsearch_status = {
+                "stage": "funsearch",
+                "function_name": args.function_name,
+                "status": "completed",
+                "dsl_round": args.dsl_round,
+                "func_evolution_round": func_evolution_round,
+                "env_steps": steps_taken
+            }
+            write_function_status(args.experiment_dir, args.dsl_round, "funsearch", args.function_name, funsearch_status)
+
+            # Plot FunSearch reward vs interactions for this function
+            try:
+                log_file = find_funsearch_log_file(
+                    args.function_name,
+                    results_dir,
+                    dsl_round=args.dsl_round,
+                    func_evolution_round=func_evolution_round,
                 )
-                plot_funsearch_reward_vs_interactions(
-                    log_file=log_file,
-                    output_dir=funsearch_plot_dir,
-                    function_name=sanitize_function_name(args.function_name),
-                )
-            else:
-                print(f"   No FunSearch log found for plotting: {args.function_name}")
-        except Exception as plot_error:
-            print(f"   Failed to plot FunSearch metrics: {plot_error}")
-        
-    except Exception as e:
-        error_msg = str(e)
-        print(f"[{args.function_name}]  FunSearch failed: {error_msg}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        
-        # Save failure status
-        funsearch_status = {
-            "stage": "funsearch",
-            "function_name": args.function_name,
-            "status": "failed",
-            "error": error_msg,
-            "dsl_round": args.dsl_round,
-            "func_evolution_round": func_evolution_round
-        }
-        write_function_status(args.experiment_dir, args.dsl_round, "funsearch", args.function_name, funsearch_status)
-        
-        return 1
+                if log_file:
+                    funsearch_plot_dir = os.path.join(
+                        args.experiment_dir, "results_tracking", "funsearch", f"dsl{args.dsl_round}"
+                    )
+                    plot_funsearch_reward_vs_interactions(
+                        log_file=log_file,
+                        output_dir=funsearch_plot_dir,
+                        function_name=sanitize_function_name(args.function_name),
+                    )
+                else:
+                    print(f"   No FunSearch log found for plotting: {args.function_name}")
+            except Exception as plot_error:
+                print(f"   Failed to plot FunSearch metrics: {plot_error}")
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[{args.function_name}]  FunSearch failed: {error_msg}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+            
+            # Save failure status
+            funsearch_status = {
+                "stage": "funsearch",
+                "function_name": args.function_name,
+                "status": "failed",
+                "error": error_msg,
+                "dsl_round": args.dsl_round,
+                "func_evolution_round": func_evolution_round
+            }
+            write_function_status(args.experiment_dir, args.dsl_round, "funsearch", args.function_name, funsearch_status)
+            
+            return 1
     
     # Step 2: Run Explicit Feedback
     print(f"\n[Step 2] Running explicit feedback generation for {args.function_name}...")
@@ -394,7 +435,7 @@ def main():
                 func_file_path = os.path.join(final_functions_dir, f"{safe_name}.py")
             
             with open(func_file_path, 'w', encoding='utf-8') as f:
-                f.write(final_func)
+                f.write(_prepare_final_function(final_func))
             print(f"  Saved {args.function_name} to {os.path.basename(func_file_path)}")
             
             # Clean up only intermediate iteration files (not the final versioned explicit feedback files)
@@ -628,41 +669,45 @@ def main():
             
             try:
                 with open(func_file_path, 'w', encoding='utf-8') as f:
-                    f.write(final_func_to_save)
+                    f.write(_prepare_final_function(final_func_to_save))
                 source = "FunSearch log" if best_func_from_log else "FunSearch result"
                 print(f"  Saved {args.function_name} to {os.path.basename(func_file_path)} ({source})")
             except Exception as save_error:
                 print(f"   Failed to save final function: {save_error}", file=sys.stderr)
-        
-        # Save failure status
+                return 1
+
+            implementation_remaining = decrement_function_implementation(args.experiment_dir)
+            if shared_vllm is not None:
+                try:
+                    print("\n[Cleanup] Freeing vLLM instance and GPU memory...")
+                    del shared_vllm
+                    import gc
+                    import torch
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        torch.cuda.synchronize()
+                    print(" GPU memory freed")
+                except Exception as e:
+                    print(f"   Warning: Error during cleanup: {e}")
+            return 0
+
         explicit_fb_status = {
             "stage": "explicit_feedback",
             "function_name": args.function_name,
             "status": "failed",
             "error": error_msg,
             "dsl_round": args.dsl_round,
-            "func_evolution_round": func_evolution_round
+            "func_evolution_round": func_evolution_round,
         }
-        write_function_status(args.experiment_dir, args.dsl_round, "explicit_feedback", args.function_name, explicit_fb_status)
-        
-        # Still decrement counters
-        implementation_remaining = decrement_function_implementation(args.experiment_dir)
-        
-        # Clean up vLLM instance to free GPU memory
-        if shared_vllm is not None:
-            try:
-                print("\n[Cleanup] Freeing vLLM instance and GPU memory...")
-                del shared_vllm
-                import gc
-                import torch
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                    torch.cuda.synchronize()
-                print(" GPU memory freed")
-            except Exception as e:
-                print(f"   Warning: Error during cleanup: {e}")
-        
+        write_function_status(
+            args.experiment_dir,
+            args.dsl_round,
+            "explicit_feedback",
+            args.function_name,
+            explicit_fb_status,
+        )
+        decrement_function_implementation(args.experiment_dir)
         return 1
 
 
