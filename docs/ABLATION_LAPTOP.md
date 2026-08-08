@@ -15,7 +15,7 @@ Two ablation designs are supported on a laptop with the **Aleph API** (no GPU, n
 
 ### Step 1 — Export assets from Vulcan (once)
 
-On the cluster:
+On the cluster (optional — tarball is also in the repo under `ablation_assets/`):
 
 ```bash
 bash scripts/export_fixed_cfg_ablation_assets.sh \
@@ -23,12 +23,21 @@ bash scripts/export_fixed_cfg_ablation_assets.sh \
 scp run4_dsl1.tar.gz your-laptop:~/Desktop/DSL_Generator/
 ```
 
-On the laptop, unpack **at the repo root** (paths inside the tarball include `experiments/pipeline_hf_.../`):
+**From GitHub (easiest on laptop):**
 
 ```bash
 cd ~/Desktop/DSL_Generator
-tar -xzf run4_dsl1.tar.gz
+git pull origin laptop-ablation
+tar -xzf ablation_assets/run4_dsl1.tar.gz
 test -f experiments/pipeline_hf_20260611_151047_run4_2104814/cfg/cfg_output_1.json && echo OK
+```
+
+Or download only the tarball:
+
+```bash
+curl -L -o run4_dsl1.tar.gz \
+  https://github.com/Ava-creates/DSL_Generator/raw/laptop-ablation/ablation_assets/run4_dsl1.tar.gz
+cd ~/Desktop/DSL_Generator && tar -xzf ~/Downloads/run4_dsl1.tar.gz
 ```
 
 ### Step 2 — Run ablation locally
