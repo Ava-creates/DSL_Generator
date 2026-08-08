@@ -1,0 +1,23 @@
+# Quick smoke test on laptop: 2 tasks only.
+experiment_dir: experiments/ablation_laptop_smoke
+spec_file: prompt_specifications/specification_with_updated_nld_baseline.txt
+nld_path: prompt_specifications/nld.txt
+codebase_path: prompt_specifications/codebase.txt
+
+model_type: openai_compat
+terminal_function_mode: llm_chained
+skip_explicit_feedback: false
+
+total_samples: 20
+num_explicit_feedback_iterations: 5
+openai_compat_max_parallel: 2
+
+recipes_path: craft/resources/recipes.yaml
+hints_path: craft/resources/hints.yaml
+
+baseline_variant: task_env
+task_env_rounds: 1
+cfg_text: ""
+job_prefix: ablation_smoke
+
+grid_regeneration_attempts: 2

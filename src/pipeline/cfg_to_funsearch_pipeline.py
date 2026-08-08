@@ -93,11 +93,11 @@ def _extract_function_body(func_code: str, func_name: str) -> str:
     return "\n".join(body_lines).rstrip()
 
 
-def _versioned_name(safe_name: str, dsl_round: Optional[int], func_evolution_round: Optional[int]) -> str:
-    """Return the versioned base filename prefix, e.g. 'move_dsl0_func1' or 'move'."""
+def _versioned_name(safe_name: str, dsl_round: Optional[int], func_evolution_round: Optional[int] = None) -> str:
+    """Return the versioned base filename prefix, e.g. 'move_dsl0' or 'move'."""
+    del func_evolution_round  # function evolution versioning removed; kept for call-site compat
     if dsl_round is not None:
-        fround = func_evolution_round if func_evolution_round is not None else 0
-        return f"{safe_name}_dsl{dsl_round}_func{fround}"
+        return f"{safe_name}_dsl{dsl_round}"
     return safe_name
 
 
@@ -105,16 +105,15 @@ def _load_seed_body(
     experiment_dir: Optional[str],
     safe_name: str,
     dsl_round: Optional[int],
-    func_evolution_round: Optional[int],
+    func_evolution_round: Optional[int] = None,
 ) -> str:
-    """Load previous round function body to seed evolve prompt."""
+    """Load previous DSL round function body to seed evolve prompt."""
+    del func_evolution_round
     if not experiment_dir:
         return ""
     prev_path = None
-    if dsl_round is not None and func_evolution_round is not None and func_evolution_round > 0:
-        prev_path = os.path.join(experiment_dir, "final_functions", f"{_versioned_name(safe_name, dsl_round, func_evolution_round - 1)}.py")
-    elif dsl_round is not None and dsl_round > 0:
-        prev_path = os.path.join(experiment_dir, "final_functions", f"{_versioned_name(safe_name, dsl_round - 1, 0)}.py")
+    if dsl_round is not None and dsl_round > 0:
+        prev_path = os.path.join(experiment_dir, "final_functions", f"{_versioned_name(safe_name, dsl_round - 1)}.py")
     elif dsl_round is None:
         prev_path = os.path.join(experiment_dir, "final_functions", f"{safe_name}.py")
     if prev_path and os.path.exists(prev_path):
@@ -441,12 +440,11 @@ def generate_function_prompt(func_name: str, description: str, cfg: str,
                 for fname in sorted(os.listdir(grid_dir)):
                     if _match(fname):
                         grid_spec_paths.append(os.path.join(grid_dir, fname))
-                if not grid_spec_paths:
-                    # Fallback: match by function name alone (any dsl round)
+                if not grid_spec_paths and dsl_round is None:
                     for fname in sorted(os.listdir(grid_dir)):
                         if fname.lower().endswith(".json") and f"{safe_name}_" in fname:
                             grid_spec_paths.append(os.path.join(grid_dir, fname))
-                if not grid_spec_paths:
+                if not grid_spec_paths and dsl_round is None:
                     for fname in sorted(os.listdir(grid_dir)):
                         if fname.lower().endswith(".json"):
                             grid_spec_paths.append(os.path.join(grid_dir, fname))
@@ -894,15 +892,11 @@ def generate_func_init(func_name: str, description: str, cfg: str = "",
     func_init_file = os.path.join(func_dir, f"{_versioned_name(safe_name, dsl_round, func_evolution_round)}_func_init.py")
 
     init_content = None
-    if experiment_dir and func_evolution_round is not None and func_evolution_round > 0:
-        prev_name = _versioned_name(safe_name, dsl_round, func_evolution_round - 1) if dsl_round is not None else safe_name
-        prev_final = os.path.join(experiment_dir, "final_functions", f"{prev_name}.py")
+    if experiment_dir and dsl_round is not None and dsl_round > 0:
+        prev_final = os.path.join(experiment_dir, "final_functions", f"{_versioned_name(safe_name, dsl_round - 1)}.py")
         if os.path.exists(prev_final):
-            try:
-                with open(prev_final, "r", encoding="utf-8") as f:
-                    init_content = f.read()
-            except Exception:
-                init_content = None
+            with open(prev_final, "r", encoding="utf-8") as f:
+                init_content = f.read()
     
     if init_content is None:
         # Infer return type from description
@@ -1108,23 +1102,17 @@ def find_funsearch_log_file(
     dsl_round: Optional[int] = None,
     func_evolution_round: Optional[int] = None,
 ) -> Optional[str]:
-    """Find the funsearch log file for a given function.
-    
-    Args:
-        func_name: Name of the function
-        results_dir: Directory containing funsearch results
-        
-    Returns:
-        Path to the log file, or None if not found
-    """
+    """Find the funsearch log file for a given function."""
+    del func_evolution_round
     safe_name = sanitize_function_name(func_name)
     pattern = f"*{safe_name}*.log"
     log_files = glob.glob(os.path.join(results_dir, pattern))
     if log_files:
         context_matches = []
-        if dsl_round is not None and func_evolution_round is not None:
+        if dsl_round is not None:
+            # Match prompt token in log basename: move_dsl1.txt (new) or move_dsl1_func0.txt (legacy).
             context_pattern = re.compile(
-                rf"{re.escape(safe_name)}_dsl{int(dsl_round)}_func{int(func_evolution_round)}\.txt"
+                rf"{re.escape(safe_name)}_dsl{int(dsl_round)}(?:_func\d+)?\.txt"
             )
             context_matches = [
                 path for path in log_files
@@ -1132,7 +1120,12 @@ def find_funsearch_log_file(
             ]
         if context_matches:
             return max(context_matches, key=os.path.getmtime)
-        # Fallback: return the most recent name match
+        if dsl_round is not None:
+            print(
+                f"  No FunSearch log for {func_name} at "
+                f"dsl{dsl_round} under {results_dir}"
+            )
+            return None
         return max(log_files, key=os.path.getmtime)
     return None
 
@@ -1143,7 +1136,8 @@ def run_explicit_feedback_generation(func_name: str, results_dir: str, func_file
                                      shared_vllm=None, func_signature: str = "",
                                      results_tracker=None, dsl_round: Optional[int] = None,
                                      func_evolution_round: Optional[int] = None,
-                                     num_iterations: int = 1) -> Optional[str]:
+                                     num_iterations: int = 1,
+                                     log_file: Optional[str] = None) -> Optional[str]:
     """Run explicit feedback generation for a function using existing explicit_feedback_generation.py.
     
     Args:
@@ -1155,6 +1149,7 @@ def run_explicit_feedback_generation(func_name: str, results_dir: str, func_file
         specification: Specification string
         k: Number of top functions to use for feedback generation
         shared_vllm: Optional shared vLLM instance
+        log_file: Optional pre-resolved log path (e.g. llm_best_of_n / llm_chained logs)
         
     Returns:
         Final function code as string, or None if extraction failed
@@ -1168,13 +1163,16 @@ def run_explicit_feedback_generation(func_name: str, results_dir: str, func_file
     # Import using package path so it works when project root is on sys.path
     from src.pipeline.explicit_feedback_generation import parse_log_file, response_gen
     
-    # Find the log file
-    log_file = find_funsearch_log_file(
-        func_name,
-        results_dir,
-        dsl_round=dsl_round,
-        func_evolution_round=func_evolution_round,
-    )
+    # Find the log file (caller may pass llm_best_of_n / llm_chained log path directly)
+    if log_file and os.path.isfile(log_file):
+        print(f"  Using provided log file: {log_file}")
+    else:
+        log_file = find_funsearch_log_file(
+            func_name,
+            results_dir,
+            dsl_round=dsl_round,
+            func_evolution_round=func_evolution_round,
+        )
     if not log_file:
         print(f"   Could not find log file for {func_name}")
         return None
@@ -1197,16 +1195,11 @@ def run_explicit_feedback_generation(func_name: str, results_dir: str, func_file
     # Use the function signature passed from the pipeline
     # This is the signature that was created when generating the function prompt
     if not func_signature:
-        # Fallback: construct from function name if not provided
-        base_name, args_list = parse_function_name_and_args(func_name)
-        if args_list:
-            args_str = ", ".join([a.lower() for a in args_list])
-            func_signature = f"def {safe_name}(env, {args_str})"
-        else:
-            func_signature = f"def {safe_name}(env)"
-        print(f"  Using fallback signature: {func_signature}")
-    else:
-        print(f"  Using function signature: {func_signature}")
+        raise ValueError(
+            f"func_signature is required for explicit feedback on {func_name} "
+            f"(dsl{dsl_round})"
+        )
+    print(f"  Using function signature: {func_signature}")
     
     # Use the updated response_gen from explicit_feedback_generation.py
     final_func = response_gen(
@@ -1559,6 +1552,7 @@ def implement_cfg(
     print(f"\n{'='*80}")
     print("Implementing CFG (Steps 2-7)")
     print(f"{'='*80}")
+    del func_evolution_round
 
     if results_tracker is None:
         results_tracker = ResultsTracker(experiment_dir)
@@ -1616,8 +1610,7 @@ def implement_cfg(
     for func_name, description in terminals.items():
         func_file, func_signature = generate_function_prompt(func_name, description, cfg, specification, 
                                             experiment_dir=experiment_dir,
-                                            dsl_round=dsl_round,
-                                            func_evolution_round=func_evolution_round)
+                                            dsl_round=dsl_round)
         func_files[func_name] = func_file
         func_signatures[func_name] = func_signature
     
@@ -1627,8 +1620,7 @@ def implement_cfg(
     for func_name, description in terminals.items():
         func_init_file = generate_func_init(func_name, description, cfg, 
                                            experiment_dir=experiment_dir,
-                                           dsl_round=dsl_round,
-                                           func_evolution_round=func_evolution_round)
+                                           dsl_round=dsl_round)
         func_init_files[func_name] = func_init_file
     
     # Step 4: Run funsearch for each terminal function
@@ -1781,7 +1773,7 @@ def implement_cfg(
                 func_name, results_dir, func_file, experiment_dir, explicit_feedback_dir,
                 specification, k=5, shared_vllm=shared_vllm, func_signature=func_signatures.get(func_name, ""),
                 results_tracker=results_tracker,
-                dsl_round=dsl_round, func_evolution_round=func_evolution_round
+                dsl_round=dsl_round,
             )
             if final_func:
                 print(f"[{func_name}]  Completed explicit feedback")
@@ -1827,7 +1819,7 @@ def implement_cfg(
     
     for func_name, func_code in final_functions.items():
         safe_name = sanitize_function_name(func_name)
-        func_file = os.path.join(final_functions_dir, f"{_versioned_name(safe_name, dsl_round, func_evolution_round)}.py")
+        func_file = os.path.join(final_functions_dir, f"{_versioned_name(safe_name, dsl_round)}.py")
         with open(func_file, 'w', encoding='utf-8') as f:
             f.write(func_code)
         print(f"  Saved {func_name} to {os.path.basename(func_file)}")

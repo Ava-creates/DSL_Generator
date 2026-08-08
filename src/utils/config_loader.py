@@ -56,6 +56,8 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
             # Canonical key: positive_grids (YAML typo positive_girds is accepted)
             if "positive_girds" in config and "positive_grids" not in config:
                 config["positive_grids"] = config["positive_girds"]
+            if "max_dsl_evolutions" in config and "max_dsls" not in config:
+                config["max_dsls"] = config["max_dsl_evolutions"]
             # Print to stderr to avoid interfering with bash eval
             print(f" Loaded config from: {config_path}", file=sys.stderr)
         except Exception as e:
@@ -72,7 +74,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "NLD_PATH": "nld_path",
         "CODEBASE_PATH": "codebase_path",
         "TASKS": "tasks",  # Can be JSON array or space-separated
-        "MAX_DSL_EVOLUTIONS": "max_dsl_evolutions",
+        "MAX_DSLS": "max_dsls",
         "MAX_FUNCTION_EVOLUTIONS": "max_function_evolutions",
         "TOTAL_SAMPLES": "total_samples",
         "NUM_EXPLICIT_FEEDBACK_ITERATIONS": "num_explicit_feedback_iterations",
@@ -99,13 +101,18 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "CFG_TEXT": "cfg_text",
         "JOB_PREFIX": "job_prefix",
         "IMPLEMENT_CFG_SINGLE_TIME": "implement_cfg_single_time",
+        "TEST_TASKS_DEFAULT_TIME": "test_tasks_default_time",
+        "TEST_TASKS_LONG_TIME": "test_tasks_long_time",
+        "OPENAI_COMPAT_MAX_PARALLEL": "openai_compat_max_parallel",
+        "TERMINAL_FUNCTION_MODE": "terminal_function_mode",
+        "SKIP_EXPLICIT_FEEDBACK": "skip_explicit_feedback",
     }
     
     for env_var, config_key in env_mappings.items():
         env_value = os.environ.get(env_var)
         if env_value is not None:
             # Convert string values to appropriate types
-            if config_key in ["max_dsl_evolutions", "max_function_evolutions",
+            if config_key in ["max_dsls", "max_function_evolutions",
                              "total_samples", "num_explicit_feedback_iterations",
                              "max_attempts", "max_cfg_retries", "grid_regeneration_attempts",
                              "positive_grids", "negative_grids", "edge_grids",
@@ -122,8 +129,10 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
                 config[config_key] = env_value.lower() in ("true", "1", "yes")
             elif config_key in ("grid_spec_dir", "grid_prompt_path", "failure_analysis_prompt", "cfg_evolution_prompt", "synthesis_prompt", "nld_path", "codebase_path", "cfg_generator_prompt_path", "domain_context_template_path"):
                 config[config_key] = env_value
-            elif config_key in ("cfg_text", "job_prefix"):
+            elif config_key in ("cfg_text", "job_prefix", "terminal_function_mode"):
                 config[config_key] = env_value
+            elif config_key == "skip_explicit_feedback":
+                config[config_key] = env_value.lower() in ("true", "1", "yes")
             elif config_key == "tasks":
                 # Handle tasks - can be JSON array or space-separated
                 try:
@@ -142,7 +151,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "nld_path": "prompt_specifications/nld.txt",
         "codebase_path": "prompt_specifications/codebase.txt",
         "tasks": [],
-        "max_dsl_evolutions": 2,
+        "max_dsls": 2,
         "max_function_evolutions": 1,
         "total_samples": 1000,
         "num_explicit_feedback_iterations": 30,
@@ -169,7 +178,9 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "domain_context_template_path": None,
         "cfg_text": "",
         "job_prefix": None,
-        "implement_cfg_single_time": "12:00:00",
+        "implement_cfg_single_time": "6:00:00",
+        "terminal_function_mode": "funsearch",
+        "skip_explicit_feedback": False,
     }
     
     for key, default_value in defaults.items():
@@ -192,7 +203,7 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
         "nld_path": "NLD_PATH",
         "codebase_path": "CODEBASE_PATH",
         "tasks": "TASKS",  # Will be converted to space-separated string
-        "max_dsl_evolutions": "MAX_DSL_EVOLUTIONS",
+        "max_dsls": "MAX_DSLS",
         "max_function_evolutions": "MAX_FUNCTION_EVOLUTIONS",
         "total_samples": "TOTAL_SAMPLES",
         "num_explicit_feedback_iterations": "NUM_EXPLICIT_FEEDBACK_ITERATIONS",
@@ -220,6 +231,11 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
         "cfg_text": "CFG_TEXT",
         "job_prefix": "JOB_PREFIX",
         "implement_cfg_single_time": "IMPLEMENT_CFG_SINGLE_TIME",
+        "test_tasks_default_time": "TEST_TASKS_DEFAULT_TIME",
+        "test_tasks_long_time": "TEST_TASKS_LONG_TIME",
+        "openai_compat_max_parallel": "OPENAI_COMPAT_MAX_PARALLEL",
+        "terminal_function_mode": "TERMINAL_FUNCTION_MODE",
+        "skip_explicit_feedback": "SKIP_EXPLICIT_FEEDBACK",
     }
     
     for config_key, env_var in env_mappings.items():
@@ -228,7 +244,7 @@ def export_config_to_env(config: Dict[str, Any]) -> None:
             if config_key == "tasks" and isinstance(value, list):
                 # Convert list to space-separated string for SLURM
                 os.environ[env_var] = " ".join(str(t) for t in value)
-            elif config_key in ("skip_cfg_generation", "use_existing_grid_specs", "skip_positive_grids"):
+            elif config_key in ("skip_cfg_generation", "use_existing_grid_specs", "skip_positive_grids", "skip_explicit_feedback"):
                 os.environ[env_var] = "true" if value else "false"
             elif config_key == "grid_spec_dir" and value is not None:
                 os.environ[env_var] = str(value)

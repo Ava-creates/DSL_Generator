@@ -16,15 +16,20 @@ from src.utils.api_openai_compat_walltimes import (
     resolve_openai_compat_request_max_wait,
 )
 from src.utils.openai_compat_key import resolve_openai_compat_api_key
+from src.utils.openai_compat_concurrency import openai_compat_api_slot
+
+
+class OpenAICompatFatalError(RuntimeError):
+    """Non-recoverable API connectivity failure (proxy block, misconfig, etc.)."""
 
 
 def resolve_openai_compat_endpoint() -> tuple[str, str, str]:
     base_url = os.environ.get(
-        "OPENAI_COMPAT_BASE_URL", "https://llm.vulcan.alliancecan.ca"
+        "OPENAI_COMPAT_BASE_URL", "https://inference.vulcan.alliancecan.ca"
     ).rstrip("/")
     model = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-oss-120b").strip()
     chat_path = os.environ.get(
-        "OPENAI_COMPAT_CHAT_PATH", "/api/chat/completions"
+        "OPENAI_COMPAT_CHAT_PATH", "/v1/chat/completions"
     ).strip()
     if chat_path.startswith("http://") or chat_path.startswith("https://"):
         endpoint = chat_path
@@ -37,10 +42,20 @@ def no_proxy_hosts_for_endpoint(endpoint: str) -> str:
     host = urlparse(endpoint).hostname or ""
     existing = os.environ.get("NO_PROXY", os.environ.get("no_proxy", "")).strip()
     parts = [p.strip() for p in existing.split(",") if p.strip()]
-    for item in (host, ".alliancecan.ca", "llm.vulcan.alliancecan.ca"):
+    for item in (host, ".alliancecan.ca", "inference.vulcan.alliancecan.ca"):
         if item and item not in parts:
             parts.append(item)
     return ",".join(parts)
+
+
+def is_fatal_connection_error(exc: BaseException) -> bool:
+    if isinstance(exc, requests.exceptions.ProxyError):
+        return True
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        msg = str(exc)
+        if "403 Forbidden" in msg or "Tunnel connection failed" in msg:
+            return True
+    return False
 
 
 def build_openai_compat_session(*, retry_total: Optional[int] = None) -> requests.Session:
@@ -51,7 +66,7 @@ def build_openai_compat_session(*, retry_total: Optional[int] = None) -> request
     backoff = float(os.environ.get("OPENAI_COMPAT_BACKOFF_FACTOR", "2.0"))
     retry = Retry(
         total=total,
-        connect=total,
+        connect=0,
         read=total,
         status=total,
         backoff_factor=backoff,
@@ -69,14 +84,32 @@ def build_openai_compat_session(*, retry_total: Optional[int] = None) -> request
     return session
 
 
-def _is_cold_start_response(status_code: int, body_text: str) -> bool:
+def is_openai_compat_cold_start(status_code: int, body_text: str) -> bool:
+    """True when the model/backend is warming up (retry, do not fail the job)."""
     if status_code in (502, 503, 504):
         return True
     if status_code >= 500:
         return True
-    if status_code == 400 and "Server Connection Error" in body_text:
+    lower = (body_text or "").lower()
+    if status_code == 400 and "server connection error" in lower:
+        return True
+    if "not ready" in lower:
+        return True
+    if status_code in (400, 503) and "warming" in lower:
+        return True
+    if status_code in (400, 503) and "loading" in lower and "model" in lower:
         return True
     return False
+
+
+def _is_cold_start_response(status_code: int, body_text: str) -> bool:
+    return is_openai_compat_cold_start(status_code, body_text)
+
+
+def _raise_connection_error(label: str, exc: BaseException) -> None:
+    if is_fatal_connection_error(exc):
+        raise OpenAICompatFatalError(f"[{label}] {exc}") from exc
+    raise exc
 
 
 def post_chat_completion(
@@ -93,6 +126,9 @@ def post_chat_completion(
 
     Returns:
         (status_code, raw_text, parsed_json_or_none)
+
+    Raises:
+        OpenAICompatFatalError: proxy blocks and other non-recoverable connectivity errors.
     """
     endpoint, model, _ = resolve_openai_compat_endpoint()
 
@@ -117,42 +153,39 @@ def post_chat_completion(
     deadline = time.monotonic() + max_wait
     attempt = 0
 
-    while time.monotonic() < deadline:
-        attempt += 1
-        try:
-            response = session.post(
-                endpoint,
-                headers=headers,
-                json=payload,
-                timeout=timeout,
-            )
-        except (requests.exceptions.ProxyError, requests.exceptions.ConnectionError) as exc:
-            remaining = deadline - time.monotonic()
-            print(
-                f"[{label}] connection error attempt {attempt}: {exc}. "
-                f"Retrying in {poll:.0f}s ({remaining:.0f}s left)"
-            )
-            time.sleep(poll)
-            continue
+    with openai_compat_api_slot():
+        while time.monotonic() < deadline:
+            attempt += 1
+            try:
+                response = session.post(
+                    endpoint,
+                    headers=headers,
+                    json=payload,
+                    timeout=timeout,
+                )
+            except (requests.exceptions.ProxyError, requests.exceptions.ConnectionError) as exc:
+                _raise_connection_error(label, exc)
 
-        body_text = response.text if response.text is not None else ""
-        if response.status_code < 400:
-            parsed = response.json()
-            return response.status_code, body_text, parsed
+            body_text = response.text if response.text is not None else ""
+            if response.status_code < 400:
+                parsed = response.json()
+                return response.status_code, body_text, parsed
 
-        if _is_cold_start_response(response.status_code, body_text):
-            remaining = deadline - time.monotonic()
-            print(
-                f"[{label}] API not ready attempt {attempt}: "
-                f"HTTP {response.status_code}: {body_text[:200]}. "
-                f"Retrying in {poll:.0f}s ({remaining:.0f}s left)"
-            )
-            time.sleep(poll)
-            continue
+            if _is_cold_start_response(response.status_code, body_text):
+                remaining = deadline - time.monotonic()
+                print(
+                    f"[{label}] API not ready attempt {attempt}: "
+                    f"HTTP {response.status_code}: {body_text[:200]}. "
+                    f"Retrying in {poll:.0f}s ({remaining:.0f}s left)"
+                )
+                time.sleep(poll)
+                continue
 
-        return response.status_code, body_text, None
+            return response.status_code, body_text, None
 
-    return 0, "", None
+    raise OpenAICompatFatalError(
+        f"[{label}] API request failed after {max_wait:.0f}s (endpoint={endpoint})"
+    )
 
 
 def extract_chat_content(body: Optional[dict[str, Any]]) -> str:

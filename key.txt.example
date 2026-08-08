@@ -1,0 +1,3 @@
+# Copy to key.txt and paste your Aleph / OpenAI-compatible API key on the next line.
+# key.txt is gitignored — never commit the real key.
+your-api-key-here

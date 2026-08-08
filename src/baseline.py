@@ -14,6 +14,7 @@ import sys
 import subprocess
 from functools import lru_cache
 from numbers import Real
+from pathlib import Path
 
 # Add project root to path
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -81,13 +82,10 @@ TASKS = [
 ]
 
 
-LEGACY_FUNCTION_ALIASES = {
-    "make_goldarrow": "make_golden_arrow",
-}
-
 # Old human titles / filters that predate recipe-aligned naming.
 LEGACY_TASK_FILTER_ALIASES = {
     "make golden arrow": "make goldarrow",
+    "make gold arrow": "make goldarrow",
 }
 
 
@@ -155,11 +153,7 @@ def task_name_from_title(title: str) -> str:
 
 
 def _function_name_candidates(safe_name: str) -> list[str]:
-    names = [safe_name]
-    legacy = LEGACY_FUNCTION_ALIASES.get(safe_name)
-    if legacy and legacy not in names:
-        names.append(legacy)
-    return names
+    return [safe_name]
 
 
 def _task_match_tokens(task: dict, recipes_path: str = "craft/resources/recipes.yaml") -> set[str]:
@@ -229,6 +223,64 @@ def _bash_wrap(command: str) -> str:
     return f"bash -lc {shlex.quote(command)}"
 
 
+def _run_baseline_implement_local(
+    *,
+    args,
+    experiment_dir: str,
+    terminals: dict[str, str],
+    terminal_function_mode: str,
+) -> tuple[int, list[str]]:
+    """Run implement+explicit-feedback for each baseline task in-process (no SLURM)."""
+    implement_script = os.path.join(_project_root, "src", "pipeline", "stages", "stage_implement_cfg_single.py")
+    completed: list[str] = []
+    failed: list[str] = []
+
+    for func_name in terminals.keys():
+        cmd = [
+            sys.executable,
+            implement_script,
+            "--experiment_dir",
+            experiment_dir,
+            "--spec_file",
+            args.spec_file,
+            "--function_name",
+            func_name,
+            "--model_type",
+            args.model_type,
+            "--dsl_round",
+            "0",
+            "--func_evolution_round",
+            str(int(args.func_evolution_round)),
+            "--total_samples",
+            str(int(args.total_samples)),
+            "--num_iterations",
+            str(int(args.num_explicit_feedback_iterations)),
+            "--terminal_function_mode",
+            terminal_function_mode,
+            "--baseline_mode",
+        ]
+        if args.nld_path:
+            cmd.extend(["--nld_path", args.nld_path])
+        if args.codebase_path:
+            cmd.extend(["--codebase_path", args.codebase_path])
+        if args.openai_compat_key_file:
+            cmd.extend(["--openai_compat_key_file", args.openai_compat_key_file])
+
+        print(f"\n[Local] Implement {func_name} ({terminal_function_mode})")
+        result = subprocess.run(cmd, cwd=_project_root, check=False)
+        if result.returncode == 0:
+            completed.append(func_name)
+            print(f"[Local] OK {func_name}")
+        else:
+            failed.append(func_name)
+            print(f"[Local] FAILED {func_name} (exit {result.returncode})", file=sys.stderr)
+
+    print(f"\n[Local] Completed {len(completed)}/{len(terminals)} implement jobs")
+    if failed:
+        print(f"[Local] Failed: {failed}", file=sys.stderr)
+    return len(completed), completed
+
+
 def _sbatch_node_args() -> list[str]:
     """Optional Slurm node placement from SBATCH_EXCLUDE / SBATCH_NODELIST env vars."""
     args: list[str] = []
@@ -271,7 +323,20 @@ def _final_eval_shell_prefix() -> str:
 
 
 def _load_function_from_file(file_path: str, function_name: str):
-    """Load a Python function from a file path."""
+    """Load a Python function from a file path.
+
+    Normalizes on load so leftover ``@funsearch`` wrappers / bad craft.env
+    imports in older final_functions saves do not fail final eval.
+    """
+    from src.utils.saved_function import normalize_saved_function, resolve_func_signature
+
+    raw = Path(file_path).read_text(encoding="utf-8")
+    sig = resolve_func_signature(function_name)
+    normalized = normalize_saved_function(raw, sig)
+    if normalized != raw:
+        Path(file_path).write_text(normalized, encoding="utf-8")
+        print(f"[Baseline Final Eval] Rewrote {file_path} (stripped FunSearch/bad imports)")
+
     module_name = f"baseline_eval_{function_name}_{abs(hash(file_path))}"
     spec = importlib.util.spec_from_file_location(module_name, file_path)
     if spec is None or spec.loader is None:
@@ -894,6 +959,11 @@ def main():
         action="store_true",
         help="Skip prompt/init regeneration and submit implementation jobs using existing artifacts",
     )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Run implement + final eval locally in this process tree (no SLURM sbatch)",
+    )
     args = parser.parse_args()
 
     if int(args.task_env_rounds) < 1:
@@ -980,6 +1050,7 @@ def main():
 
     experiment_dir = args.experiment_dir
     os.makedirs(experiment_dir, exist_ok=True)
+    config = load_config()
 
     baseline_log_dir = os.environ.get("BASELINE_LOG_DIR", "").strip()
     if not baseline_log_dir:
@@ -989,7 +1060,11 @@ def main():
 
     os.makedirs(os.path.join(experiment_dir, "function_specific_prompts"), exist_ok=True)
     os.makedirs(os.path.join(experiment_dir, "functions_generated"), exist_ok=True)
+    terminal_function_mode = str(config.get("terminal_function_mode", "funsearch")).strip() or "funsearch"
     os.makedirs(os.path.join(experiment_dir, "results", "funsearch"), exist_ok=True)
+    if terminal_function_mode in ("llm_best_of_n", "llm_chained"):
+        subdir = "llm_best_of_n" if terminal_function_mode == "llm_best_of_n" else "llm_chained"
+        os.makedirs(os.path.join(experiment_dir, "results", subdir), exist_ok=True)
     os.makedirs(os.path.join(experiment_dir, "explicit_feedback"), exist_ok=True)
     os.makedirs(os.path.join(experiment_dir, "final_functions"), exist_ok=True)
     os.makedirs(os.path.join(experiment_dir, "cfg"), exist_ok=True)
@@ -1042,7 +1117,6 @@ def main():
         )
         return 1
 
-    config = load_config()
     positive_grids = int(config.get("positive_girds", config.get("positive_grids", 10)))
     negative_grids = int(config.get("negative_grids", 4))
     edge_grids = int(config.get("edge_grids", 1))
@@ -1127,12 +1201,59 @@ def main():
         tasks=[task["title"] for task in selected_tasks],
     )
 
-    print(f"\n[Submit] Launching {len(terminals)} FunSearch+Explicit Feedback jobs...")
+    if args.local:
+        if args.baseline_variant != BASELINE_VARIANT_TASK_ENV:
+            print(
+                " ERROR: --local supports baseline_variant=task_env only (no GPU testcase grids).",
+                file=sys.stderr,
+            )
+            return 1
+        if int(args.task_env_rounds) > 1:
+            print(" ERROR: --local does not support task_env_rounds > 1 yet.", file=sys.stderr)
+            return 1
+
+        using_api = args.model_type == "openai_compat"
+        if using_api:
+            os.environ.setdefault("MODEL_TYPE", "openai_compat")
+            maybe_cold_start_openai_compat(key_file=args.openai_compat_key_file)
+
+        print(
+            f"\n[Local] Running {len(terminals)} "
+            f"{terminal_function_mode}+explicit-feedback jobs (no SLURM)..."
+        )
+        completed_count, _completed = _run_baseline_implement_local(
+            args=args,
+            experiment_dir=experiment_dir,
+            terminals=terminals,
+            terminal_function_mode=terminal_function_mode,
+        )
+        if completed_count == 0:
+            return 1
+
+        print("\n[Local] Running final baseline evaluation...")
+        return run_baseline_final_evaluation(
+            experiment_dir=experiment_dir,
+            dsl_round=0,
+            func_evolution_round=int(args.func_evolution_round),
+            recipes_path=args.recipes_path,
+            hints_path=args.hints_path,
+            max_steps=int(args.max_steps),
+            test_seeds=args.test_seeds,
+            tasks=selected_tasks if args.tasks else None,
+        )
+
+    print(
+        f"\n[Submit] Launching {len(terminals)} "
+        f"{terminal_function_mode}+Explicit Feedback jobs..."
+    )
     job_prefix = args.job_prefix or os.path.basename(experiment_dir)[:20]
     scripts_dir = "scripts/stages"
-    impl_job_time = os.environ.get("IMPLEMENT_CFG_SINGLE_TIME", "").strip()
+    impl_job_time = (
+        os.environ.get("IMPLEMENT_CFG_SINGLE_TIME", "").strip()
+        or str(config.get("implement_cfg_single_time", "6:00:00")).strip()
+    )
     if impl_job_time:
-        print(f"  Using per-function implement job time override: {impl_job_time}")
+        print(f"  Using per-function implement job time: {impl_job_time}")
 
     # Resource profiles: API mode uses no GPUs. Per-function jobs wait on the API
     # but FunSearch + env evaluation can still spike; default 64G avoids OOM on busy nodes.
@@ -1146,7 +1267,7 @@ def main():
         print(f"  API mode: per-function jobs will use {impl_cpus} CPUs, {impl_mem} RAM, no GPU (no --gres)")
     else:
         impl_cpus = impl_mem = None
-        impl_time_default = impl_job_time or os.environ.get("IMPLEMENT_CFG_SINGLE_TIME", "12:00:00")
+        impl_time_default = impl_job_time or os.environ.get("IMPLEMENT_CFG_SINGLE_TIME", "6:00:00")
         print(f"  HF mode: per-function jobs will use 4 GPUs, default walltime {impl_time_default}")
 
     submitted = 0
@@ -1161,12 +1282,18 @@ def main():
             "FUNCTION_NAME": func_name,
             "TOTAL_SAMPLES": str(args.total_samples),
             "NUM_EXPLICIT_FEEDBACK_ITERATIONS": str(args.num_explicit_feedback_iterations),
+            "TERMINAL_FUNCTION_MODE": terminal_function_mode,
             "BASELINE_MODE": "1",
             "SKIP_CHAINING": "1",
             "DISABLE_LLM_VERIFIER": "1",
         }
+        experiment_config = os.environ.get("EXPERIMENT_CONFIG", "").strip()
+        if experiment_config:
+            env_vars["EXPERIMENT_CONFIG"] = experiment_config
         if args.openai_compat_key_file:
             env_vars["OPENAI_COMPAT_KEY_FILE"] = args.openai_compat_key_file
+        if os.environ.get("FUNSEARCH_VECTOR_CLUSTERING", "").strip().lower() in {"1", "true", "yes"}:
+            env_vars["FUNSEARCH_VECTOR_CLUSTERING"] = "1"
         env_str = ",".join([f"{k}={v}" for k, v in env_vars.items()])
         job_name = f"{job_prefix}_impl_{_sanitize_function_name(func_name)}"
         submit_cmd = [

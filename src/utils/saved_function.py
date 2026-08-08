@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import re
 from typing import Optional
 
@@ -145,10 +146,169 @@ def ensure_function_def(code: str, func_signature: str) -> str:
     return f"{sig_clean}\n{_indent_block(body)}\n"
 
 
+def _extract_evolve_function(code: str, func_name: Optional[str] = None) -> Optional[str]:
+    """If *code* is a FunSearch program, return only the evolved function source."""
+    if "@funsearch" not in code and "funsearch." not in code:
+        return None
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return None
+
+    evolve_fn: Optional[ast.FunctionDef] = None
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        decorators = []
+        for d in node.decorator_list:
+            if isinstance(d, ast.Attribute) and isinstance(d.value, ast.Name) and d.value.id == "funsearch":
+                decorators.append(d.attr)
+            elif isinstance(d, ast.Name):
+                decorators.append(d.id)
+        if "evolve" in decorators or (func_name and node.name == func_name and not decorators):
+            evolve_fn = node
+            break
+        if func_name and node.name == func_name:
+            evolve_fn = node
+
+    if evolve_fn is None:
+        return None
+
+    lines = code.splitlines()
+    # Drop decorator lines immediately above the def.
+    start = evolve_fn.lineno - 1
+    while start > 0 and lines[start - 1].lstrip().startswith("@"):
+        start -= 1
+    end = evolve_fn.end_lineno
+    return "\n".join(lines[start:end]).strip("\n")
+
+
+# Imports that LLM-generated programs sometimes emit but that do not exist on
+# craft.env (or are not needed for final-eval loading). Drop them so import
+# succeeds; callers that referenced the names usually have a fallback path.
+_BAD_CRAFT_ENV_IMPORTS = re.compile(
+    r"^from\s+craft\.env\s+import\s+(Action|env_factory)\b"
+)
+
+
+def _meaningful_body_stmts(func_def: ast.FunctionDef) -> list:
+    """Return function body statements excluding docstrings."""
+    meaningful = []
+    for stmt in func_def.body:
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str):
+            continue
+        meaningful.append(stmt)
+    return meaningful
+
+
+def function_impl_is_trivial(code: str, func_name: Optional[str] = None) -> bool:
+    """True when the target function has no real implementation (empty / pass / return [])."""
+    if not code or not code.strip():
+        return True
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return True
+
+    candidates = []
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        if func_name is None or node.name == func_name:
+            candidates.append(node)
+
+    if not candidates:
+        return True
+
+    for func_def in candidates:
+        meaningful = _meaningful_body_stmts(func_def)
+        if not meaningful:
+            return True
+        if len(meaningful) == 1 and isinstance(meaningful[0], ast.Pass):
+            return True
+        if len(meaningful) == 1 and isinstance(meaningful[0], ast.Return):
+            value = meaningful[0].value
+            if value is None:
+                return True
+            if isinstance(value, ast.List) and not value.elts:
+                return True
+            if isinstance(value, ast.Constant) and value.value in (None, []):
+                return True
+        return False
+    return True
+
+
+def _extract_plain_function(code: str, func_name: Optional[str] = None) -> Optional[str]:
+    """Return a module-level function definition that is not a FunSearch harness."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return None
+
+    skip_names = {"solve", "evaluate"}
+    lines = code.splitlines()
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        if node.name in skip_names:
+            continue
+        decorators = []
+        for d in node.decorator_list:
+            if isinstance(d, ast.Attribute) and isinstance(d.value, ast.Name) and d.value.id == "funsearch":
+                decorators.append(d.attr)
+            elif isinstance(d, ast.Name):
+                decorators.append(d.id)
+        if "run" in decorators or "evolve" in decorators:
+            continue
+        if func_name and node.name != func_name:
+            continue
+        start = node.lineno - 1
+        while start > 0 and lines[start - 1].lstrip().startswith("@"):
+            start -= 1
+        end = node.end_lineno
+        return "\n".join(lines[start:end]).strip("\n")
+    return None
+
+
+def prepare_function_module_source(
+    code: str,
+    func_signature: str = "",
+    *,
+    allow_trivial: bool = False,
+) -> Optional[str]:
+    """Normalize FunSearch artifacts into import-safe module source for evaluation."""
+    if not code or not code.strip():
+        return None
+
+    func_name = _target_func_name(func_signature)
+    normalized = normalize_saved_function(code, func_signature)
+    if func_name and function_impl_is_trivial(normalized, func_name) and not allow_trivial:
+        return None
+    return normalized
+
+
 def normalize_saved_function(code: str, func_signature: str = "") -> str:
     """Return import-safe module text with a valid top-level function definition."""
     if not code or not code.strip():
         return code
+
+    func_name = _target_func_name(func_signature)
+    extracted = _extract_evolve_function(code, func_name)
+    if extracted is not None and not function_impl_is_trivial(extracted, func_name):
+        code = extracted
+    elif extracted is not None and func_name:
+        plain = _extract_plain_function(code, func_name)
+        if plain and not function_impl_is_trivial(plain, func_name):
+            code = plain
+
+    # Strip leftover FunSearch decorators from a lone function.
+    cleaned_lines: list[str] = []
+    for line in code.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("@funsearch"):
+            continue
+        cleaned_lines.append(line)
+    code = "\n".join(cleaned_lines)
 
     import_lines: list[str] = []
     body_lines: list[str] = []
@@ -157,6 +317,8 @@ def normalize_saved_function(code: str, func_signature: str = "") -> str:
     for line in code.splitlines():
         if _is_import_line(line):
             normalized = " ".join(line.strip().split())
+            if _BAD_CRAFT_ENV_IMPORTS.match(normalized):
+                continue
             if normalized not in seen_imports:
                 import_lines.append(normalized)
                 seen_imports.add(normalized)
@@ -185,3 +347,22 @@ def resolve_func_signature(
     name = func_name.strip().lower()
     name = re.sub(r"\W|^(?=\d)", "_", name)
     return f"def {name}(env):"
+
+
+def best_function_from_funsearch_log(log_path: str, func_signature: str) -> Optional[str]:
+    """Return the top-scoring FunSearch program as a normalized module."""
+    if not log_path or not os.path.isfile(log_path):
+        return None
+
+    from src.pipeline.explicit_feedback_generation import parse_log_file
+
+    top = parse_log_file(log_path, k=1)
+    if not top:
+        return None
+
+    _score, body = top[0]
+    if not body or not body.strip():
+        return None
+
+    prepared = prepare_function_module_source(body, func_signature, allow_trivial=False)
+    return prepared

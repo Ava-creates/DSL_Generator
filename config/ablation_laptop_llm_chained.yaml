@@ -1,0 +1,24 @@
+# Laptop ablation: baseline task_env + llm_chained + Aleph API (no SLURM, no GPU).
+experiment_dir: experiments/ablation_laptop_llm_chained
+spec_file: prompt_specifications/specification_with_updated_nld_baseline.txt
+nld_path: prompt_specifications/nld.txt
+codebase_path: prompt_specifications/codebase.txt
+
+model_type: openai_compat
+terminal_function_mode: llm_chained
+skip_explicit_feedback: false
+
+total_samples: 100
+num_explicit_feedback_iterations: 30
+openai_compat_max_parallel: 4
+
+recipes_path: craft/resources/recipes.yaml
+hints_path: craft/resources/hints.yaml
+
+baseline_variant: task_env
+task_env_rounds: 1
+cfg_text: ""
+job_prefix: ablation_laptop_chained
+
+# Smaller than cluster defaults — good for laptop smoke tests.
+grid_regeneration_attempts: 3

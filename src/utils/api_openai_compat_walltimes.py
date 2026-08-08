@@ -15,7 +15,7 @@ from typing import Optional
 _API_MULT = float(os.environ.get("OPENAI_COMPAT_RUNTIME_MULT", "4"))
 
 # Hard cap on one post_chat_completion poll loop (FunSearch draw, synthesis, etc.).
-OPENAI_COMPAT_CALL_MAX_WAIT_SECONDS = 1200.0  # 20 minutes
+OPENAI_COMPAT_CALL_MAX_WAIT_SECONDS = 1800.0  # 30 minutes (model cold start)
 
 # Per-job sbatch --time suggestions for shell wrappers (export before sbatch).
 API_SBATCH_TIME_ENV = {
@@ -24,7 +24,7 @@ API_SBATCH_TIME_ENV = {
     "API_CHAIN_SBATCH_TIME_AGGREGATE": "4:00:00",
     "API_CHAIN_SBATCH_TIME_FILE_GEN": "10:00:00",
     "API_CHAIN_MEM": "64G",
-    "API_CHAIN_SBATCH_TIME_IMPLEMENT_SINGLE": "40:00:00",
+    "API_CHAIN_SBATCH_TIME_IMPLEMENT_SINGLE": "20:00:00",
     "API_CHAIN_SBATCH_TIME_IMPLEMENT_ARRAY": "96:00:00",
     "API_CHAIN_SBATCH_TIME_FUNSEARCH": "40:00:00",
     "API_CHAIN_SBATCH_TIME_FUNSEARCH_SINGLE": "30:00:00",
@@ -65,7 +65,7 @@ def resolve_openai_compat_http_timeout(
 def resolve_openai_compat_request_max_wait() -> float:
     """Total wall-clock budget for one API call (retries + cold-start polling)."""
     return min(
-        env_float_openai_compat_scaled("OPENAI_COMPAT_REQUEST_MAX_WAIT", 300.0),
+        env_float_openai_compat_scaled("OPENAI_COMPAT_REQUEST_MAX_WAIT", 450.0),
         OPENAI_COMPAT_CALL_MAX_WAIT_SECONDS,
     )
 

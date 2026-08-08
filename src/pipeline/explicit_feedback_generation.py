@@ -42,14 +42,14 @@ class OpenAICompatLLMWrapper:
 
         self._api_key = resolve_openai_compat_api_key(key_file)
         self._base_url = os.environ.get(
-            "OPENAI_COMPAT_BASE_URL", "https://llm.vulcan.alliancecan.ca"
+            "OPENAI_COMPAT_BASE_URL", "https://inference.vulcan.alliancecan.ca"
         ).rstrip("/")
         self._model = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-oss-120b").strip()
         self._timeout_seconds = env_float_openai_compat_scaled("OPENAI_COMPAT_HTTP_TIMEOUT", 500.0)
         self._retry_total = int(os.environ.get("OPENAI_COMPAT_MAX_RETRIES", "4"))
         self._backoff_factor = float(os.environ.get("OPENAI_COMPAT_BACKOFF_FACTOR", "1.0"))
         chat_path = os.environ.get(
-            "OPENAI_COMPAT_CHAT_PATH", "/api/chat/completions"
+            "OPENAI_COMPAT_CHAT_PATH", "/v1/chat/completions"
         ).strip()
         if chat_path.startswith("http://") or chat_path.startswith("https://"):
             self._endpoint = chat_path
@@ -81,10 +81,9 @@ class OpenAICompatLLMWrapper:
             label="OpenAICompatLLMWrapper",
         )
         if status >= 400 or parsed is None:
-            print(
+            raise RuntimeError(
                 f"[OpenAICompatLLMWrapper] API error {status}: {body_text[:500]}"
             )
-            return ""
         content = extract_chat_content(parsed)
         if not content:
             print("[OpenAICompatLLMWrapper] API returned no choices")
@@ -582,10 +581,7 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
     # build deterministic filename with versioning (no timestamp); we will append entries
     os.makedirs(output_dir, exist_ok=True)
     if dsl_round is not None:
-        if func_evolution_round is not None:
-            log_filename = os.path.join(output_dir, f"feedback_{func_name}_dsl{dsl_round}_func{func_evolution_round}.json")
-        else:
-            log_filename = os.path.join(output_dir, f"feedback_{func_name}_dsl{dsl_round}_func0.json")
+        log_filename = os.path.join(output_dir, f"feedback_{func_name}_dsl{dsl_round}.json")
     else:
         log_filename = os.path.join(output_dir, f"feedback_{func_name}.json")
 
@@ -755,31 +751,15 @@ def response_gen(funcs: List[Tuple[float, str]], k: int, file: str,
             f"inserted={inserted_into_pool} pool_best={pool[0][0] if pool else 'NA'}"
         )
     
-    # Decide which function to return:
-    # 1. Prefer generated function if it runs successfully
-    # 2. Fall back to best function from log if generation failed
-    # 3. If nothing works, return a stub function that returns []
-    
+    # Return the best function from the explicit-feedback pool, or None if empty.
     if pool:
         final_func = pool[0][1]
         best_score = float(pool[0][0])
         best_runs_ok = True
         print(f"   Final pool best selected (score: {best_score:.4f}, pool_size={len(pool)})")
     else:
-        print("   No functions in pool. Creating stub function that returns []")
-        func_name_match = re.search(r'def\s+(\w+)', func_signature)
-        func_name = func_name_match.group(1) if func_name_match else "function"
-        params_match = re.search(r'def\s+\w+\s*\(([^)]*)\)', func_signature)
-        params = params_match.group(1) if params_match else ""
-        final_func = f"""def {func_name}({params}):
-    \"\"\"
-    Stub implementation - no working function found.
-    Returns empty list as fallback.
-    \"\"\"
-    return []
-"""
-        best_score = -1.0
-        best_runs_ok = False
+        print("   No working functions in explicit-feedback pool", file=sys.stderr)
+        return None
         
     # Use final_func for the rest of the processing and ensure a valid signature is present.
     best_func = _ensure_signature(final_func, func_signature)
