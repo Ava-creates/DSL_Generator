@@ -2,7 +2,7 @@
 
 Modes:
 - llm_best_of_n: identical prompt on every sample; no cross-sample memory.
-- llm_chained: each iteration appends only the previous function body and its eval score.
+- llm_chained: each iteration appends the two most recent function bodies and their eval scores.
 
 Both modes evaluate candidates with the same FunSearch Evaluator, write JSONL logs
 compatible with explicit_feedback_generation.parse_log_file, and are followed by
@@ -238,6 +238,20 @@ def run_llm_best_of_n(
     return log_file
 
 
+def _format_chained_history(history: list[tuple[float, str]]) -> str:
+    """Format up to the two most recent (score, body) pairs for the chained prompt."""
+    if not history:
+        return ""
+    blocks = [
+        f"### Score: {score}\n```python\n{body}\n```"
+        for score, body in history[-2:]
+    ]
+    return (
+        "\n\nPrevious implementations and their evaluation scores (most recent last):\n"
+        + "\n\n".join(blocks)
+    )
+
+
 def run_llm_chained(
     *,
     specification: str,
@@ -253,7 +267,7 @@ def run_llm_chained(
     grid_regeneration_attempts: Optional[int] = None,
     grid_lookup_experiment_dir: Optional[str] = None,
 ) -> str:
-    """Iteratively generate candidates; each step adds only the previous body + score to the prompt.
+    """Iteratively generate candidates; each step adds the two most recent bodies + scores.
 
     No reflection or NL feedback in the loop. Explicit feedback runs separately afterward.
     """
@@ -295,23 +309,15 @@ def run_llm_chained(
 
     base_prompt = _build_evolve_only_llm_prompt(template, function_to_evolve)
 
-    prev_body = template.get_function(function_to_evolve).body
-    prev_score = top_score_from_log(log_file)
-    if prev_score is None:
-        prev_score = 0.0
+    history: list[tuple[float, str]] = []
 
-    print(f"[llm_chained] Starting chained generation for {num_iterations} iterations")
+    print(f"[llm_chained] Starting chained generation for {num_iterations} iterations (2-body history)")
     for i in range(num_iterations):
-        prompt = (
-            base_prompt
-            + "\n\nPrevious implementation and its evaluation score:\n"
-            + f"### Score: {prev_score}\n```python\n{prev_body}\n```"
-        )
+        prompt = base_prompt + _format_chained_history(history)
         sample = _draw_body(llm, prompt, function_to_evolve)
         score = ev.analyse(sample, island_id=0, version_generated=i + 1)
-        prev_body = sample
-        if score is not None:
-            prev_score = float(score)
+        history.append((float(score) if score is not None else 0.0, sample))
+        history = history[-2:]
         if (i + 1) % 50 == 0 or i == 0:
             print(f"[llm_chained] iter {i + 1}/{num_iterations} score={score}")
 

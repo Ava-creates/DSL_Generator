@@ -161,7 +161,7 @@ Results land under `experiments/ablation_laptop_*` (gitignored locally).
 | Mode | Behavior |
 |------|----------|
 | `llm_best_of_n` | Same prompt every sample; pick best by grid score |
-| `llm_chained` | Each step sees previous function body + score |
+| `llm_chained` | Each step sees the **two most recent** function bodies + scores |
 | `funsearch` | Full FunSearch (cluster default; needs GPU for local vLLM) |
 
 Both ablation modes use the same evaluator and explicit-feedback stage as the main pipeline.
