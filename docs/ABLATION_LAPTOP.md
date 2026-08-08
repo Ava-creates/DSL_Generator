@@ -23,12 +23,12 @@ bash scripts/export_fixed_cfg_ablation_assets.sh \
 scp run4_dsl1.tar.gz your-laptop:~/Desktop/DSL_Generator/
 ```
 
-On the laptop, unpack into a source tree the script can read:
+On the laptop, unpack **at the repo root** (paths inside the tarball include `experiments/pipeline_hf_.../`):
 
 ```bash
-mkdir -p experiments/pipeline_hf_20260611_151047_run4_2104814
+cd ~/Desktop/DSL_Generator
 tar -xzf run4_dsl1.tar.gz
-# paths inside tarball preserve experiments/pipeline_hf_... layout
+test -f experiments/pipeline_hf_20260611_151047_run4_2104814/cfg/cfg_output_1.json && echo OK
 ```
 
 ### Step 2 — Run ablation locally
@@ -46,8 +46,10 @@ python scripts/run_fixed_cfg_ablation_local.py \
   --tasks "get[wood]" "get[grass]"
 
 # Full ablation: llm_chained + llm_best_of_n (funsearch printed from source, not re-run)
-python scripts/run_fixed_cfg_ablation_local.py
+python scripts/run_fixed_cfg_ablation_local.py --config config/ablation_fixed_cfg.yaml
 ```
+
+The script clones run-4 `grids/`, `function_specific_prompts/`, and rewrites embedded `_grid_spec_paths` so `llm_chained` / `llm_best_of_n` are scored on the identical terminal-function test grids. Program-synthesis seeds are read from run-4 outcomes (`0 5 10 … 45` by default).
 
 Results: `experiments/ablation_fixed_cfg_*` with tasks/seeds printed at the end. FunSearch row comes from `--source` at startup.
 
