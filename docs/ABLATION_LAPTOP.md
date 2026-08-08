@@ -1,10 +1,71 @@
 # Laptop ablation (no SLURM)
 
-Run the **baseline ablation** on your laptop: compare `llm_chained` vs `llm_best_of_n` for generating per-task Python functions, using the **Aleph API** for LLM calls. No GPU, no cluster queue.
+Two ablation designs are supported on a laptop with the **Aleph API** (no GPU, no SLURM).
+
+---
+
+## A. Fixed-CFG ablation (recommended for your RQ)
+
+**Isolates terminal-function generation** while holding the DSL fixed.
+
+1. Fix CFG = DSL~1 from HF run 4 (`19/20` tasks) — same grammar for all arms
+2. Regenerate 9 terminal functions under each condition + explicit feedback:
+   - `funsearch` (reference: copy from run 4, or re-run)
+   - `llm_best_of_n`
+   - `llm_chained`
+3. Program synthesis only — 20 tasks × 10 seeds — **no DSL evolution loop**
+
+### Step 1 — Export assets from Vulcan (once)
+
+On the cluster:
+
+```bash
+bash scripts/export_fixed_cfg_ablation_assets.sh \
+  experiments/pipeline_hf_20260611_151047_run4_2104814 1 run4_dsl1.tar.gz
+scp run4_dsl1.tar.gz your-laptop:~/Desktop/DSL_Generator/
+```
+
+On the laptop, unpack into a source tree the script can read:
+
+```bash
+mkdir -p experiments/pipeline_hf_20260611_151047_run4_2104814
+tar -xzf run4_dsl1.tar.gz
+# paths inside tarball preserve experiments/pipeline_hf_... layout
+```
+
+### Step 2 — Run ablation locally
+
+```bash
+export OPENAI_COMPAT_API_KEY="..."
+export OPENAI_COMPAT_BASE_URL=https://inference.vulcan.alliancecan.ca
+export OPENAI_COMPAT_MODEL=gpt-oss-120b
+export MODEL_TYPE=openai_compat
+
+# Smoke: one mode, 2 tasks
+python scripts/run_fixed_cfg_ablation_local.py \
+  --modes llm_chained \
+  --total-samples 20 \
+  --tasks get[wood] get[grass]
+
+# Full study: funsearch reference (copied) + two new arms
+python scripts/run_fixed_cfg_ablation_local.py \
+  --modes funsearch llm_chained llm_best_of_n \
+  --copy-funsearch-from-source
+```
+
+Note: for `--copy-funsearch-from-source`, funsearch test_tasks still runs in the new dir (same CFG/primitives as run 4). To skip re-synthesis and use run 4 numbers directly, use run 4's published `19/20` as the funsearch row.
+
+Results: `experiments/ablation_fixed_cfg_*` with tasks/seeds printed at the end.
+
+---
+
+## B. Baseline ablation (no DSL)
+
+Compare `llm_chained` vs `llm_best_of_n` for **direct Python per-task functions** (no CFG).
 
 This is **not** the full DSL pipeline (that stays on Vulcan). It answers: *without a DSL, can simple LLM search + explicit feedback solve Craft tasks?*
 
-## What runs
+## What runs (baseline)
 
 For each of 20 Craft tasks (or a subset):
 
