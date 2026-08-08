@@ -375,7 +375,10 @@ def main() -> int:
 
     if args.config:
         os.environ["EXPERIMENT_CONFIG"] = args.config
-        export_config_to_env(load_config(args.config))
+        cfg_for_env = load_config(args.config)
+        # Do not export default terminal_function_mode=funsearch; ablation sets mode per arm via CLI.
+        cfg_for_env.pop("terminal_function_mode", None)
+        export_config_to_env(cfg_for_env)
         cfg_tasks = load_config(args.config).get("tasks")
         if not args.tasks and cfg_tasks:
             args.tasks = cfg_tasks

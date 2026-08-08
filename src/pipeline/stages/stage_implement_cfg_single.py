@@ -119,7 +119,8 @@ def main():
 
     if os.environ.get("SKIP_FUNSEARCH", "").strip().lower() in {"1", "true", "yes"}:
         args.skip_funsearch = True
-    if os.environ.get("TERMINAL_FUNCTION_MODE", "").strip():
+    # CLI --terminal_function_mode wins over TERMINAL_FUNCTION_MODE env (ablation passes mode explicitly).
+    if args.terminal_function_mode is None and os.environ.get("TERMINAL_FUNCTION_MODE", "").strip():
         args.terminal_function_mode = os.environ.get("TERMINAL_FUNCTION_MODE", "").strip()
     if os.environ.get("FUNSEARCH_VECTOR_CLUSTERING", "").strip().lower() in {"1", "true", "yes"}:
         args.funsearch_vector_clustering = True
