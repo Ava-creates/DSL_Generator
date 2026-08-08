@@ -48,13 +48,13 @@ export OPENAI_COMPAT_BASE_URL=https://inference.vulcan.alliancecan.ca
 export OPENAI_COMPAT_MODEL=gpt-oss-120b
 export MODEL_TYPE=openai_compat
 
-# Smoke: one mode, 2 tasks
+# Smoke: chained only, 2 tasks
 python scripts/run_fixed_cfg_ablation_local.py \
   --modes llm_chained \
   --total-samples 20 \
   --tasks "get[wood]" "get[grass]"
 
-# Full ablation: llm_chained + llm_best_of_n, 500 samples/terminal (matches FunSearch)
+# Full ablation: best-of-n first, then chained (order from config/ablation_fixed_cfg.yaml)
 python scripts/run_fixed_cfg_ablation_local.py --config config/ablation_fixed_cfg.yaml
 ```
 

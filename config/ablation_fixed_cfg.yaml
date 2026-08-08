@@ -5,7 +5,10 @@ nld_path: prompt_specifications/nld.txt
 codebase_path: prompt_specifications/codebase.txt
 
 model_type: openai_compat
-terminal_function_mode: llm_chained
+# Run order for full ablation (best-of-n first, then chained):
+modes:
+  - llm_best_of_n
+  - llm_chained
 skip_explicit_feedback: false
 
 total_samples: 500  # match FunSearch / experiment_config_hf.yaml

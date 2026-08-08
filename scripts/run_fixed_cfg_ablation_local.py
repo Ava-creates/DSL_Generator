@@ -347,8 +347,8 @@ def main() -> int:
     )
     parser.add_argument("--dsl-round", type=int, default=1)
     parser.add_argument(
-        "--modes", nargs="+", default=list(ABLATION_MODES), choices=ABLATION_MODES,
-        help="Arms to regenerate (funsearch is reference-only from --source)",
+        "--modes", nargs="+", default=None, choices=ABLATION_MODES,
+        help=f"Arms to regenerate in order (default: {', '.join(ABLATION_MODES)}); funsearch is reference-only",
     )
     parser.add_argument("--model-type", default=os.environ.get("MODEL_TYPE", "openai_compat"))
     parser.add_argument("--spec-file", default="prompt_specifications/spec_template.txt")
@@ -381,6 +381,11 @@ def main() -> int:
             args.tasks = cfg_tasks
 
     cfg = load_config(args.config)
+
+    if args.modes is None:
+        cfg_modes = cfg.get("modes") or cfg.get("ablation_modes")
+        args.modes = list(cfg_modes) if cfg_modes else list(ABLATION_MODES)
+
     grid_regeneration_attempts = int(
         args.grid_regeneration_attempts
         if args.grid_regeneration_attempts is not None
@@ -396,6 +401,7 @@ def main() -> int:
         f"[config] Terminal-function grids: reuse run-4 dsl{args.dsl_round} specs "
         f"(USE_EXISTING_GRID_SPECS=1, grid_regeneration_attempts={grid_regeneration_attempts})"
     )
+    print(f"[config] Ablation modes (in order): {args.modes}")
     print(f"[config] Program-synthesis seeds (from source): {test_seeds}")
 
     if args.model_type == "openai_compat":
