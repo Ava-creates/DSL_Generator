@@ -19,8 +19,12 @@ import sys
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _REPO)
 
+from src.utils.config_loader import export_config_to_env, load_config
 from src.utils.experiment_paths import build_default_experiment_dir
 from src.utils.pipeline_state import update_state
+
+DEFAULT_TEST_SEEDS = list(range(0, 50, 5))
+_TEXT_SUFFIXES = (".txt", ".py", ".json", ".yaml", ".yml")
 
 DEFAULT_TASKS = [
     "get[gem]", "get[iron]", "get[wood]", "get[grass]", "get[gold]",
@@ -50,14 +54,85 @@ MODE_PREFIX = {
 }
 
 
+def _experiment_path_aliases(path: str) -> tuple[str, str]:
+    abs_path = os.path.abspath(path)
+    rel_path = os.path.relpath(abs_path, _REPO)
+    return abs_path, rel_path
+
+
+def _replace_experiment_path(text: str, src: str, dst: str) -> str:
+    src_abs, src_rel = _experiment_path_aliases(src)
+    dst_abs, dst_rel = _experiment_path_aliases(dst)
+    for old, new in ((src_abs, dst_abs), (src_rel, dst_rel)):
+        if old and old in text:
+            text = text.replace(old, new)
+    return text
+
+
 def _rewrite_paths(obj, src: str, dst: str):
     if isinstance(obj, str):
-        return obj.replace(src, dst)
+        return _replace_experiment_path(obj, src, dst)
     if isinstance(obj, dict):
         return {k: _rewrite_paths(v, src, dst) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_rewrite_paths(v, src, dst) for v in obj]
     return obj
+
+
+def _rewrite_experiment_paths_in_tree(root: str, src: str, dst: str) -> int:
+    """Rewrite embedded experiment paths (e.g. _grid_spec_paths) after copying artifacts."""
+    if not os.path.isdir(root):
+        return 0
+    updated = 0
+    for dirpath, _, filenames in os.walk(root):
+        for name in filenames:
+            if not name.endswith(_TEXT_SUFFIXES):
+                continue
+            path = os.path.join(dirpath, name)
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+            new_content = _replace_experiment_path(content, src, dst)
+            if new_content != content:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(new_content)
+                updated += 1
+    return updated
+
+
+def load_test_seeds_from_source(source: str, dsl_round: int) -> list[int]:
+    """Match program-synthesis seeds used in the reference run (for fair scoring)."""
+    seeds: set[int] = set()
+    for pat in (
+        f"{source}/results_tracking/dsl{dsl_round}/tasks/*/program_synthesis_seed_outcomes.jsonl",
+        f"{source}/results_tracking/dsl{dsl_round}/func0/tasks/*/program_synthesis_seed_outcomes.jsonl",
+    ):
+        for fp in glob.glob(pat):
+            with open(fp, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    seeds.add(int(json.loads(line)["seed"]))
+    if seeds:
+        return sorted(seeds)
+    return list(DEFAULT_TEST_SEEDS)
+
+
+def summarize_dsl_grids(experiment_dir: str, dsl_round: int) -> tuple[int, list[str]]:
+    grid_dir = os.path.join(experiment_dir, "grids")
+    if not os.path.isdir(grid_dir):
+        return 0, []
+    marker = f"_dsl{dsl_round}_"
+    files = sorted(f for f in os.listdir(grid_dir) if f.endswith(".json") and marker in f)
+    prefixes = sorted({f.split(marker, 1)[0] for f in files})
+    return len(files), prefixes
+
+
+def configure_run4_grid_env(*, experiment_dir: str, grid_regeneration_attempts: int) -> None:
+    """Evaluate terminal functions on the copied run-4 DSL grid specs (no regen)."""
+    os.environ["USE_EXISTING_GRID_SPECS"] = "1"
+    os.environ["GRID_REGENERATION_ATTEMPTS"] = str(grid_regeneration_attempts)
+    os.environ["GRID_SPEC_DIR"] = os.path.join(experiment_dir, "grids")
 
 
 def _copytree(src: str, dst: str) -> None:
@@ -129,6 +204,21 @@ def bootstrap_experiment(*, source: str, dest: str, dsl_round: int, mode: str) -
     for sub in ("function_specific_prompts", "functions_generated", "grids"):
         _copytree(os.path.join(source, sub), os.path.join(dest, sub))
 
+    rewritten = 0
+    for sub in ("function_specific_prompts", "functions_generated"):
+        rewritten += _rewrite_experiment_paths_in_tree(os.path.join(dest, sub), source, dest)
+
+    grid_count, grid_prefixes = summarize_dsl_grids(dest, dsl_round)
+    if grid_count == 0:
+        raise FileNotFoundError(
+            f"No DSL {dsl_round} grid specs under {dest}/grids — export run-4 assets first "
+            f"(scripts/export_fixed_cfg_ablation_assets.sh)."
+        )
+    print(
+        f"[bootstrap] Reused {grid_count} dsl{dsl_round} grid specs "
+        f"({len(grid_prefixes)} terminal families); rewrote paths in {rewritten} files"
+    )
+
     status_src = os.path.join(source, "status", f"dsl{dsl_round}", "file_generation", "status")
     if os.path.isfile(status_src):
         with open(status_src, encoding="utf-8") as f:
@@ -145,6 +235,9 @@ def bootstrap_experiment(*, source: str, dest: str, dsl_round: int, mode: str) -
         "dsl_round": dsl_round,
         "terminal_function_mode": mode,
         "terminals": terminals,
+        "grid_spec_count": grid_count,
+        "grid_spec_prefixes": grid_prefixes,
+        "use_existing_grid_specs": True,
     }
     with open(os.path.join(dest, "ablation_meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
@@ -173,8 +266,13 @@ def run_implement_local(
     model_type: str,
     total_samples: int,
     num_ef_iterations: int,
+    grid_regeneration_attempts: int,
     openai_compat_key_file: str | None,
 ) -> int:
+    configure_run4_grid_env(
+        experiment_dir=experiment_dir,
+        grid_regeneration_attempts=grid_regeneration_attempts,
+    )
     script = os.path.join(_REPO, "src", "pipeline", "stages", "stage_implement_cfg_single.py")
     ok = 0
     for func_name in terminals:
@@ -188,6 +286,7 @@ def run_implement_local(
             "--func_evolution_round", "0",
             "--total_samples", str(total_samples),
             "--num_iterations", str(num_ef_iterations),
+            "--grid_regeneration_attempts", str(grid_regeneration_attempts),
             "--terminal_function_mode", mode,
         ]
         if openai_compat_key_file:
@@ -208,6 +307,7 @@ def run_test_tasks_local(
     dsl_round: int,
     model_type: str,
     max_attempts: int,
+    test_seeds: list[int],
     openai_compat_key_file: str | None,
 ) -> int:
     script = os.path.join(_REPO, "src", "pipeline", "stages", "stage_test_tasks.py")
@@ -218,11 +318,12 @@ def run_test_tasks_local(
         "--dsl_round", str(dsl_round),
         "--func_evolution_round", "0",
         "--max_attempts", str(max_attempts),
+        "--test_seeds", *[str(s) for s in test_seeds],
         "--model_type", model_type,
     ]
     if openai_compat_key_file:
         cmd.extend(["--openai_compat_key_file", openai_compat_key_file])
-    print(f"\n[test_tasks] {len(tasks)} tasks, dsl_round={dsl_round}")
+    print(f"\n[test_tasks] {len(tasks)} tasks, dsl_round={dsl_round}, seeds={test_seeds}")
     return subprocess.run(cmd, cwd=_REPO).returncode
 
 
@@ -244,6 +345,17 @@ def main() -> int:
     parser.add_argument("--total-samples", type=int, default=100)
     parser.add_argument("--num-ef-iterations", type=int, default=30)
     parser.add_argument("--max-attempts", type=int, default=30)
+    parser.add_argument(
+        "--grid-regeneration-attempts",
+        type=int,
+        default=0,
+        help="Grid regen during terminal-function eval (0 = reuse run-4 dsl grids only)",
+    )
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Optional YAML config (sets USE_EXISTING_GRID_SPECS, etc.)",
+    )
     parser.add_argument("--tasks", nargs="*", default=None)
     parser.add_argument("--openai-compat-key-file", default=None)
     parser.add_argument("--skip-implement", action="store_true")
@@ -251,10 +363,30 @@ def main() -> int:
     parser.add_argument("--dest-root", default="experiments")
     args = parser.parse_args()
 
+    if args.config:
+        os.environ["EXPERIMENT_CONFIG"] = args.config
+        export_config_to_env(load_config(args.config))
+        cfg_tasks = load_config(args.config).get("tasks")
+        if not args.tasks and cfg_tasks:
+            args.tasks = cfg_tasks
+
+    cfg = load_config(args.config)
+    grid_regeneration_attempts = int(
+        args.grid_regeneration_attempts
+        if args.grid_regeneration_attempts is not None
+        else cfg.get("grid_regeneration_attempts", 0)
+    )
+
     tasks = args.tasks or DEFAULT_TASKS
     source = os.path.abspath(args.source)
+    test_seeds = load_test_seeds_from_source(source, args.dsl_round)
 
     print_funsearch_reference(source, args.dsl_round)
+    print(
+        f"[config] Terminal-function grids: reuse run-4 dsl{args.dsl_round} specs "
+        f"(USE_EXISTING_GRID_SPECS=1, grid_regeneration_attempts={grid_regeneration_attempts})"
+    )
+    print(f"[config] Program-synthesis seeds (from source): {test_seeds}")
 
     if args.model_type == "openai_compat":
         os.environ.setdefault("MODEL_TYPE", "openai_compat")
@@ -278,6 +410,7 @@ def main() -> int:
                 model_type=args.model_type,
                 total_samples=args.total_samples,
                 num_ef_iterations=args.num_ef_iterations,
+                grid_regeneration_attempts=grid_regeneration_attempts,
                 openai_compat_key_file=args.openai_compat_key_file,
             )
 
@@ -288,6 +421,7 @@ def main() -> int:
                 dsl_round=args.dsl_round,
                 model_type=args.model_type,
                 max_attempts=args.max_attempts,
+                test_seeds=test_seeds,
                 openai_compat_key_file=args.openai_compat_key_file,
             )
 

@@ -10,8 +10,8 @@ Two ablation designs are supported on a laptop with the **Aleph API** (no GPU, n
 
 1. Fix CFG = DSL~1 from HF run 4 (`19/20` tasks) — same grammar for all arms
 2. **FunSearch arm**: use run 4 results as-is (**not regenerated**)
-3. Regenerate 9 terminal functions only for `llm_best_of_n` and `llm_chained` + explicit feedback
-4. Program synthesis only — 20 tasks × 10 seeds — **no DSL evolution loop**
+3. Regenerate terminal functions for `llm_best_of_n` and `llm_chained` + explicit feedback, evaluated on **the same DSL~1 grid specs** FunSearch used in run 4 (copied from `--source`, not regenerated)
+4. Program synthesis only — 20 tasks × **the same 10 seeds** as run 4 — **no DSL evolution loop**
 
 ### Step 1 — Export assets from Vulcan (once)
 
@@ -75,6 +75,14 @@ git clone https://github.com/Ava-creates/DSL_Generator.git
 cd DSL_Generator
 git checkout laptop-ablation
 git submodule update --init funsearch
+git -C funsearch pull origin main
+```
+
+After pulling repo updates, refresh the submodule:
+
+```bash
+git pull origin laptop-ablation
+git submodule update --init --remote funsearch
 ```
 
 The `funsearch` directory is a **git submodule** (not included in a plain clone). If you see `ModuleNotFoundError: No module named 'funsearch.implementation'`, run the submodule command above.
@@ -149,6 +157,7 @@ Both ablation modes use the same evaluator and explicit-feedback stage as the ma
 
 ## Troubleshooting
 
+- **`zsh: no matches found: get[wood]`** → quote tasks: `"get[wood]" "get[grass]"` (brackets are glob syntax in zsh)
 - **`No module named 'funsearch.implementation'`** → run `git submodule update --init funsearch`
 - **403 / connection errors** → connect Alliance VPN
 - **Slow** → lower `total_samples` in the yaml (smoke uses 20)

@@ -1,0 +1,25 @@
+# Fixed-CFG ablation: reuse run-4 DSL~1 grid specs for terminal-function eval.
+experiment_dir: experiments/ablation_fixed_cfg
+spec_file: prompt_specifications/spec_template.txt
+nld_path: prompt_specifications/nld.txt
+codebase_path: prompt_specifications/codebase.txt
+
+model_type: openai_compat
+terminal_function_mode: llm_chained
+skip_explicit_feedback: false
+
+total_samples: 100
+num_explicit_feedback_iterations: 30
+max_attempts: 30
+openai_compat_max_parallel: 4
+
+recipes_path: craft/resources/recipes.yaml
+hints_path: craft/resources/hints.yaml
+
+# Reuse grids cloned from --source (run 4); do not regenerate on laptop.
+use_existing_grid_specs: true
+grid_regeneration_attempts: 0
+
+positive_grids: 10
+negative_grids: 4
+edge_grids: 1
