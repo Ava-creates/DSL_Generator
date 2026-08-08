@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Fixed-CFG terminal-function ablation (local, no SLURM, no DSL evolution).
 
-Reuse a completed pipeline CFG (e.g. HF run 4 DSL~1), regenerate terminal
-functions under funsearch / llm_best_of_n / llm_chained + explicit feedback,
-then run program synthesis on all tasks x seeds only.
+Fix one CFG (e.g. HF run 4 DSL~1). FunSearch arm uses existing source results
+only — not regenerated. Regenerate terminal functions for llm_chained and
+llm_best_of_n + explicit feedback, then program synthesis (no evolution loop).
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ import argparse
 import glob
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -31,8 +30,9 @@ DEFAULT_TASKS = [
     "make[clothbundle]", "make[clothbundleextra]",
 ]
 
+ABLATION_MODES = ("llm_chained", "llm_best_of_n")
+
 MODE_PREFIX = {
-    "funsearch": "ablation_fixed_cfg_fs",
     "llm_best_of_n": "ablation_fixed_cfg_bon",
     "llm_chained": "ablation_fixed_cfg_chained",
 }
@@ -54,6 +54,36 @@ def _copytree(src: str, dst: str) -> None:
     if os.path.exists(dst):
         shutil.rmtree(dst)
     shutil.copytree(src, dst)
+
+
+def score_experiment(experiment_dir: str, dsl_round: int) -> tuple[int, int, int, int]:
+    from src.evaluate_expressiveness import score_dsl_round
+
+    by_task: dict[str, list] = {}
+    for pat in (
+        f"{experiment_dir}/results_tracking/dsl{dsl_round}/tasks/*/program_synthesis_seed_outcomes.jsonl",
+        f"{experiment_dir}/results_tracking/dsl{dsl_round}/func0/tasks/*/program_synthesis_seed_outcomes.jsonl",
+    ):
+        for fp in glob.glob(pat):
+            with open(fp, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    e = json.loads(line)
+                    by_task.setdefault(e["task"], []).append(e)
+    return score_dsl_round(by_task)
+
+
+def print_funsearch_reference(source: str, dsl_round: int) -> None:
+    """Print existing FunSearch results from source (not regenerated)."""
+    ts, ss, tt, st = score_experiment(source, dsl_round)
+    print(f"\n{'='*72}")
+    print("Reference arm: funsearch (from --source, NOT regenerated)")
+    print(f"  source: {source}")
+    print(f"  tasks solved: {ts}/{tt or 20}")
+    print(f"  seeds solved: {ss}/{st or 200}")
+    print(f"{'='*72}")
 
 
 def bootstrap_experiment(*, source: str, dest: str, dsl_round: int, mode: str) -> list[str]:
@@ -111,16 +141,6 @@ def bootstrap_experiment(*, source: str, dest: str, dsl_round: int, mode: str) -
         tasks=DEFAULT_TASKS,
     )
     return terminals
-
-
-def copy_funsearch_final_functions(*, source: str, dest: str, dsl_round: int) -> None:
-    src_ff = os.path.join(source, "final_functions")
-    dst_ff = os.path.join(dest, "final_functions")
-    os.makedirs(dst_ff, exist_ok=True)
-    pattern = re.compile(rf"_dsl{dsl_round}(?:_|\.|$)")
-    for name in os.listdir(src_ff):
-        if pattern.search(name):
-            shutil.copy2(os.path.join(src_ff, name), os.path.join(dst_ff, name))
 
 
 def run_implement_local(
@@ -186,38 +206,17 @@ def run_test_tasks_local(
     return subprocess.run(cmd, cwd=_REPO).returncode
 
 
-def score_experiment(experiment_dir: str, dsl_round: int) -> None:
-    from src.evaluate_expressiveness import score_dsl_round
-
-    by_task: dict[str, list] = {}
-    for pat in (
-        f"{experiment_dir}/results_tracking/dsl{dsl_round}/tasks/*/program_synthesis_seed_outcomes.jsonl",
-        f"{experiment_dir}/results_tracking/dsl{dsl_round}/func0/tasks/*/program_synthesis_seed_outcomes.jsonl",
-    ):
-        for fp in glob.glob(pat):
-            with open(fp, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    e = json.loads(line)
-                    by_task.setdefault(e["task"], []).append(e)
-    ts, ss, tt, st = score_dsl_round(by_task)
-    print(f"  tasks solved: {ts}/{tt or 20}")
-    print(f"  seeds solved: {ss}/{st or 200}")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fixed-CFG terminal-function ablation (local)")
     parser.add_argument(
         "--source",
         default="experiments/pipeline_hf_20260611_151047_run4_2104814",
+        help="Reference pipeline run (FunSearch scores read from here; CFG cloned from here)",
     )
     parser.add_argument("--dsl-round", type=int, default=1)
     parser.add_argument(
-        "--modes", nargs="+",
-        default=["llm_chained", "llm_best_of_n"],
-        choices=["funsearch", "llm_best_of_n", "llm_chained"],
+        "--modes", nargs="+", default=list(ABLATION_MODES), choices=ABLATION_MODES,
+        help="Arms to regenerate (funsearch is reference-only from --source)",
     )
     parser.add_argument("--model-type", default=os.environ.get("MODEL_TYPE", "openai_compat"))
     parser.add_argument("--spec-file", default="prompt_specifications/spec_template.txt")
@@ -228,15 +227,13 @@ def main() -> int:
     parser.add_argument("--openai-compat-key-file", default=None)
     parser.add_argument("--skip-implement", action="store_true")
     parser.add_argument("--skip-test-tasks", action="store_true")
-    parser.add_argument(
-        "--copy-funsearch-from-source", action="store_true",
-        help="funsearch mode: reuse final_functions from source (19/20 reference arm)",
-    )
     parser.add_argument("--dest-root", default="experiments")
     args = parser.parse_args()
 
     tasks = args.tasks or DEFAULT_TASKS
     source = os.path.abspath(args.source)
+
+    print_funsearch_reference(source, args.dsl_round)
 
     if args.model_type == "openai_compat":
         os.environ.setdefault("MODEL_TYPE", "openai_compat")
@@ -251,21 +248,17 @@ def main() -> int:
         terminals = bootstrap_experiment(source=source, dest=dest, dsl_round=args.dsl_round, mode=mode)
 
         if not args.skip_implement:
-            if mode == "funsearch" and args.copy_funsearch_from_source:
-                print("[implement] Copying FunSearch final_functions from source")
-                copy_funsearch_final_functions(source=source, dest=dest, dsl_round=args.dsl_round)
-            else:
-                run_implement_local(
-                    experiment_dir=dest,
-                    spec_file=args.spec_file,
-                    terminals=terminals,
-                    mode=mode,
-                    dsl_round=args.dsl_round,
-                    model_type=args.model_type,
-                    total_samples=args.total_samples,
-                    num_ef_iterations=args.num_ef_iterations,
-                    openai_compat_key_file=args.openai_compat_key_file,
-                )
+            run_implement_local(
+                experiment_dir=dest,
+                spec_file=args.spec_file,
+                terminals=terminals,
+                mode=mode,
+                dsl_round=args.dsl_round,
+                model_type=args.model_type,
+                total_samples=args.total_samples,
+                num_ef_iterations=args.num_ef_iterations,
+                openai_compat_key_file=args.openai_compat_key_file,
+            )
 
         if not args.skip_test_tasks:
             run_test_tasks_local(
@@ -278,7 +271,9 @@ def main() -> int:
             )
 
         print(f"\n[results] {dest}")
-        score_experiment(dest, args.dsl_round)
+        ts, ss, tt, st = score_experiment(dest, args.dsl_round)
+        print(f"  tasks solved: {ts}/{tt or 20}")
+        print(f"  seeds solved: {ss}/{st or 200}")
 
     return 0
 

@@ -9,11 +9,9 @@ Two ablation designs are supported on a laptop with the **Aleph API** (no GPU, n
 **Isolates terminal-function generation** while holding the DSL fixed.
 
 1. Fix CFG = DSL~1 from HF run 4 (`19/20` tasks) — same grammar for all arms
-2. Regenerate 9 terminal functions under each condition + explicit feedback:
-   - `funsearch` (reference: copy from run 4, or re-run)
-   - `llm_best_of_n`
-   - `llm_chained`
-3. Program synthesis only — 20 tasks × 10 seeds — **no DSL evolution loop**
+2. **FunSearch arm**: use run 4 results as-is (**not regenerated**)
+3. Regenerate 9 terminal functions only for `llm_best_of_n` and `llm_chained` + explicit feedback
+4. Program synthesis only — 20 tasks × 10 seeds — **no DSL evolution loop**
 
 ### Step 1 — Export assets from Vulcan (once)
 
@@ -47,15 +45,11 @@ python scripts/run_fixed_cfg_ablation_local.py \
   --total-samples 20 \
   --tasks get[wood] get[grass]
 
-# Full study: funsearch reference (copied) + two new arms
-python scripts/run_fixed_cfg_ablation_local.py \
-  --modes funsearch llm_chained llm_best_of_n \
-  --copy-funsearch-from-source
+# Full ablation: llm_chained + llm_best_of_n (funsearch printed from source, not re-run)
+python scripts/run_fixed_cfg_ablation_local.py
 ```
 
-Note: for `--copy-funsearch-from-source`, funsearch test_tasks still runs in the new dir (same CFG/primitives as run 4). To skip re-synthesis and use run 4 numbers directly, use run 4's published `19/20` as the funsearch row.
-
-Results: `experiments/ablation_fixed_cfg_*` with tasks/seeds printed at the end.
+Results: `experiments/ablation_fixed_cfg_*` with tasks/seeds printed at the end. FunSearch row comes from `--source` at startup.
 
 ---
 
