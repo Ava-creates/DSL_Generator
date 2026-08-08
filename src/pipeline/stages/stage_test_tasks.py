@@ -16,7 +16,6 @@ _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 sys.path.insert(0, _project_root)
 
 from src.pipeline.integrated_pipeline import test_cfg_on_tasks, ensure_terminals_match_cfg
-from src.pipeline.cfg_to_funsearch_pipeline import sanitize_function_name
 from src.utils.results_tracker import ResultsTracker
 from src.utils.pipeline_state import update_state, read_state, resolve_model_type_for_chained_jobs
 from src.utils.status_manager import write_status
@@ -79,7 +78,7 @@ def main():
         '--func_evolution_round',
         type=int,
         default=int(os.environ.get("FUNC_EVOLUTION_ROUND", "0")),
-        help='Function evolution round number (0 = initial terminal functions)',
+        help='Function evolution round (passed by chain/slurm)',
     )
     parser.add_argument(
         '--single_task_job',
@@ -90,7 +89,7 @@ def main():
         '--tasks_subdir',
         type=str,
         default=os.environ.get("PROG_SYNTH_TASKS_SUBDIR", "tasks"),
-        help='Subdir under results_tracking/dsl{n}/func{m}/ for shard output (e.g. tasks_api)',
+        help='Subdir under results_tracking/dsl{n}/ for shard output (e.g. tasks_api)',
     )
 
     args = parser.parse_args()
@@ -160,28 +159,27 @@ def main():
         print(" No terminal functions found in CFG", file=sys.stderr)
         return 1
     
-    # Guard: Check that final functions exist for this exact round
-    # If func_evolution_round > 0, we must have func{N} files — don't silently fall back to func0
-    if args.func_evolution_round is not None and args.func_evolution_round > 0:
-        final_functions_dir = os.path.join(args.experiment_dir, "final_functions")
-        missing_for_round = []
-        for func_name in terminals:
-            safe_name = sanitize_function_name(func_name)
-            expected_file = os.path.join(
-                final_functions_dir,
-                f"{safe_name}_dsl{args.dsl_round}_func{args.func_evolution_round}.py"
-            )
-            if not os.path.exists(expected_file):
-                missing_for_round.append(f"{safe_name}_dsl{args.dsl_round}_func{args.func_evolution_round}.py")
-        
-        if missing_for_round:
-            print(f"\n ERROR: test_tasks called for func_evolution_round={args.func_evolution_round} "
-                  f"but the following final function files are missing:", file=sys.stderr)
-            for m in missing_for_round:
-                print(f"  - {m}", file=sys.stderr)
-            print("\n  The evolve stage must produce these files before test_tasks can run.", file=sys.stderr)
-            print("  Skipping test_tasks for this round.", file=sys.stderr)
-            return 1
+    # Guard: every terminal must have a final function for this DSL round.
+    from src.utils.file_utils import resolve_final_function_path
+
+    missing_for_round = []
+    for func_name in terminals:
+        expected_file = resolve_final_function_path(
+            args.experiment_dir, func_name, args.dsl_round
+        )
+        if not os.path.exists(expected_file):
+            missing_for_round.append(os.path.basename(expected_file))
+
+    if missing_for_round:
+        print(
+            f"\n ERROR: test_tasks for dsl_round={args.dsl_round} "
+            f"is missing final function files:",
+            file=sys.stderr,
+        )
+        for m in missing_for_round:
+            print(f"  - {m}", file=sys.stderr)
+        print("\n  Run implement_cfg (explicit feedback) for this round before test_tasks.", file=sys.stderr)
+        return 1
     
     # Create shared vLLM instance (not used when model_type is openai_compat — skip to avoid GPU init noise)
     shared_vllm = None
@@ -236,14 +234,12 @@ def main():
             shared_vllm = None
     
     # Create ResultsTracker. In parallel single-task mode we isolate writes per task
-    # under results_tracking/dsl{n}/func{m}/prog_synthoutput/<task>/ (no nested results_tracking).
+    # under results_tracking/dsl{n}/tasks/<task>/ (no nested results_tracking).
     single_task_shard_dir = None
     if args.single_task_job and tasks:
-        func_round = args.func_evolution_round if args.func_evolution_round is not None else 0
         single_task_shard_dir = program_synthesis_task_shard_dir(
             args.experiment_dir,
             dsl_round=args.dsl_round,
-            func_evolution_round=func_round,
             task_token=_safe_task_token(tasks[0]),
             tasks_subdir=args.tasks_subdir,
         )
@@ -272,7 +268,6 @@ def main():
         shared_vllm=shared_vllm,
         results_tracker=results_tracker,
         cfg_version=args.dsl_round,
-        func_evolution_round=args.func_evolution_round,
         synthesis_prompt_path=args.synthesis_prompt,
         model_type=args.model_type,
         include_final_functions_in_prompt=args.with_final_functions_in_prompt,
@@ -295,7 +290,6 @@ def main():
             "status": "completed",
             "task": task_name,
             "dsl_round": args.dsl_round,
-            "func_evolution_round": args.func_evolution_round,
             "success": bool(task_results.get(task_name, False)),
             "task_results": task_results,
             "all_solved": all_solved,
@@ -333,7 +327,6 @@ def main():
         "stage": "test_tasks",
         "status": "completed",
         "dsl_round": args.dsl_round,
-        "func_evolution_round": args.func_evolution_round,
         "task_results": task_results,
         "all_solved": all_solved,
         "failing_tasks": failing_tasks
@@ -353,11 +346,9 @@ def main():
         if results_tracker.results:
             results_tracker.plot_reward_vs_interactions(
                 dsl_round=args.dsl_round,
-                func_evolution_round=args.func_evolution_round
             )
             results_tracker.plot_all_tasks_combined(
                 dsl_round=args.dsl_round,
-                func_evolution_round=args.func_evolution_round
             )
             print(" Plots generated successfully")
         else:
@@ -378,24 +369,14 @@ def main():
         update_state(args.experiment_dir, 
                      test_tasks_submitted=0,
                      function_implementation_remaining=0)
-        print("  All tasks solved! Pipeline complete.")
+        print("ALL TASKS SOLVED! Pipeline complete.")
     else:
-        # If not all solved, set function_impl_remaining to max and test_tasks_submitted to 1
-        # This prepares for function evolution
         update_state(args.experiment_dir,
                      test_tasks_submitted=1,
                      function_implementation_remaining=function_impl_total)
-        print(f"  Set function_implementation_remaining={function_impl_total}, test_tasks_submitted=1")
-        print("  Chaining script will handle function evolution submission.")
+        print("Prepared state for function evolution chaining.")
     
-    if all_solved:
-        print("\n ALL TASKS SOLVED! Pipeline complete.")
-        update_state(args.experiment_dir, phase="complete")
-    else:
-        print(f"\n {len(failing_tasks)}/{len(tasks)} tasks failed: {failing_tasks}")
-        print("  Chaining script will check results and submit evolution jobs if needed.")
-    
-    # Clean up vLLM instance and GPU memory before exiting
+    # Clean up vLLM instance
     if shared_vllm is not None:
         try:
             print("\n[Cleanup] Cleaning up vLLM instance and GPU memory...")
@@ -415,5 +396,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
-
