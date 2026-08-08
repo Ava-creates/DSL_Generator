@@ -43,7 +43,7 @@ export MODEL_TYPE=openai_compat
 python scripts/run_fixed_cfg_ablation_local.py \
   --modes llm_chained \
   --total-samples 20 \
-  --tasks get[wood] get[grass]
+  --tasks "get[wood]" "get[grass]"
 
 # Full ablation: llm_chained + llm_best_of_n (funsearch printed from source, not re-run)
 python scripts/run_fixed_cfg_ablation_local.py
