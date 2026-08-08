@@ -188,7 +188,17 @@ def bootstrap_experiment(*, source: str, dest: str, dsl_round: int, mode: str) -
 
     cfg_src = os.path.join(source, "cfg", f"cfg_output_{dsl_round}.json")
     if not os.path.isfile(cfg_src):
-        raise FileNotFoundError(f"Missing {cfg_src}")
+        rel = os.path.relpath(cfg_src, _REPO)
+        raise FileNotFoundError(
+            f"Missing reference run assets: {rel}\n\n"
+            "Export from Vulcan, copy to laptop, unpack at repo root:\n"
+            "  bash scripts/export_fixed_cfg_ablation_assets.sh \
+"
+            "    experiments/pipeline_hf_20260611_151047_run4_2104814 1 run4_dsl1.tar.gz\n"
+            "  scp vulcan:~/DSL_Generator/run4_dsl1.tar.gz ~/Desktop/DSL_Generator/\n"
+            "  cd ~/Desktop/DSL_Generator && tar -xzf run4_dsl1.tar.gz\n"
+            f"Then verify: test -f {rel}"
+        )
 
     cfg_dir = os.path.join(dest, "cfg")
     os.makedirs(cfg_dir, exist_ok=True)
