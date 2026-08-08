@@ -30,23 +30,28 @@ from src.pipeline.cfg_to_funsearch_pipeline import (
     extract_function_args,
     _normalize_statement_seq_example,
 )
-from src.utils.file_utils import resolve_cfg_path, version_file
+from src.utils.file_utils import resolve_cfg_path, resolve_final_function_path, version_file
 from src.utils.wall_clock_timeout import wall_clock_timeout
 from src.utils.config_loader import load_config, funsearch_grid_regen_kwargs_from_config
 from src.utils.openai_compat_key import resolve_openai_compat_api_key
 from src.utils.api_openai_compat_walltimes import env_float_openai_compat_scaled
 from src.utils.pipeline_state import read_state
 from src.utils.synthesis_failed_programs import extract_failed_programs_from_synthesis_results
+from src.utils.saved_function import (
+    prepare_function_module_source,
+    resolve_func_signature,
+)
 # Removed dependency on got120dsl_program_synthesis.py
 # Import grid_to_markdown from test.py instead
 from src.utils.test import grid_to_markdown
 from craft import env_factory
-from vllm import LLM, SamplingParams
 
-# Import vLLM for shared instance
 try:
+    from vllm import LLM, SamplingParams
     from vllm import LLM as vLLM
 except ImportError:
+    LLM = None
+    SamplingParams = None
     vLLM = None
 
 # Import CFG evaluator
@@ -459,15 +464,13 @@ def extract_and_save_cfg(output_text, _cfg_dir="cfg"):
 
 
 def check_final_functions_exist(experiment_dir: str, terminals: Dict[str, str], 
-                                dsl_round: Optional[int] = None,
-                                func_evolution_round: Optional[int] = None) -> Tuple[bool, Dict[str, str], List[str]]:
+                                dsl_round: Optional[int] = None) -> Tuple[bool, Dict[str, str], List[str]]:
     """Check if all required final functions exist and are valid.
     
     Args:
         experiment_dir: Path to experiment directory
         terminals: Dictionary mapping terminal function names to descriptions
         dsl_round: DSL evolution round number (0-indexed)
-        func_evolution_round: Function evolution round number (0-indexed, None for initial)
         
     Returns:
         (all_exist: bool, missing_functions: Dict[str, str], empty_functions: List[str])
@@ -482,28 +485,13 @@ def check_final_functions_exist(experiment_dir: str, terminals: Dict[str, str],
     missing = {}
     empty_or_invalid = []
     
+    if dsl_round is None:
+        raise ValueError("dsl_round is required to check final functions for a specific DSL round")
+
     for func_name, description in terminals.items():
-        safe_name = sanitize_function_name(func_name)
-        
-        # Try to find file with new naming scheme first, then fall back to old naming
-        func_file = None
-        if dsl_round is not None:
-            if func_evolution_round is not None:
-                func_file = os.path.join(final_functions_dir, f"{safe_name}_dsl{dsl_round}_func{func_evolution_round}.py")
-                if not os.path.exists(func_file):
-                    func_file = None
-            if func_file is None:
-                # Try func0 for initial functions
-                func_file = os.path.join(final_functions_dir, f"{safe_name}_dsl{dsl_round}_func0.py")
-                if not os.path.exists(func_file):
-                    # Fallback to old naming without func suffix
-                    func_file = os.path.join(final_functions_dir, f"{safe_name}_dsl{dsl_round}.py")
-                    if not os.path.exists(func_file):
-                        func_file = None
-        
-        # Fall back to old naming
-        if func_file is None:
-            func_file = os.path.join(final_functions_dir, f"{safe_name}.py")
+        func_file = resolve_final_function_path(
+            experiment_dir, func_name, dsl_round
+        )
         
         if not os.path.exists(func_file):
             missing[func_name] = description
@@ -548,15 +536,13 @@ def check_final_functions_exist(experiment_dir: str, terminals: Dict[str, str],
 
 
 def load_final_functions(experiment_dir: str, terminals: Optional[Dict[str, str]] = None,
-                        dsl_round: Optional[int] = None,
-                        func_evolution_round: Optional[int] = None) -> Dict[str, str]:
+                        dsl_round: Optional[int] = None) -> Dict[str, str]:
     """Load all final function implementations from directory.
     
     Args:
         experiment_dir: Path to experiment directory
         terminals: Optional dict of terminal functions to validate against
         dsl_round: DSL evolution round number (0-indexed)
-        func_evolution_round: Function evolution round number (0-indexed, None for initial)
         
     Returns:
         Dictionary mapping function names (sanitized) to their code
@@ -567,76 +553,44 @@ def load_final_functions(experiment_dir: str, terminals: Optional[Dict[str, str]
     
     functions = {}
     loaded_files = set()
+
+    if dsl_round is None:
+        raise ValueError("dsl_round is required to load final functions for a specific DSL round")
+
+    def _read_prepared_source(func_file: str, func_name: str) -> Optional[str]:
+        with open(func_file, 'r', encoding='utf-8') as f:
+            raw = f.read().strip()
+        if not raw:
+            return None
+        sig = resolve_func_signature(func_name, None)
+        return prepare_function_module_source(raw, sig, allow_trivial=False)
     
     # If terminals provided, only load those functions
     if terminals:
-        # Debug: Print what parameters we're using
-        print(f"  [DEBUG] load_final_functions called with dsl_round={dsl_round}, func_evolution_round={func_evolution_round}")
+        print(f"  [DEBUG] load_final_functions called with dsl_round={dsl_round}")
         
         for func_name, _ in terminals.items():
-            safe_name = sanitize_function_name(func_name)
-            
-            # Try to find file with exact dsl_round and func_evolution_round
-            func_file = None
-            if dsl_round is not None:
-                # Try specific func_evolution_round if provided and > 0
-                if func_evolution_round is not None and func_evolution_round > 0:
-                    func_file = os.path.join(final_functions_dir, f"{safe_name}_dsl{dsl_round}_func{func_evolution_round}.py")
-                    if os.path.exists(func_file):
-                        print(f"  [DEBUG] {func_name}: Found {os.path.basename(func_file)}")
-                    else:
-                        print(f"  [DEBUG] {func_name}: Tried {os.path.basename(func_file)} - NOT FOUND")
-                        func_file = None
-                # Try func0 for initial functions (when func_evolution_round is None or 0)
-                if func_file is None:
-                    func0_file = os.path.join(final_functions_dir, f"{safe_name}_dsl{dsl_round}_func0.py")
-                    if os.path.exists(func0_file):
-                        func_file = func0_file
-                        print(f"  [DEBUG] {func_name}: Found {os.path.basename(func_file)}")
-                    else:
-                        print(f"  [DEBUG] {func_name}: Tried {os.path.basename(func0_file)} - NOT FOUND")
-                # Try dsl{dsl_round} without func suffix (legacy naming)
-                if func_file is None:
-                    func_file = os.path.join(final_functions_dir, f"{safe_name}_dsl{dsl_round}.py")
-                    if os.path.exists(func_file):
-                        print(f"  [DEBUG] {func_name}: Found {os.path.basename(func_file)} (legacy naming)")
-                    else:
-                        print(f"  [DEBUG] {func_name}: Tried {os.path.basename(func_file)} - NOT FOUND")
-                        func_file = None
+            func_file = resolve_final_function_path(
+                experiment_dir, func_name, dsl_round
+            )
+            if not os.path.exists(func_file):
+                print(f"  [DEBUG] {func_name}: Missing {os.path.basename(func_file)}")
+                continue
+
+            prepared = _read_prepared_source(func_file, func_name)
+            if prepared:
+                safe_name = sanitize_function_name(func_name)
+                functions[safe_name] = prepared
+                loaded_files.add(safe_name)
             else:
-                print(f"  [DEBUG] {func_name}: dsl_round is None, trying old naming")
-            
-            # Fall back to old naming (no version suffix)
-            if func_file is None:
-                func_file = os.path.join(final_functions_dir, f"{safe_name}.py")
-                if os.path.exists(func_file):
-                    print(f"  [DEBUG] {func_name}: Found {os.path.basename(func_file)} (old naming)")
-                else:
-                    print(f"  [DEBUG] {func_name}: Tried {os.path.basename(func_file)} - NOT FOUND")
-            
-            if os.path.exists(func_file):
-                try:
-                    with open(func_file, 'r', encoding='utf-8') as f:
-                        content = f.read().strip()
-                        if content:  # Only add non-empty files
-                            functions[safe_name] = content
-                            loaded_files.add(safe_name)
-                        else:
-                            print(f"  [DEBUG] {func_name}: File {os.path.basename(func_file)} is empty")
-                except Exception as e:
-                    print(f"   Error loading {func_file}: {e}")
+                print(
+                    f"  [DEBUG] {func_name}: No usable dsl{dsl_round} implementation in "
+                    f"{os.path.basename(func_file)} (empty or trivial)"
+                )
     else:
-        # Load all .py files in the directory
-        for func_file in glob.glob(os.path.join(final_functions_dir, "*.py")):
-            func_name = os.path.basename(func_file).replace(".py", "")
-            try:
-                with open(func_file, 'r', encoding='utf-8') as f:
-                    content = f.read().strip()
-                    if content:  # Only add non-empty files
-                        functions[func_name] = content
-                        loaded_files.add(func_name)
-            except Exception as e:
-                print(f"   Error loading {func_file}: {e}")
+        raise ValueError(
+            "load_final_functions requires terminals so only the requested DSL round is loaded"
+        )
     
     if terminals and len(functions) < len(terminals):
         missing = set(sanitize_function_name(f) for f in terminals.keys()) - loaded_files
@@ -644,7 +598,7 @@ def load_final_functions(experiment_dir: str, terminals: Optional[Dict[str, str]
             error_msg = (
                 f"\n CRITICAL ERROR: Could not load {len(missing)} required function files:\n"
                 f"  Missing functions: {sorted(missing)}\n"
-                f"  Expected dsl_round={dsl_round}, func_evolution_round={func_evolution_round}\n"
+                f"  Expected dsl_round={dsl_round}\n"
                 f"  Final functions directory: {final_functions_dir}\n"
                 f"  Pipeline stopped - cannot continue without all required functions."
             )
@@ -666,7 +620,6 @@ def synthesize_and_test_programs(
     shared_vllm=None,
     results_tracker=None,
     cfg_version: int = -1,
-    func_evolution_round: Optional[int] = None,
     synthesis_prompt_path: str = None,
     test_seeds: Optional[List[int]] = None,
     seed_outcome_log_path: Optional[str] = None,
@@ -727,14 +680,13 @@ def synthesize_and_test_programs(
             terminals = terminals or {}
     
     # Load final functions (validate against terminals if provided)
-    # Pass dsl_round (cfg_version) and func_evolution_round to load correct version
+    # Pass dsl_round (cfg_version) to load correct version
     # This will raise FileNotFoundError if any required functions are missing
     try:
         final_functions = load_final_functions(
             experiment_dir, 
             terminals=terminals,
             dsl_round=cfg_version,
-            func_evolution_round=func_evolution_round
         )
     except FileNotFoundError:
         # Re-raise to stop the pipeline
@@ -776,10 +728,10 @@ def synthesize_and_test_programs(
 
     # Use OpenAI-compatible API if requested, else use vLLM.
     if model_type == "openai_compat":
-        base_url = os.environ.get("OPENAI_COMPAT_BASE_URL", "https://llm.vulcan.alliancecan.ca").strip()
+        base_url = os.environ.get("OPENAI_COMPAT_BASE_URL", "https://inference.vulcan.alliancecan.ca").strip()
         api_key = resolve_openai_compat_api_key(openai_compat_key_file)
         model_name = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-oss-120b").strip()
-        chat_path = os.environ.get("OPENAI_COMPAT_CHAT_PATH", "/api/chat/completions").strip()
+        chat_path = os.environ.get("OPENAI_COMPAT_CHAT_PATH", "/v1/chat/completions").strip()
         llm = _OpenAICompatLLM(
             base_url=base_url,
             api_key=api_key,
@@ -828,7 +780,6 @@ def synthesize_and_test_programs(
             "solved_program": solved_program,
             "max_attempts_per_seed": int(max_attempts),
             "cfg_version": int(cfg_version),
-            "func_evolution_round": func_evolution_round,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         with open(seed_outcome_log_path, "a", encoding="utf-8") as f:
@@ -1053,7 +1004,7 @@ def synthesize_and_test_programs(
                             program=program,
                             reward=reward,
                             steps=steps,
-                            func_evolution_round=func_evolution_round,
+                            func_evolution_round=None,
                             success=attempt_success,
                             raw_llm_response=response,
                             prompt=prompt,
@@ -1086,6 +1037,28 @@ def synthesize_and_test_programs(
                         print(f"[{task}] seed={seed} attempt={attempt + 1}: Program failed - {program}")
 
                 except Exception as e:
+                    from src.utils.openai_compat_http import OpenAICompatFatalError
+
+                    if isinstance(e, OpenAICompatFatalError):
+                        if "API request failed after" in str(e):
+                            poll = float(os.environ.get("OPENAI_COMPAT_REQUEST_POLL", "10"))
+                            print(
+                                f"[{task}] model/API warming up at seed={seed}, "
+                                f"attempt={attempt + 1}; retrying in {poll:.0f}s: {e}"
+                            )
+                            time.sleep(poll)
+                            continue
+                        raise
+                    if isinstance(e, RuntimeError) and "OpenAI-compatible API error" in str(e):
+                        if "not ready" in str(e).lower():
+                            poll = float(os.environ.get("OPENAI_COMPAT_REQUEST_POLL", "10"))
+                            print(
+                                f"[{task}] model not ready at seed={seed}, "
+                                f"attempt={attempt + 1}; retrying in {poll:.0f}s: {e}"
+                            )
+                            time.sleep(poll)
+                            continue
+                        raise
                     print(f"[{task}]  Error at seed={seed}, attempt={attempt + 1}: {e}")
                     continue
 
@@ -1173,30 +1146,10 @@ def evolve_functions_with_failing_tasks(
     func_evolution_round: Optional[int] = None,
     total_samples: int = 1000
 ) -> bool:
-    """Evolve functions by reusing the first round's domain-template prompt and seeding
-    funsearch with the final function from the previous round.
-    
-    Instead of modifying evaluate() to test on failing tasks, this simply:
-    1. Reuses the first round's prompt file (e.g., craft_dsl0_func0.txt) which already
-       has the domain template with grid specs and pass_checks
-    2. Updates the func_init file with the body from the last round's final function
-    3. Runs funsearch + explicit feedback with this combination
-    
-    Args:
-        experiment_dir: Path to experiment directory
-        failing_tasks: List of task names that failed (kept for API compat, logged but not used)
-        terminals: Dictionary of terminal functions
-        specification: Specification string for funsearch
-        cfg: CFG string
-        # max_evolutions: Number of evolution rounds (currently 1 per call)
-        shared_vllm: Optional shared vLLM instance
-        dsl_round: DSL evolution round number
-        func_evolution_round: Function evolution round number
-        total_samples: Total samples for funsearch
-        
-    Returns:
-        True if evolution succeeded and new functions were generated, False otherwise
+    """Evolve functions by reusing the domain-template prompt and seeding
+    funsearch with the current final function implementation.
     """
+    del func_evolution_round
     print(f"\n{'='*80}")
     print("Evolving Functions (domain template + last round's final function)")
     print(f"{'='*80}")
@@ -1206,7 +1159,7 @@ def evolve_functions_with_failing_tasks(
     from src.pipeline.cfg_to_funsearch_pipeline import (
         generate_func_init, determine_inputs,
         run_explicit_feedback_generation, sanitize_function_name, parse_function_name_and_args,
-        extract_function_args
+        extract_function_args, _versioned_name,
     )
     from funsearch.implementation.funsearch import FunSearch
     from funsearch.implementation import config as config_lib
@@ -1228,17 +1181,10 @@ def evolve_functions_with_failing_tasks(
         # Find the first round's prompt file (func0)
         prompt_file = None
         if dsl_round is not None:
-            # Try func0 first (the initial domain-template-based prompt)
-            func0_file = os.path.join(func_prompts_dir, f"{safe_name}_dsl{dsl_round}_func0.txt")
-            if os.path.exists(func0_file):
-                prompt_file = func0_file
-            else:
-                # Try without func suffix
-                dsl_only = os.path.join(func_prompts_dir, f"{safe_name}_dsl{dsl_round}.txt")
-                if os.path.exists(dsl_only):
-                    prompt_file = dsl_only
+            dsl_file = os.path.join(func_prompts_dir, f"{_versioned_name(safe_name, dsl_round)}.txt")
+            if os.path.exists(dsl_file):
+                prompt_file = dsl_file
         
-        # Fallback to old naming
         if prompt_file is None:
             old_name = os.path.join(func_prompts_dir, f"{safe_name}.txt")
             if os.path.exists(old_name):
@@ -1269,18 +1215,10 @@ def evolve_functions_with_failing_tasks(
         # Try to find the best final function from previous rounds
         final_func_file = None
         if dsl_round is not None:
-            # Try previous func evolution round
-            if func_evolution_round is not None and func_evolution_round > 0:
-                prev_file = os.path.join(final_functions_dir, f"{safe_name}_dsl{dsl_round}_func{func_evolution_round - 1}.py")
-                if os.path.exists(prev_file):
-                    final_func_file = prev_file
-            # Try func0 (initial round)
-            if final_func_file is None:
-                func0_file = os.path.join(final_functions_dir, f"{safe_name}_dsl{dsl_round}_func0.py")
-                if os.path.exists(func0_file):
-                    final_func_file = func0_file
+            final_func_file = resolve_final_function_path(experiment_dir, func_name, dsl_round)
+            if not os.path.exists(final_func_file):
+                final_func_file = None
         
-        # Fallback to old naming
         if final_func_file is None:
             old_file = os.path.join(final_functions_dir, f"{safe_name}.py")
             if os.path.exists(old_file):
@@ -1303,12 +1241,14 @@ def evolve_functions_with_failing_tasks(
         base_name, _ = parse_function_name_and_args(func_name)
         base_name_lower = base_name.lower()
         
-        if dsl_round is not None and func_evolution_round is not None:
-            func_init_file = os.path.join(experiment_dir, "functions_generated",
-                                          f"{safe_name}_dsl{dsl_round}_func{func_evolution_round}_func_init.py")
+        if dsl_round is not None:
+            func_init_file = os.path.join(
+                experiment_dir,
+                "functions_generated",
+                f"{_versioned_name(safe_name, dsl_round)}_func_init.py",
+            )
         else:
-            func_init_file = os.path.join(experiment_dir, "functions_generated",
-                                          f"{safe_name}_func_init.py")
+            func_init_file = os.path.join(experiment_dir, "functions_generated", f"{safe_name}_func_init.py")
         
         if func_name in current_final_functions:
             final_func_content = current_final_functions[func_name]
@@ -1354,8 +1294,7 @@ def evolve_functions_with_failing_tasks(
                     # Read existing func_init to preserve signature
                     existing_init = None
                     for candidate in [
-                        os.path.join(experiment_dir, "functions_generated", f"{safe_name}_dsl{dsl_round}_func0_func_init.py"),
-                        os.path.join(experiment_dir, "functions_generated", f"{safe_name}_dsl{dsl_round}_func_init.py"),
+                        os.path.join(experiment_dir, "functions_generated", f"{_versioned_name(safe_name, dsl_round)}_func_init.py"),
                     ]:
                         if os.path.exists(candidate):
                             with open(candidate, 'r', encoding='utf-8') as f:
@@ -1375,18 +1314,18 @@ def evolve_functions_with_failing_tasks(
                 else:
                     func_init_file = generate_func_init(func_name, terminals[func_name], cfg,
                                                         experiment_dir=experiment_dir,
-                                                        dsl_round=dsl_round, func_evolution_round=func_evolution_round)
+                                                        dsl_round=dsl_round)
                     print(f"     Could not parse function, generated stub for {func_name}")
             else:
                 func_init_file = generate_func_init(func_name, terminals[func_name], cfg,
                                                     experiment_dir=experiment_dir,
-                                                    dsl_round=dsl_round, func_evolution_round=func_evolution_round)
+                                                    dsl_round=dsl_round)
                 print(f"     Could not find function def, generated stub for {func_name}")
         else:
             # No previous implementation, generate stub
             func_init_file = generate_func_init(func_name, terminals[func_name], cfg,
-                                                experiment_dir=experiment_dir,
-                                                dsl_round=dsl_round, func_evolution_round=func_evolution_round)
+                                               experiment_dir=experiment_dir,
+                                               dsl_round=dsl_round)
             print(f"     No previous implementation, generated stub for {func_name}")
         
         func_init_files[func_name] = func_init_file
@@ -1438,226 +1377,6 @@ def evolve_functions_with_failing_tasks(
         updated_prompts.remove("LOOK")
     elif "look" in updated_prompts:
         updated_prompts.remove("look")
-    
-    # (func_init files already prepared in Step 3 above - old duplicate block removed)
-    _skip_old_block = True
-    for func_name in []:  # OLD LOOP - SKIP
-        safe_name = sanitize_function_name(func_name)
-        if dsl_round is not None:
-            if func_evolution_round is not None:
-                func_init_file = os.path.join(experiment_dir, "functions_generated", f"{safe_name}_dsl{dsl_round}_func{func_evolution_round}_func_init.py")
-            else:
-                # Initial round: use func0
-                func_init_file = os.path.join(experiment_dir, "functions_generated", f"{safe_name}_dsl{dsl_round}_func0_func_init.py")
-        else:
-            # Fallback to old naming if rounds not provided
-            func_init_file = os.path.join(experiment_dir, "functions_generated", f"{safe_name}_func_init.py")
-        base_name, _ = parse_function_name_and_args(func_name)
-        base_name_lower = base_name.lower()
-        
-        if func_name in current_final_functions:
-            # Extract function definition from final function file
-            final_func_content = current_final_functions[func_name]
-            
-            try:
-                func_lines = final_func_content.split('\n')
-                
-                # Find function definition line
-                func_start_idx = None
-                for i, line in enumerate(func_lines):
-                    if (f"def {safe_name}(" in line or 
-                        f"def {base_name_lower}(" in line or 
-                        f"def {base_name}(" in line):
-                        func_start_idx = i
-                        break
-                
-                if func_start_idx is None:
-                    raise ValueError(f"Could not find function definition for {func_name}")
-                
-                # Find the colon after function signature
-                colon_idx = None
-                for i in range(func_start_idx, len(func_lines)):
-                    if ':' in func_lines[i]:
-                        colon_idx = i
-                        break
-                
-                if colon_idx is None:
-                    raise ValueError("Could not find colon after function signature")
-                
-                # Body starts after the colon
-                body_start_idx = colon_idx + 1
-
-                
-                # Find the end of the function by looking for next def/class at same or less indentation
-                func_indent = len(func_lines[func_start_idx]) - len(func_lines[func_start_idx].lstrip())
-                body_end_idx = len(func_lines)
-                
-                for i in range(body_start_idx, len(func_lines)):
-                    line = func_lines[i]
-                    if line.strip():
-                        line_indent = len(line) - len(line.lstrip())
-                        # If we find a def or class at same or less indentation, we've reached the end
-                        if ((line.strip().startswith('def ') or line.strip().startswith('class ')) 
-                            and line_indent <= func_indent):
-                            body_end_idx = i
-                            break
-                        # If we find a line at less indentation than function, we're done
-                        if line_indent < func_indent:
-                            body_end_idx = i
-                            break
-                
-                # Extract body lines (from after colon to end of function)
-
-                body_lines = func_lines[body_start_idx:body_end_idx]
-                body_lines = skip_docstring(body_lines)
-            
-                if not body_lines:
-                    body_lines = ["  pass"]
-                
-                body_lines = normalize_to_two_spaces(body_lines)
-
-                
-                # Read existing func_init file to preserve signature
-                # Try to find existing file with previous round's naming if needed
-                existing_func_init_file = func_init_file
-                if not os.path.exists(existing_func_init_file) and dsl_round is not None:
-                    if func_evolution_round is not None and func_evolution_round > 0:
-                        # Try previous round's file
-                        prev_func_init_file = os.path.join(experiment_dir, "functions_generated", f"{safe_name}_dsl{dsl_round}_func{func_evolution_round - 1}_func_init.py")
-                        if os.path.exists(prev_func_init_file):
-                            existing_func_init_file = prev_func_init_file
-                    # Try func0 for initial round (if current file doesn't exist)
-                    if not os.path.exists(existing_func_init_file):
-                        func0_file = os.path.join(experiment_dir, "functions_generated", f"{safe_name}_dsl{dsl_round}_func0_func_init.py")
-                        if os.path.exists(func0_file):
-                            existing_func_init_file = func0_file
-                    # Fallback to old naming without func suffix
-                    if not os.path.exists(existing_func_init_file):
-                        old_naming_file = os.path.join(experiment_dir, "functions_generated", f"{safe_name}_dsl{dsl_round}_func_init.py")
-                        if os.path.exists(old_naming_file):
-                            existing_func_init_file = old_naming_file
-                
-                if os.path.exists(existing_func_init_file):
-                    with open(existing_func_init_file, 'r', encoding='utf-8') as f:
-                        existing_lines = f.read().split('\n')
-                    
-                    # Keep the first line (function signature) and append body lines
-                    # body_lines is a list, need to join with newlines
-                    body_lines_str = '\n'.join(body_lines) if isinstance(body_lines, list) else str(body_lines)
-                    
-                    if existing_lines:
-                        first_line = existing_lines[0]
-                        updated_content = first_line + '\n' + body_lines_str
-                    else:
-                        # No existing file, use body_lines directly (but need function signature)
-                        # Extract signature from func_lines
-                        func_signature_line = func_lines[func_start_idx]
-                        updated_content = func_signature_line + '\n' + body_lines_str
-                    
-                    # Verify the content before writing
-                    if not updated_content or updated_content.strip() == '':
-                        print(f"     WARNING: Updated content is empty for {func_name}!")
-                        raise ValueError("Updated content is empty")
-                    
-                    print(f"     Prepared func_init content ({len(updated_content)} chars)")
-                    
-                    # Ensure directory exists
-                    os.makedirs(os.path.dirname(func_init_file), exist_ok=True)
-                    
-                    # If we found a previous round's file, we'll create a new one with current round's name
-                    # Otherwise, version the existing file
-                    if existing_func_init_file != func_init_file:
-                        # Create new file with current round's name
-                        with open(func_init_file, 'w', encoding='utf-8') as f:
-                            f.write(updated_content)
-                        
-                        # Verify the file was written correctly - STOP PIPELINE if not updated
-                        with open(func_init_file, 'r', encoding='utf-8') as f:
-                            written_content = f.read()
-                            if written_content.strip() == '':
-                                error_msg = f" CRITICAL: func_init file for {func_name} is empty after write! Pipeline stopped."
-                                print(f"    {error_msg}")
-                                raise RuntimeError(error_msg)
-                            elif 'return []' in written_content and len(written_content.strip()) < 50:
-                                error_msg = f" CRITICAL: func_init file for {func_name} only contains stub (return [])! File was not updated correctly. Pipeline stopped."
-                                print(f"    {error_msg}")
-                                print(f"    File content: {repr(written_content[:200])}")
-                                raise RuntimeError(error_msg)
-                            else:
-                                print(f"     Verified: File contains implementation ({len(written_content)} chars)")
-                        
-                        print(f"     Created func_init for {func_name} with current implementation (from previous round)")
-                    else:
-                        # Version the file before updating
-                        version_file(func_init_file)
-                        
-                        # Write updated function to func_init file
-                        with open(func_init_file, 'w', encoding='utf-8') as f:
-                            f.write(updated_content)
-                        
-                        # Verify the file was written correctly - STOP PIPELINE if not updated
-                        with open(func_init_file, 'r', encoding='utf-8') as f:
-                            written_content = f.read()
-                            if written_content.strip() == '':
-                                error_msg = f" CRITICAL: func_init file for {func_name} is empty after write! Pipeline stopped."
-                                print(f"    {error_msg}")
-                                raise RuntimeError(error_msg)
-                            elif 'return []' in written_content and len(written_content.strip()) < 50:
-                                error_msg = f" CRITICAL: func_init file for {func_name} only contains stub (return [])! File was not updated correctly. Pipeline stopped."
-                                print(f"    {error_msg}")
-                                print(f"    File content: {repr(written_content[:200])}")
-                                raise RuntimeError(error_msg)
-                            else:
-                                print(f"     Verified: File contains implementation ({len(written_content)} chars)")
-                        
-                        print(f"     Updated func_init body for {func_name} (preserved signature, previous version saved)")
-                else:
-                    # No existing file, write full function (skip docstrings)
-                    func_code_lines = func_lines[func_start_idx:body_end_idx]
-                    func_code = '\n'.join(func_code_lines)
-                    
-                    # Verify content before writing
-                    if not func_code or func_code.strip() == '':
-                        print(f"     WARNING: Extracted function code is empty for {func_name}!")
-                        raise ValueError("Extracted function code is empty")
-                    
-                    # Ensure directory exists
-                    os.makedirs(os.path.dirname(func_init_file), exist_ok=True)
-                    
-                    with open(func_init_file, 'w', encoding='utf-8') as f:
-                        f.write(func_code)
-                    
-                    # Verify the file was written correctly - STOP PIPELINE if not updated
-                    with open(func_init_file, 'r', encoding='utf-8') as f:
-                        written_content = f.read()
-                        if written_content.strip() == '':
-                            error_msg = f" CRITICAL: func_init file for {func_name} is empty after write! Pipeline stopped."
-                            print(f"    {error_msg}")
-                            raise RuntimeError(error_msg)
-                        elif 'return []' in written_content and len(written_content.strip()) < 50:
-                            error_msg = f" CRITICAL: func_init file for {func_name} only contains stub (return [])! File was not updated correctly. Pipeline stopped."
-                            print(f"    {error_msg}")
-                            print(f"    File content: {repr(written_content[:200])}")
-                            raise RuntimeError(error_msg)
-                        else:
-                            print(f"     Verified: File contains function implementation ({len(written_content)} chars)")
-                    
-                    print(f"     Created func_init for {func_name} with current implementation")
-            except Exception as e:
-                print(f"     Error extracting function definition for {func_name}: {e}")
-                # Fallback: generate stub
-                func_init_file = generate_func_init(func_name, terminals[func_name], cfg, experiment_dir=experiment_dir,
-                                                   dsl_round=dsl_round, func_evolution_round=func_evolution_round)
-        else:
-            # No current implementation found, generate stub if file doesn't exist
-            if not os.path.exists(func_init_file):
-                func_init_file = generate_func_init(func_name, terminals[func_name], cfg, experiment_dir=experiment_dir,
-                                                   dsl_round=dsl_round, func_evolution_round=func_evolution_round)
-                print(f"     No current implementation found, generated stub for {func_name}")
-            else:
-                print(f"     Using existing func_init for {func_name} (no update available)")
-        
-        func_init_files[func_name] = func_init_file
     
     # Run FunSearch in parallel for all functions
     print(f"\n  [Step 4.1] Running FunSearch in parallel for {len(updated_prompts)} functions...")
@@ -1792,7 +1511,7 @@ def evolve_functions_with_failing_tasks(
                         func_name, results_dir, func_file, experiment_dir, explicit_feedback_dir,
                         specification, k=5, shared_vllm=shared_vllm, 
                         func_signature=func_signatures.get(func_name, ""),
-                        dsl_round=dsl_round, func_evolution_round=func_evolution_round
+                        dsl_round=dsl_round,
                     )
                     if final_func:
                         current_func_code = final_func  # Update for next iteration
@@ -1833,16 +1552,9 @@ def evolve_functions_with_failing_tasks(
         for func_name, func_code in final_functions.items():
             safe_name = sanitize_function_name(func_name)
             
-            # Build filename with DSL and function evolution round numbers to match prompt files
-            # Initial functions (no func_evolution_round) should be func0
             if dsl_round is not None:
-                if func_evolution_round is not None:
-                    func_file = os.path.join(final_functions_dir, f"{safe_name}_dsl{dsl_round}_func{func_evolution_round}.py")
-                else:
-                    # Initial functions should be func0
-                    func_file = os.path.join(final_functions_dir, f"{safe_name}_dsl{dsl_round}_func0.py")
+                func_file = resolve_final_function_path(experiment_dir, func_name, dsl_round)
             else:
-                # Fallback to old naming if rounds not provided
                 func_file = os.path.join(final_functions_dir, f"{safe_name}.py")
             
             # Version existing file if it exists (only if using old naming)
@@ -1871,7 +1583,6 @@ def test_cfg_on_tasks(
     shared_vllm=None,
     results_tracker=None,
     cfg_version: Optional[int] = None,
-    func_evolution_round: Optional[int] = None,
     synthesis_prompt_path: str = None,
     test_seeds: Optional[List[int]] = None,
     seed_outcome_log_path: Optional[str] = None,
@@ -1914,7 +1625,6 @@ def test_cfg_on_tasks(
         shared_vllm=shared_vllm,
         results_tracker=results_tracker,
         cfg_version=resolved_cfg_version,
-        func_evolution_round=func_evolution_round,
         synthesis_prompt_path=synthesis_prompt_path,
         test_seeds=test_seeds,
         seed_outcome_log_path=seed_outcome_log_path,
@@ -1948,10 +1658,10 @@ def _get_dsl_evolution_llm(
 
     mt = (model_type or "huggingface").strip().lower()
     if mt == "openai_compat":
-        base_url = os.environ.get("OPENAI_COMPAT_BASE_URL", "https://llm.vulcan.alliancecan.ca").strip()
+        base_url = os.environ.get("OPENAI_COMPAT_BASE_URL", "https://inference.vulcan.alliancecan.ca").strip()
         api_key = resolve_openai_compat_api_key(openai_compat_key_file)
         model_name = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-oss-120b").strip()
-        chat_path = os.environ.get("OPENAI_COMPAT_CHAT_PATH", "/api/chat/completions").strip()
+        chat_path = os.environ.get("OPENAI_COMPAT_CHAT_PATH", "/v1/chat/completions").strip()
         llm = _OpenAICompatLLM(
             base_url=base_url,
             api_key=api_key,
@@ -2379,7 +2089,6 @@ def evolve_dsl_and_restart(
         model_type=model_type,
         shared_vllm=shared_vllm,
         dsl_round=None,  # DSL round not available in this context
-        func_evolution_round=None  # Initial implementation after DSL evolution
     )
     
     if success:
@@ -2434,7 +2143,7 @@ def run_integrated_pipeline(
     spec_file: str,
     tasks: List[str],
     max_function_evolutions: int = 3,
-    max_dsl_evolutions: int = 2,
+    max_dsls: int = 2,
     recipes_path: str = "craft/resources/recipes.yaml",
     hints_path: str = "craft/resources/hints.yaml",
     max_attempts: int = 1,
@@ -2630,7 +2339,7 @@ def run_integrated_pipeline(
                 print("\n All tasks solved after function evolution!")
                 return 0
     
-    # Step 4: Evolve DSL and implement (up to max_dsl_evolutions times)
+    # Step 4: Evolve DSL and implement (up to max_dsls times)
     print("\n[Step 4] Function evolution did not solve all tasks. Evolving DSL...")
     
     with open(recipes_path, 'r') as f:
@@ -2639,8 +2348,8 @@ def run_integrated_pipeline(
     current_cfg = cfg
     current_terminals = terminals
     
-    for dsl_evolution_round in range(max_dsl_evolutions):
-        print(f"\n  DSL Evolution round {dsl_evolution_round + 1}/{max_dsl_evolutions}")
+    for dsl_evolution_round in range(max_dsls):
+        print(f"\n  DSL Evolution round {dsl_evolution_round + 1}/{max_dsls}")
 
         evolve_failed_programs = _failed_programs_for_dsl_from_synthesis_log(
             experiment_dir,
@@ -2659,7 +2368,7 @@ def run_integrated_pipeline(
         
         if new_cfg == current_cfg:
             print("\n   Could not evolve DSL or evolution produced same CFG")
-            if dsl_evolution_round < max_dsl_evolutions - 1:
+            if dsl_evolution_round < max_dsls - 1:
                 print("  Continuing to next evolution round...")
                 continue
             else:
@@ -2668,7 +2377,7 @@ def run_integrated_pipeline(
         
         if not implementation_success:
             print("\n   DSL evolved but implementation had issues")
-            if dsl_evolution_round < max_dsl_evolutions - 1:
+            if dsl_evolution_round < max_dsls - 1:
                 print("  Continuing to next evolution round...")
                 current_cfg = new_cfg
                 current_terminals = new_terminals
@@ -2717,10 +2426,10 @@ def run_integrated_pipeline(
             return 0
         
         # If not all solved and we have more rounds, continue
-        if dsl_evolution_round < max_dsl_evolutions - 1:
+        if dsl_evolution_round < max_dsls - 1:
             print("\n  Some tasks still failing. Continuing to next DSL evolution round...")
         else:
-            print(f"\n Reached maximum DSL evolution rounds ({max_dsl_evolutions})")
+            print(f"\n Reached maximum DSL evolution rounds ({max_dsls})")
             print(f"  Remaining failing tasks: {failing_tasks}")
             return 1
     
@@ -2759,10 +2468,10 @@ def main():
         help='Maximum number of function evolution rounds (default: 3)'
     )
     parser.add_argument(
-        '--max_dsl_evolutions',
+        '--max_dsls',
         type=int,
         default=2,
-        help='Maximum number of DSL evolution rounds (default: 2)'
+        help='Maximum number of DSLs (implement+test rounds; default: 2)'
     )
     parser.add_argument(
         '--recipes_path',
@@ -2835,7 +2544,7 @@ def main():
         spec_file=args.spec_file,
         tasks=tasks,
         max_function_evolutions=args.max_function_evolutions,
-        max_dsl_evolutions=args.max_dsl_evolutions,
+        max_dsls=args.max_dsls,
         recipes_path=args.recipes_path,
         hints_path=args.hints_path,
         max_attempts=args.max_attempts,

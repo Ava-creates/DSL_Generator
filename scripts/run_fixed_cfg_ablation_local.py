@@ -68,9 +68,17 @@ def _copytree(src: str, dst: str) -> None:
     shutil.copytree(src, dst)
 
 
-def score_experiment(experiment_dir: str, dsl_round: int) -> tuple[int, int, int, int]:
-    from src.evaluate_expressiveness import score_dsl_round
+def _score_dsl_round(by_task: dict[str, list]) -> tuple[int, int, int, int]:
+    if not by_task:
+        return 0, 0, 0, 0
+    tasks_total = len(by_task)
+    tasks_solved = sum(1 for entries in by_task.values() if any(e.get("solved") for e in entries))
+    seeds_solved = sum(1 for entries in by_task.values() for e in entries if e.get("solved"))
+    seeds_total = sum(len(entries) for entries in by_task.values())
+    return tasks_solved, seeds_solved, tasks_total, seeds_total
 
+
+def score_experiment(experiment_dir: str, dsl_round: int) -> tuple[int, int, int, int]:
     by_task: dict[str, list] = {}
     for pat in (
         f"{experiment_dir}/results_tracking/dsl{dsl_round}/tasks/*/program_synthesis_seed_outcomes.jsonl",
@@ -84,7 +92,7 @@ def score_experiment(experiment_dir: str, dsl_round: int) -> tuple[int, int, int
                         continue
                     e = json.loads(line)
                     by_task.setdefault(e["task"], []).append(e)
-    return score_dsl_round(by_task)
+    return _score_dsl_round(by_task)
 
 
 def print_funsearch_reference(source: str, dsl_round: int) -> None:
