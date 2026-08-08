@@ -9,16 +9,36 @@ from typing import Optional
 
 
 def resolve_cfg_path(experiment_dir: str, dsl_round: Optional[int] = None) -> str:
-    """Return the CFG JSON path for a DSL evolution round.
+    """Return the versioned CFG JSON path for a DSL evolution round.
 
-    Convention (matches stage_test_tasks):
-    - dsl_round > 0  -> cfg/cfg_output_{dsl_round}.json
-    - dsl_round 0 / None -> cfg/cfg_output.json
+    Convention:
+    - dsl_round N  -> cfg/cfg_output_{N}.json  (immutable snapshot for that round)
+    - cfg/cfg_output.json is the working/latest copy during evolution writes only;
+      stages that pin a round must read cfg_output_{N}.json, not cfg_output.json.
     """
+    if dsl_round is None:
+        raise ValueError("dsl_round is required to resolve a versioned CFG path")
     cfg_dir = os.path.join(experiment_dir, "cfg")
-    if dsl_round is not None and dsl_round > 0:
-        return os.path.join(cfg_dir, f"cfg_output_{dsl_round}.json")
-    return os.path.join(cfg_dir, "cfg_output.json")
+    return os.path.join(cfg_dir, f"cfg_output_{int(dsl_round)}.json")
+
+
+def resolve_final_function_path(
+    experiment_dir: str,
+    func_name: str,
+    dsl_round: int,
+) -> str:
+    """Return the exact final_functions path for one terminal at a DSL round.
+
+    No legacy or cross-round fallbacks — callers must fail if this file is missing.
+    """
+    from src.pipeline.cfg_to_funsearch_pipeline import sanitize_function_name
+
+    safe_name = sanitize_function_name(func_name)
+    return os.path.join(
+        experiment_dir,
+        "final_functions",
+        f"{safe_name}_dsl{int(dsl_round)}.py",
+    )
 
 
 def version_file(file_path: str) -> None:

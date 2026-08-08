@@ -10,6 +10,7 @@ Tracks:
 
 import os
 import json
+import re
 import sys
 import tempfile
 import shutil
@@ -1054,10 +1055,18 @@ def parse_explicit_feedback_file(feedback_file: str) -> List[Dict]:
             reward = float(reward) if reward is not None else None
         except (TypeError, ValueError):
             reward = None
+        pool_best = entry.get("pool_best_score_after")
+        if pool_best is None:
+            pool_best = entry.get("pool_best_score_before")
+        try:
+            pool_best = float(pool_best) if pool_best is not None else None
+        except (TypeError, ValueError):
+            pool_best = None
         entries.append({
             "iteration": entry.get("iteration"),
             "env_interactions": env_interactions,
             "reward": reward,
+            "pool_best_score": pool_best,
             "runs_ok": entry.get("runs_ok", True),
         })
     return entries
@@ -1181,7 +1190,9 @@ def plot_explicit_feedback_reward_vs_interactions(
 
     for entry in entries:
         total += int(entry.get("env_interactions", 0))
-        reward = entry.get("reward")
+        reward = entry.get("pool_best_score")
+        if reward is None:
+            reward = entry.get("reward")
         raw_rewards.append(reward)
         if reward is not None and reward > best:
             best = reward
@@ -1221,7 +1232,7 @@ def plot_explicit_feedback_reward_vs_interactions(
 
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(cumulative_interactions, best_rewards, marker="o", linewidth=2, markersize=4)
-    ax.set_title("Best Reward vs Env Interactions (Explicit Feedback)")
+    ax.set_title("Best Selected Program Score vs Env Interactions (Explicit Feedback)")
     ax.set_xlabel("Cumulative Env Interactions")
     ax.set_ylabel("Best Reward So Far")
     ax.ticklabel_format(useOffset=False, style='plain', axis='y')
@@ -1269,7 +1280,9 @@ def plot_baseline_reward_vs_interactions(
     best_explicit = best
     for entry in explicit_entries:
         total_explicit += int(entry.get("env_interactions", 0))
-        reward = entry.get("reward")
+        reward = entry.get("pool_best_score")
+        if reward is None:
+            reward = entry.get("reward")
         if reward is not None and reward > best_explicit:
             best_explicit = reward
         explicit_cumulative.append(total_explicit)
@@ -1333,4 +1346,198 @@ def plot_baseline_reward_vs_interactions(
     plt.close()
     print(f" Saved baseline plot to {plot_path}")
     return plot_path
+
+
+def _extract_context_from_feedback_filename(filename: str) -> Optional[tuple]:
+    match = re.match(r"feedback_(.+?)_dsl(\d+)\.json$", filename)
+    if not match:
+        return None
+    return match.group(1), int(match.group(2)), 0
+
+
+def _extract_context_from_funsearch_log_filename(filename: str) -> Optional[tuple]:
+    match = re.search(r"q2\.5_(.+?)_dsl(\d+)\.txt", filename)
+    if not match:
+        return None
+    return match.group(1), int(match.group(2)), 0
+
+
+def _find_matching_funsearch_log(
+    funsearch_logs_dir: str,
+    safe_name: str,
+    dsl_round: Optional[int],
+    func_evolution_round: Optional[int],
+) -> Optional[str]:
+    if not os.path.isdir(funsearch_logs_dir):
+        return None
+
+    from src.pipeline.cfg_to_funsearch_pipeline import find_funsearch_log_file
+
+    display_name = safe_name.upper()
+    log_file = find_funsearch_log_file(
+        display_name,
+        funsearch_logs_dir,
+        dsl_round=dsl_round,
+        func_evolution_round=func_evolution_round,
+    )
+    if log_file:
+        return log_file
+
+    candidates = []
+    for name in os.listdir(funsearch_logs_dir):
+        if not name.endswith(".log"):
+            continue
+        ctx = _extract_context_from_funsearch_log_filename(name)
+        if ctx:
+            log_safe_name, log_dsl_round, log_func_round = ctx
+            if (
+                log_safe_name == safe_name
+                and dsl_round is not None
+                and func_evolution_round is not None
+                and log_dsl_round == dsl_round
+                and log_func_round == func_evolution_round
+            ):
+                candidates.append(os.path.join(funsearch_logs_dir, name))
+    if candidates:
+        return max(candidates, key=os.path.getmtime)
+    return None
+
+
+def generate_reward_plots_for_function(
+    experiment_dir: str,
+    function_name: str,
+    dsl_round: int,
+    func_evolution_round: int = 0,
+) -> Dict[str, bool]:
+    """Generate FunSearch, explicit-feedback, and baseline plots for one function."""
+    from src.pipeline.cfg_to_funsearch_pipeline import sanitize_function_name
+
+    safe_name = sanitize_function_name(function_name)
+    dsl_folder = f"dsl{dsl_round}"
+    funsearch_logs_dir = os.path.join(experiment_dir, "results", "funsearch")
+    explicit_feedback_dir = os.path.join(experiment_dir, "explicit_feedback", dsl_folder)
+
+    feedback_filename = f"feedback_{safe_name}_dsl{dsl_round}.json"
+    feedback_file = os.path.join(explicit_feedback_dir, feedback_filename)
+
+    funsearch_out_dir = os.path.join(experiment_dir, "results_tracking", "funsearch", dsl_folder)
+    explicit_out_dir = os.path.join(experiment_dir, "results_tracking", "explicit_feedback", dsl_folder)
+    baseline_out_dir = os.path.join(experiment_dir, "results_tracking", "baseline", dsl_folder)
+    os.makedirs(funsearch_out_dir, exist_ok=True)
+    os.makedirs(explicit_out_dir, exist_ok=True)
+    os.makedirs(baseline_out_dir, exist_ok=True)
+
+    generated = {"funsearch": False, "explicit": False, "baseline": False}
+
+    log_file = _find_matching_funsearch_log(
+        funsearch_logs_dir,
+        safe_name,
+        dsl_round=dsl_round,
+        func_evolution_round=func_evolution_round,
+    )
+    if log_file:
+        generated["funsearch"] = bool(
+            plot_funsearch_reward_vs_interactions(
+                log_file=log_file,
+                output_dir=funsearch_out_dir,
+                function_name=safe_name,
+            )
+        )
+
+    if os.path.exists(feedback_file):
+        seed_reward = best_funsearch_reward(log_file) if log_file else None
+        generated["explicit"] = bool(
+            plot_explicit_feedback_reward_vs_interactions(
+                feedback_file=feedback_file,
+                output_dir=explicit_out_dir,
+                function_name=safe_name,
+                seed_reward=seed_reward,
+            )
+        )
+        if log_file:
+            generated["baseline"] = bool(
+                plot_baseline_reward_vs_interactions(
+                    funsearch_log_file=log_file,
+                    explicit_feedback_file=feedback_file,
+                    output_dir=baseline_out_dir,
+                    function_name=safe_name,
+                )
+            )
+    else:
+        print(f"No explicit feedback file found for plotting: {feedback_file}")
+
+    return generated
+
+
+def generate_reward_plots_for_experiment(
+    experiment_dir: str,
+    dsl_round: Optional[int] = None,
+) -> Dict[str, int]:
+    """Backfill FunSearch / explicit-feedback / baseline plots for an experiment."""
+    counts = {"funsearch": 0, "explicit": 0, "baseline": 0}
+    funsearch_logs_dir = os.path.join(experiment_dir, "results", "funsearch")
+    explicit_root = os.path.join(experiment_dir, "explicit_feedback")
+    if not os.path.isdir(explicit_root):
+        return counts
+
+    dsl_folders = sorted(
+        name
+        for name in os.listdir(explicit_root)
+        if os.path.isdir(os.path.join(explicit_root, name)) and name.startswith("dsl")
+    )
+    if dsl_round is not None:
+        target = f"dsl{dsl_round}"
+        dsl_folders = [folder for folder in dsl_folders if folder == target]
+
+    for dsl_folder in dsl_folders:
+        dsl_match = re.match(r"dsl(\d+)$", dsl_folder)
+        if not dsl_match:
+            continue
+        dsl_num = int(dsl_match.group(1))
+        dsl_path = os.path.join(explicit_root, dsl_folder)
+
+        for name in sorted(os.listdir(dsl_path)):
+            if not (name.startswith("feedback_") and name.endswith(".json")):
+                continue
+            ctx = _extract_context_from_feedback_filename(name)
+            if ctx:
+                safe_name, feedback_dsl_round, feedback_func_round = ctx
+            else:
+                continue
+            if feedback_dsl_round != dsl_num:
+                continue
+
+            generated = generate_reward_plots_for_function(
+                experiment_dir=experiment_dir,
+                function_name=safe_name,
+                dsl_round=feedback_dsl_round,
+                func_evolution_round=feedback_func_round,
+            )
+            counts["funsearch"] += int(generated["funsearch"])
+            counts["explicit"] += int(generated["explicit"])
+            counts["baseline"] += int(generated["baseline"])
+
+    if counts["funsearch"] == 0 and os.path.isdir(funsearch_logs_dir):
+        for name in sorted(os.listdir(funsearch_logs_dir)):
+            if not name.endswith(".log"):
+                continue
+            ctx = _extract_context_from_funsearch_log_filename(name)
+            if not ctx:
+                continue
+            safe_name, log_dsl_round, log_func_round = ctx
+            if dsl_round is not None and log_dsl_round != dsl_round:
+                continue
+            funsearch_out_dir = os.path.join(
+                experiment_dir, "results_tracking", "funsearch", f"dsl{log_dsl_round}"
+            )
+            os.makedirs(funsearch_out_dir, exist_ok=True)
+            out = plot_funsearch_reward_vs_interactions(
+                log_file=os.path.join(funsearch_logs_dir, name),
+                output_dir=funsearch_out_dir,
+                function_name=safe_name,
+            )
+            if out:
+                counts["funsearch"] += 1
+
+    return counts
 
