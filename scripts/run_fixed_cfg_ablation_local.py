@@ -32,6 +32,18 @@ DEFAULT_TASKS = [
 
 ABLATION_MODES = ("llm_chained", "llm_best_of_n")
 
+
+def _require_funsearch_submodule() -> None:
+    impl = os.path.join(_REPO, "funsearch", "implementation", "funsearch.py")
+    if not os.path.isfile(impl):
+        print(
+            "ERROR: funsearch submodule missing. Run:\n"
+            "  git submodule update --init funsearch",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+
 MODE_PREFIX = {
     "llm_best_of_n": "ablation_fixed_cfg_bon",
     "llm_chained": "ablation_fixed_cfg_chained",
@@ -207,6 +219,7 @@ def run_test_tasks_local(
 
 
 def main() -> int:
+    _require_funsearch_submodule()
     parser = argparse.ArgumentParser(description="Fixed-CFG terminal-function ablation (local)")
     parser.add_argument(
         "--source",

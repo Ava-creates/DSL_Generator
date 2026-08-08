@@ -71,10 +71,15 @@ For each of 20 Craft tasks (or a subset):
 ## Setup
 
 ```bash
-git clone git@github.com:Ava-creates/DSL_Generator.git
+git clone https://github.com/Ava-creates/DSL_Generator.git
 cd DSL_Generator
 git checkout laptop-ablation
+git submodule update --init funsearch
+```
 
+The `funsearch` directory is a **git submodule** (not included in a plain clone). If you see `ModuleNotFoundError: No module named 'funsearch.implementation'`, run the submodule command above.
+
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-laptop.txt
@@ -144,6 +149,7 @@ Both ablation modes use the same evaluator and explicit-feedback stage as the ma
 
 ## Troubleshooting
 
+- **`No module named 'funsearch.implementation'`** → run `git submodule update --init funsearch`
 - **403 / connection errors** → connect Alliance VPN
 - **Slow** → lower `total_samples` in the yaml (smoke uses 20)
 - **Import errors** → `pip install -r requirements-laptop.txt` from repo root
