@@ -172,6 +172,12 @@ def _draw_body(
     return llm.draw_samples(prompt, function_to_evolve)[0]
 
 
+def _print_full_prompt(label: str, prompt: str) -> None:
+    print(f"\n{'=' * 80}\n[{label}] Full prompt (sent to LLM):\n{'=' * 80}")
+    print(prompt, flush=True)
+    print(f"{'=' * 80}\n[{label}] End prompt ({len(prompt)} chars)\n{'=' * 80}\n", flush=True)
+
+
 def run_llm_best_of_n(
     *,
     specification: str,
@@ -226,6 +232,7 @@ def run_llm_best_of_n(
 
     # Same prompt every iteration: domain context + evolve stub (no solve/evaluate harness).
     base_prompt = _build_evolve_only_llm_prompt(template, function_to_evolve)
+    _print_full_prompt("llm_best_of_n", base_prompt)
 
     print(f"[llm_best_of_n] Generating {num_samples} independent samples for {function_to_evolve}")
     for i in range(num_samples):
@@ -308,6 +315,12 @@ def run_llm_chained(
     )
 
     base_prompt = _build_evolve_only_llm_prompt(template, function_to_evolve)
+    _print_full_prompt("llm_chained", base_prompt)
+    print(
+        "[llm_chained] Later iterations append up to 2 previous bodies + scores "
+        "(not re-printed each step).",
+        flush=True,
+    )
 
     history: list[tuple[float, str]] = []
 
