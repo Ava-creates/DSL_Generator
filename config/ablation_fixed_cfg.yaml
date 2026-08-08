@@ -8,7 +8,7 @@ model_type: openai_compat
 terminal_function_mode: llm_chained
 skip_explicit_feedback: false
 
-total_samples: 100
+total_samples: 500  # match FunSearch / experiment_config_hf.yaml
 num_explicit_feedback_iterations: 30
 max_attempts: 30
 openai_compat_max_parallel: 4

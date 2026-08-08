@@ -352,7 +352,7 @@ def main() -> int:
     )
     parser.add_argument("--model-type", default=os.environ.get("MODEL_TYPE", "openai_compat"))
     parser.add_argument("--spec-file", default="prompt_specifications/spec_template.txt")
-    parser.add_argument("--total-samples", type=int, default=100)
+    parser.add_argument("--total-samples", type=int, default=500, help="Match FunSearch total_samples (HF run 4 uses 500)")
     parser.add_argument("--num-ef-iterations", type=int, default=30)
     parser.add_argument("--max-attempts", type=int, default=30)
     parser.add_argument(

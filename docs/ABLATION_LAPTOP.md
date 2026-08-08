@@ -10,7 +10,7 @@ Two ablation designs are supported on a laptop with the **Aleph API** (no GPU, n
 
 1. Fix CFG = DSL~1 from HF run 4 (`19/20` tasks) — same grammar for all arms
 2. **FunSearch arm**: use run 4 results as-is (**not regenerated**)
-3. Regenerate terminal functions for `llm_best_of_n` and `llm_chained` + explicit feedback, evaluated on **the same DSL~1 grid specs** FunSearch used in run 4 (copied from `--source`, not regenerated)
+3. Regenerate terminal functions for `llm_best_of_n` and `llm_chained` + explicit feedback, evaluated on **the same DSL~1 grid specs** FunSearch used in run 4 (copied from `--source`, not regenerated). **Sample budget: 500 per terminal** (same as FunSearch on the cluster).
 4. Program synthesis only — 20 tasks × **the same 10 seeds** as run 4 — **no DSL evolution loop**
 
 ### Step 1 — Export assets from Vulcan (once)
@@ -54,7 +54,7 @@ python scripts/run_fixed_cfg_ablation_local.py \
   --total-samples 20 \
   --tasks "get[wood]" "get[grass]"
 
-# Full ablation: llm_chained + llm_best_of_n (funsearch printed from source, not re-run)
+# Full ablation: llm_chained + llm_best_of_n, 500 samples/terminal (matches FunSearch)
 python scripts/run_fixed_cfg_ablation_local.py --config config/ablation_fixed_cfg.yaml
 ```
 
