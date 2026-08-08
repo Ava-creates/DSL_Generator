@@ -34,7 +34,7 @@ DEFAULT_TASKS = [
     "make[clothbundle]", "make[clothbundleextra]",
 ]
 
-ABLATION_MODES = ("llm_chained", "llm_best_of_n")
+ABLATION_MODES = ("llm_best_of_n", "llm_chained")
 
 
 def _require_funsearch_submodule() -> None:
