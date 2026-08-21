@@ -1,0 +1,129 @@
+{
+  "label": "api_run12",
+  "status": "superseded",
+  "old_appendix_sum_max_g": 192,
+  "current_sum_max_g": 193,
+  "reason": "Appendix 192 required make[axe] g=10 including seed 15. On that seed, workshop0 has only one empty neighbor and it is unreachable by empty-cell BFS; CraftState.step refuses moves into occupied cells. IRON-first program therefore cannot craft on seed 15. Published protocol uses re-eval sum_max_g=193.",
+  "per_task_current": {
+    "get[gem]": {
+      "synth": 8,
+      "max_g": 10,
+      "mean_g": 8.571428571428571,
+      "uniq": 7
+    },
+    "get[iron]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[wood]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[grass]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[gold]": {
+      "synth": 7,
+      "max_g": 10,
+      "mean_g": 6.0,
+      "uniq": 6
+    },
+    "make[plank]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.333333333333334,
+      "uniq": 3
+    },
+    "make[stick]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "make[cloth]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.333333333333334,
+      "uniq": 3
+    },
+    "make[rope]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "make[bridge]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[bundle]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 7.25,
+      "uniq": 4
+    },
+    "make[flag]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 8.428571428571429,
+      "uniq": 7
+    },
+    "make[bed]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.0,
+      "uniq": 4
+    },
+    "make[axe]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 8.5,
+      "uniq": 2
+    },
+    "make[shears]": {
+      "synth": 10,
+      "max_g": 9,
+      "mean_g": 8.25,
+      "uniq": 4
+    },
+    "make[ladder]": {
+      "synth": 10,
+      "max_g": 9,
+      "mean_g": 8.5,
+      "uniq": 6
+    },
+    "make[goldarrow]": {
+      "synth": 7,
+      "max_g": 9,
+      "mean_g": 6.333333333333333,
+      "uniq": 6
+    },
+    "make[goldhammer]": {
+      "synth": 2,
+      "max_g": 9,
+      "mean_g": 5.0,
+      "uniq": 2
+    },
+    "make[clothbundle]": {
+      "synth": 8,
+      "max_g": 8,
+      "mean_g": 6.666666666666667,
+      "uniq": 6
+    },
+    "make[clothbundleextra]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 8.333333333333334,
+      "uniq": 6
+    }
+  }
+}

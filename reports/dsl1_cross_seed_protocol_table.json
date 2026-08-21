@@ -1,0 +1,1715 @@
+{
+  "dsl_round": 1,
+  "seeds": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45
+  ],
+  "runs": [
+    {
+      "thesis_run": 1,
+      "label": "hf_run1",
+      "seeds_solved": 65,
+      "sum_max_g": 127,
+      "sum_mean_g": 120.6806,
+      "tasks_with_max10": 10
+    },
+    {
+      "thesis_run": 2,
+      "label": "hf_run2",
+      "seeds_solved": 37,
+      "sum_max_g": 38,
+      "sum_mean_g": 35.0,
+      "tasks_with_max10": 3
+    },
+    {
+      "thesis_run": 3,
+      "label": "hf_run3",
+      "seeds_solved": 160,
+      "sum_max_g": 159,
+      "sum_mean_g": 113.9595,
+      "tasks_with_max10": 13
+    },
+    {
+      "thesis_run": 4,
+      "label": "hf_run4",
+      "seeds_solved": 176,
+      "sum_max_g": 184,
+      "sum_mean_g": 153.3071,
+      "tasks_with_max10": 13
+    },
+    {
+      "thesis_run": 5,
+      "label": "hf_run5",
+      "seeds_solved": 126,
+      "sum_max_g": 111,
+      "sum_mean_g": 70.2167,
+      "tasks_with_max10": 1
+    },
+    {
+      "thesis_run": 11,
+      "label": "api_run11",
+      "seeds_solved": 51,
+      "sum_max_g": 64,
+      "sum_mean_g": 53.3333,
+      "tasks_with_max10": 3
+    },
+    {
+      "thesis_run": 12,
+      "label": "api_run12",
+      "seeds_solved": 181,
+      "sum_max_g": 193,
+      "sum_mean_g": 169.2,
+      "tasks_with_max10": 14
+    },
+    {
+      "thesis_run": 13,
+      "label": "api_run13",
+      "seeds_solved": 41,
+      "sum_max_g": 36,
+      "sum_mean_g": 23.3571,
+      "tasks_with_max10": 0
+    },
+    {
+      "thesis_run": 130,
+      "label": "api_run13_warm",
+      "seeds_solved": 99,
+      "sum_max_g": 99,
+      "sum_mean_g": 98.8,
+      "tasks_with_max10": 9
+    },
+    {
+      "thesis_run": 14,
+      "label": "api_run14",
+      "seeds_solved": 160,
+      "sum_max_g": 162,
+      "sum_mean_g": 151.9056,
+      "tasks_with_max10": 15
+    },
+    {
+      "thesis_run": 140,
+      "label": "api_run14_warm",
+      "seeds_solved": 160,
+      "sum_max_g": 169,
+      "sum_mean_g": 164.6667,
+      "tasks_with_max10": 15
+    },
+    {
+      "thesis_run": 15,
+      "label": "api_run15",
+      "seeds_solved": 159,
+      "sum_max_g": 160,
+      "sum_mean_g": 148.25,
+      "tasks_with_max10": 14
+    },
+    {
+      "thesis_run": 150,
+      "label": "api_run15_warm",
+      "seeds_solved": 157,
+      "sum_max_g": 158,
+      "sum_mean_g": 142.5833,
+      "tasks_with_max10": 14
+    }
+  ],
+  "metric_defs": {
+    "max_g": "Best single unique synth program coverage on all 10 seeds (per task).",
+    "mean_g": "Mean coverage over unique synth programs (= E[g] if program drawn uniformly).",
+    "sum_max_g": "Sum_t max_g(t) (max 200).",
+    "sum_mean_g": "Sum_t mean_g(t) (max 200).",
+    "failure": "Timeout and out-of-steps count as failures (success=False).",
+    "reproducibility": "Reuse cross_seed_dsl*_coverage.json unless --force. PYTHONHASHSEED=0. Do not revive appendix 192 for run12; it conflicts with environment physics."
+  },
+  "hf_run1_per_task": {
+    "get[gem]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "get[iron]": {
+      "synth": 10,
+      "max_g": 9,
+      "mean_g": 7.222222222222222,
+      "uniq": 9
+    },
+    "get[wood]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "get[grass]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 8.125,
+      "uniq": 8
+    },
+    "get[gold]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[plank]": {
+      "synth": 5,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 5
+    },
+    "make[stick]": {
+      "synth": 3,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 3
+    },
+    "make[cloth]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 10
+    },
+    "make[rope]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 10
+    },
+    "make[bridge]": {
+      "synth": 2,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[bundle]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[flag]": {
+      "synth": 2,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[bed]": {
+      "synth": 3,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 3
+    },
+    "make[axe]": {
+      "synth": 2,
+      "max_g": 9,
+      "mean_g": 9.0,
+      "uniq": 2
+    },
+    "make[shears]": {
+      "synth": 2,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[ladder]": {
+      "synth": 3,
+      "max_g": 10,
+      "mean_g": 7.333333333333333,
+      "uniq": 3
+    },
+    "make[goldarrow]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[goldhammer]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[clothbundle]": {
+      "synth": 3,
+      "max_g": 9,
+      "mean_g": 9.0,
+      "uniq": 3
+    },
+    "make[clothbundleextra]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    }
+  },
+  "hf_run2_per_task": {
+    "get[gem]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "get[iron]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.0,
+      "uniq": 3
+    },
+    "get[wood]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "get[grass]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 8.0,
+      "uniq": 3
+    },
+    "get[gold]": {
+      "synth": 1,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 1
+    },
+    "make[plank]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[stick]": {
+      "synth": 1,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 1
+    },
+    "make[cloth]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[rope]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[bridge]": {
+      "synth": 2,
+      "max_g": 2,
+      "mean_g": 2.0,
+      "uniq": 1
+    },
+    "make[bundle]": {
+      "synth": 1,
+      "max_g": 2,
+      "mean_g": 2.0,
+      "uniq": 1
+    },
+    "make[flag]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[bed]": {
+      "synth": 1,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 1
+    },
+    "make[axe]": {
+      "synth": 1,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 1
+    },
+    "make[shears]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[ladder]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[goldarrow]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[goldhammer]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[clothbundle]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[clothbundleextra]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    }
+  },
+  "hf_run3_per_task": {
+    "get[gem]": {
+      "synth": 1,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 1
+    },
+    "get[iron]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[wood]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[grass]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[gold]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[plank]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 7.0,
+      "uniq": 2
+    },
+    "make[stick]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 7.0,
+      "uniq": 2
+    },
+    "make[cloth]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 7.0,
+      "uniq": 2
+    },
+    "make[rope]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 6.5,
+      "uniq": 2
+    },
+    "make[bridge]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 7.666666666666667,
+      "uniq": 3
+    },
+    "make[bundle]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 7.5,
+      "uniq": 2
+    },
+    "make[flag]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 6.142857142857143,
+      "uniq": 7
+    },
+    "make[bed]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 6.25,
+      "uniq": 4
+    },
+    "make[axe]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 6.0,
+      "uniq": 3
+    },
+    "make[shears]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 5.4,
+      "uniq": 5
+    },
+    "make[ladder]": {
+      "synth": 9,
+      "max_g": 8,
+      "mean_g": 3.6,
+      "uniq": 5
+    },
+    "make[goldarrow]": {
+      "synth": 2,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 2
+    },
+    "make[goldhammer]": {
+      "synth": 2,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 2
+    },
+    "make[clothbundle]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 4.4,
+      "uniq": 5
+    },
+    "make[clothbundleextra]": {
+      "synth": 8,
+      "max_g": 10,
+      "mean_g": 6.5,
+      "uniq": 6
+    }
+  },
+  "hf_run4_per_task": {
+    "get[gem]": {
+      "synth": 5,
+      "max_g": 9,
+      "mean_g": 6.2,
+      "uniq": 5
+    },
+    "get[iron]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 4
+    },
+    "get[wood]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 4
+    },
+    "get[grass]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[gold]": {
+      "synth": 7,
+      "max_g": 9,
+      "mean_g": 2.857142857142857,
+      "uniq": 7
+    },
+    "make[plank]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[stick]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 7.5,
+      "uniq": 4
+    },
+    "make[cloth]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 3
+    },
+    "make[rope]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 5.333333333333333,
+      "uniq": 6
+    },
+    "make[bridge]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 5.75,
+      "uniq": 4
+    },
+    "make[bundle]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "make[flag]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 8.0,
+      "uniq": 3
+    },
+    "make[bed]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 3
+    },
+    "make[axe]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 8.0,
+      "uniq": 3
+    },
+    "make[shears]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[ladder]": {
+      "synth": 10,
+      "max_g": 9,
+      "mean_g": 6.0,
+      "uniq": 2
+    },
+    "make[goldarrow]": {
+      "synth": 4,
+      "max_g": 3,
+      "mean_g": 1.5,
+      "uniq": 4
+    },
+    "make[goldhammer]": {
+      "synth": 2,
+      "max_g": 6,
+      "mean_g": 3.5,
+      "uniq": 2
+    },
+    "make[clothbundle]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 8.666666666666666,
+      "uniq": 3
+    },
+    "make[clothbundleextra]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    }
+  },
+  "hf_run5_per_task": {
+    "get[gem]": {
+      "synth": 2,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 2
+    },
+    "get[iron]": {
+      "synth": 8,
+      "max_g": 8,
+      "mean_g": 2.6,
+      "uniq": 5
+    },
+    "get[wood]": {
+      "synth": 7,
+      "max_g": 7,
+      "mean_g": 3.3333333333333335,
+      "uniq": 3
+    },
+    "get[grass]": {
+      "synth": 10,
+      "max_g": 8,
+      "mean_g": 3.0,
+      "uniq": 4
+    },
+    "get[gold]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[plank]": {
+      "synth": 7,
+      "max_g": 7,
+      "mean_g": 5.0,
+      "uniq": 3
+    },
+    "make[stick]": {
+      "synth": 8,
+      "max_g": 8,
+      "mean_g": 5.0,
+      "uniq": 3
+    },
+    "make[cloth]": {
+      "synth": 10,
+      "max_g": 8,
+      "mean_g": 4.428571428571429,
+      "uniq": 7
+    },
+    "make[rope]": {
+      "synth": 6,
+      "max_g": 6,
+      "mean_g": 3.5,
+      "uniq": 2
+    },
+    "make[bridge]": {
+      "synth": 7,
+      "max_g": 6,
+      "mean_g": 4.0,
+      "uniq": 3
+    },
+    "make[bundle]": {
+      "synth": 7,
+      "max_g": 8,
+      "mean_g": 7.333333333333333,
+      "uniq": 3
+    },
+    "make[flag]": {
+      "synth": 8,
+      "max_g": 7,
+      "mean_g": 5.428571428571429,
+      "uniq": 7
+    },
+    "make[bed]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.25,
+      "uniq": 4
+    },
+    "make[axe]": {
+      "synth": 7,
+      "max_g": 5,
+      "mean_g": 3.0,
+      "uniq": 4
+    },
+    "make[shears]": {
+      "synth": 9,
+      "max_g": 8,
+      "mean_g": 4.857142857142857,
+      "uniq": 7
+    },
+    "make[ladder]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 5.2,
+      "uniq": 5
+    },
+    "make[goldarrow]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[goldhammer]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[clothbundle]": {
+      "synth": 9,
+      "max_g": 4,
+      "mean_g": 2.2857142857142856,
+      "uniq": 7
+    },
+    "make[clothbundleextra]": {
+      "synth": 2,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 2
+    }
+  },
+  "api_run11_per_task": {
+    "get[gem]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "get[iron]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.0,
+      "uniq": 5
+    },
+    "get[wood]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.5,
+      "uniq": 2
+    },
+    "get[grass]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.333333333333334,
+      "uniq": 3
+    },
+    "get[gold]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[plank]": {
+      "synth": 1,
+      "max_g": 4,
+      "mean_g": 4.0,
+      "uniq": 1
+    },
+    "make[stick]": {
+      "synth": 2,
+      "max_g": 2,
+      "mean_g": 1.5,
+      "uniq": 2
+    },
+    "make[cloth]": {
+      "synth": 2,
+      "max_g": 2,
+      "mean_g": 1.5,
+      "uniq": 2
+    },
+    "make[rope]": {
+      "synth": 2,
+      "max_g": 9,
+      "mean_g": 7.0,
+      "uniq": 2
+    },
+    "make[bridge]": {
+      "synth": 5,
+      "max_g": 4,
+      "mean_g": 3.25,
+      "uniq": 4
+    },
+    "make[bundle]": {
+      "synth": 2,
+      "max_g": 6,
+      "mean_g": 3.5,
+      "uniq": 2
+    },
+    "make[flag]": {
+      "synth": 2,
+      "max_g": 2,
+      "mean_g": 1.5,
+      "uniq": 2
+    },
+    "make[bed]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[axe]": {
+      "synth": 4,
+      "max_g": 4,
+      "mean_g": 2.25,
+      "uniq": 4
+    },
+    "make[shears]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[ladder]": {
+      "synth": 1,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 1
+    },
+    "make[goldarrow]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[goldhammer]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[clothbundle]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[clothbundleextra]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    }
+  },
+  "api_run12_per_task": {
+    "get[gem]": {
+      "synth": 8,
+      "max_g": 10,
+      "mean_g": 8.333333333333334,
+      "uniq": 6
+    },
+    "get[iron]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[wood]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[grass]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[gold]": {
+      "synth": 7,
+      "max_g": 10,
+      "mean_g": 6.0,
+      "uniq": 6
+    },
+    "make[plank]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.333333333333334,
+      "uniq": 3
+    },
+    "make[stick]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "make[cloth]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.5,
+      "uniq": 2
+    },
+    "make[rope]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "make[bridge]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[bundle]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 7.0,
+      "uniq": 3
+    },
+    "make[flag]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 8.5,
+      "uniq": 6
+    },
+    "make[bed]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.333333333333334,
+      "uniq": 3
+    },
+    "make[axe]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 8.5,
+      "uniq": 2
+    },
+    "make[shears]": {
+      "synth": 10,
+      "max_g": 9,
+      "mean_g": 8.0,
+      "uniq": 3
+    },
+    "make[ladder]": {
+      "synth": 10,
+      "max_g": 9,
+      "mean_g": 8.5,
+      "uniq": 6
+    },
+    "make[goldarrow]": {
+      "synth": 7,
+      "max_g": 9,
+      "mean_g": 6.333333333333333,
+      "uniq": 6
+    },
+    "make[goldhammer]": {
+      "synth": 2,
+      "max_g": 9,
+      "mean_g": 5.0,
+      "uniq": 2
+    },
+    "make[clothbundle]": {
+      "synth": 8,
+      "max_g": 8,
+      "mean_g": 6.666666666666667,
+      "uniq": 6
+    },
+    "make[clothbundleextra]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 8.2,
+      "uniq": 5
+    }
+  },
+  "api_run13_per_task": {
+    "get[gem]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "get[iron]": {
+      "synth": 7,
+      "max_g": 4,
+      "mean_g": 2.857142857142857,
+      "uniq": 7
+    },
+    "get[wood]": {
+      "synth": 6,
+      "max_g": 3,
+      "mean_g": 1.8333333333333333,
+      "uniq": 6
+    },
+    "get[grass]": {
+      "synth": 3,
+      "max_g": 3,
+      "mean_g": 2.0,
+      "uniq": 3
+    },
+    "get[gold]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[plank]": {
+      "synth": 4,
+      "max_g": 3,
+      "mean_g": 3.0,
+      "uniq": 2
+    },
+    "make[stick]": {
+      "synth": 1,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 1
+    },
+    "make[cloth]": {
+      "synth": 5,
+      "max_g": 3,
+      "mean_g": 2.0,
+      "uniq": 3
+    },
+    "make[rope]": {
+      "synth": 4,
+      "max_g": 5,
+      "mean_g": 2.6666666666666665,
+      "uniq": 3
+    },
+    "make[bridge]": {
+      "synth": 5,
+      "max_g": 8,
+      "mean_g": 3.0,
+      "uniq": 5
+    },
+    "make[bundle]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[flag]": {
+      "synth": 2,
+      "max_g": 2,
+      "mean_g": 1.5,
+      "uniq": 2
+    },
+    "make[bed]": {
+      "synth": 1,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 1
+    },
+    "make[axe]": {
+      "synth": 1,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 1
+    },
+    "make[shears]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[ladder]": {
+      "synth": 2,
+      "max_g": 2,
+      "mean_g": 1.5,
+      "uniq": 2
+    },
+    "make[goldarrow]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[goldhammer]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[clothbundle]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[clothbundleextra]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    }
+  },
+  "api_run13_warm_per_task": {
+    "get[gem]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "get[iron]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "get[wood]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "get[grass]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "get[gold]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[plank]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 10
+    },
+    "make[stick]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 10
+    },
+    "make[cloth]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 10
+    },
+    "make[rope]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 10
+    },
+    "make[bridge]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.8,
+      "uniq": 10
+    },
+    "make[bundle]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 10
+    },
+    "make[flag]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 10
+    },
+    "make[bed]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[axe]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 9.0,
+      "uniq": 9
+    },
+    "make[shears]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 10
+    },
+    "make[ladder]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 10
+    },
+    "make[goldarrow]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[goldhammer]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[clothbundle]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[clothbundleextra]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    }
+  },
+  "api_run14_per_task": {
+    "get[gem]": {
+      "synth": 2,
+      "max_g": 3,
+      "mean_g": 2.5,
+      "uniq": 2
+    },
+    "get[iron]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "get[wood]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 7.333333333333333,
+      "uniq": 3
+    },
+    "get[grass]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "get[gold]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[plank]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[stick]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 8.333333333333334,
+      "uniq": 3
+    },
+    "make[cloth]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[rope]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[bridge]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.25,
+      "uniq": 4
+    },
+    "make[bundle]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "make[flag]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.555555555555555,
+      "uniq": 9
+    },
+    "make[bed]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 4
+    },
+    "make[axe]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 8.333333333333334,
+      "uniq": 6
+    },
+    "make[shears]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 4
+    },
+    "make[ladder]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 6
+    },
+    "make[goldarrow]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[goldhammer]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[clothbundle]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 7.6,
+      "uniq": 5
+    },
+    "make[clothbundleextra]": {
+      "synth": 9,
+      "max_g": 10,
+      "mean_g": 9.0,
+      "uniq": 9
+    }
+  },
+  "api_run14_warm_per_task": {
+    "get[gem]": {
+      "synth": 1,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[iron]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "get[wood]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "get[grass]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "get[gold]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[plank]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 3
+    },
+    "make[stick]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 3
+    },
+    "make[cloth]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.333333333333334,
+      "uniq": 3
+    },
+    "make[rope]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 7.0,
+      "uniq": 3
+    },
+    "make[bridge]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 4
+    },
+    "make[bundle]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[flag]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 6
+    },
+    "make[bed]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[axe]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 9.0,
+      "uniq": 4
+    },
+    "make[shears]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 4
+    },
+    "make[ladder]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 5
+    },
+    "make[goldarrow]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[goldhammer]": {
+      "synth": 1,
+      "max_g": 1,
+      "mean_g": 1.0,
+      "uniq": 1
+    },
+    "make[clothbundle]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 8.333333333333334,
+      "uniq": 9
+    },
+    "make[clothbundleextra]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 9
+    }
+  },
+  "api_run15_per_task": {
+    "get[gem]": {
+      "synth": 1,
+      "max_g": 2,
+      "mean_g": 2.0,
+      "uniq": 1
+    },
+    "get[iron]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 5.5,
+      "uniq": 2
+    },
+    "get[wood]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[grass]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[gold]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[plank]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 7.0,
+      "uniq": 3
+    },
+    "make[stick]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 3
+    },
+    "make[cloth]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[rope]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 5.75,
+      "uniq": 4
+    },
+    "make[bridge]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 4
+    },
+    "make[bundle]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 3
+    },
+    "make[flag]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 5
+    },
+    "make[bed]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 5
+    },
+    "make[axe]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 9.0,
+      "uniq": 4
+    },
+    "make[shears]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 7
+    },
+    "make[ladder]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 4
+    },
+    "make[goldarrow]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[goldhammer]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[clothbundle]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 9.0,
+      "uniq": 9
+    },
+    "make[clothbundleextra]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 9
+    }
+  },
+  "api_run15_warm_per_task": {
+    "get[gem]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "get[iron]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 4.0,
+      "uniq": 3
+    },
+    "get[wood]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 5.5,
+      "uniq": 2
+    },
+    "get[grass]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 1
+    },
+    "get[gold]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[plank]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 5.75,
+      "uniq": 4
+    },
+    "make[stick]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[cloth]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[rope]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 9.333333333333334,
+      "uniq": 3
+    },
+    "make[bridge]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[bundle]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 2
+    },
+    "make[flag]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 9
+    },
+    "make[bed]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 3
+    },
+    "make[axe]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 9.0,
+      "uniq": 3
+    },
+    "make[shears]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 4
+    },
+    "make[ladder]": {
+      "synth": 10,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 4
+    },
+    "make[goldarrow]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[goldhammer]": {
+      "synth": 0,
+      "max_g": 0,
+      "mean_g": 0.0,
+      "uniq": 0
+    },
+    "make[clothbundle]": {
+      "synth": 9,
+      "max_g": 9,
+      "mean_g": 9.0,
+      "uniq": 8
+    },
+    "make[clothbundleextra]": {
+      "synth": 9,
+      "max_g": 10,
+      "mean_g": 10.0,
+      "uniq": 8
+    }
+  }
+}
